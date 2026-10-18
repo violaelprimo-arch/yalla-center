@@ -1,0 +1,231 @@
+@import 'katex/dist/katex.min.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --radius: 0.75rem;
+
+    /* Light Theme Surface Tokens */
+    --background: 210 40% 98%;      /* #F8FAFC */
+    --foreground: 222 47% 11%;      /* #0F172A */
+
+    --card: 0 0% 100%;              /* #FFFFFF */
+    --card-foreground: 222 47% 11%; /* #0F172A */
+    --card-elevated: 210 40% 96%;   /* #F1F5F9 */
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+
+    --primary: 202 100% 50%;        /* #00A3FF Electric Cyan */
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 225 59% 11%;       /* #0B132B Midnight Navy */
+    --secondary-foreground: 0 0% 100%;
+
+    --muted: 210 40% 96%;           /* #F1F5F9 */
+    --muted-foreground: 215 16% 47%; /* #64748B */
+
+    --accent: 202 100% 95%;         /* #E0F2FE */
+    --accent-foreground: 202 100% 40%;
+
+    --destructive: 0 84% 60%;       /* #EF4444 */
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 214 32% 91%;          /* #E2E8F0 */
+    --border-strong: 215 20% 65%;   /* #94A3B8 */
+    --input: 214 32% 91%;
+    --ring: 202 100% 50%;           /* #00A3FF */
+
+    /* Persistent Navy Sidebar */
+    --sidebar-background: 225 59% 11%; /* #0B132B */
+    --sidebar-foreground: 210 40% 98%; /* #F8FAFC */
+    --sidebar-primary: 202 100% 50%;   /* #00A3FF */
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 226 53% 14%;     /* #111A38 */
+    --sidebar-accent-foreground: 202 100% 50%;
+    --sidebar-border: 225 40% 18%;     /* #1C2541 */
+    --sidebar-ring: 202 100% 50%;
+
+    /* Brand Navy and Cyan Direct Tokens */
+    --brand-navy-950: #070B19;
+    --brand-navy-900: #0B132B;
+    --brand-navy-850: #111A38;
+    --brand-navy-800: #1C2541;
+    --brand-navy-700: #26345A;
+    --brand-blue-500: #00A3FF;
+    --brand-blue-600: #0084E0;
+    --brand-cyan-400: #38BDF8;
+    --brand-cyan-500: #00C2FF;
+
+    /* Semantic Feedback */
+    --color-success: #10B981;
+    --color-warning: #F59E0B;
+    --color-danger: #EF4444;
+    --color-info: #6366F1;
+
+    --bg-app: #F8FAFC;
+    --bg-surface: #FFFFFF;
+    --bg-surface-elevated: #F1F5F9;
+  }
+
+  .dark {
+    /* Dark Theme Surface Tokens */
+    --background: 227 56% 6%;       /* #070B19 Obsidian Night */
+    --foreground: 210 40% 98%;      /* #F8FAFC */
+
+    --card: 225 59% 11%;            /* #0B132B Midnight Navy */
+    --card-foreground: 210 40% 98%; /* #F8FAFC */
+    --card-elevated: 226 53% 14%;   /* #111A38 */
+
+    --popover: 225 59% 11%;         /* #0B132B */
+    --popover-foreground: 210 40% 98%;
+
+    --primary: 202 100% 50%;        /* #00A3FF Electric Cyan */
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 226 53% 14%;       /* #111A38 */
+    --secondary-foreground: 210 40% 98%;
+
+    --muted: 226 53% 14%;           /* #111A38 */
+    --muted-foreground: 215 20% 65%; /* #94A3B8 */
+
+    --accent: 224 41% 20%;          /* #17223B */
+    --accent-foreground: 202 100% 50%;
+
+    --destructive: 0 84% 60%;       /* #EF4444 */
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 225 40% 18%;          /* #1C2541 */
+    --border-strong: 224 41% 25%;   /* #26345A */
+    --input: 225 40% 18%;
+    --ring: 202 100% 50%;           /* #00A3FF */
+
+    /* Persistent Navy Sidebar */
+    --sidebar-background: 225 59% 11%; /* #0B132B */
+    --sidebar-foreground: 210 40% 98%;
+    --sidebar-primary: 202 100% 50%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 226 53% 14%;
+    --sidebar-accent-foreground: 202 100% 50%;
+    --sidebar-border: 225 40% 18%;
+    --sidebar-ring: 202 100% 50%;
+
+    --bg-app: #070B19;
+    --bg-surface: #0B132B;
+    --bg-surface-elevated: #111A38;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: 'rlig' 1, 'calt' 1;
+    direction: rtl;
+    text-align: right;
+  }
+}
+
+/* Tabular Numerals for Financials, Timers, and Badges */
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Soft Elevated Card Utilities */
+.card-elevated {
+  background-color: hsl(var(--card));
+  color: hsl(var(--card-foreground));
+  border: 1px solid hsl(var(--border));
+  border-radius: 1rem;
+  box-shadow: 0 4px 20px -2px rgba(11, 19, 43, 0.05), 0 2px 6px -1px rgba(11, 19, 43, 0.03);
+  transition: box-shadow 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+}
+
+.dark .card-elevated {
+  background-color: hsl(var(--card));
+  border-color: hsl(var(--border));
+  box-shadow: 0 4px 24px -2px rgba(0, 0, 0, 0.45), 0 2px 8px -1px rgba(0, 163, 255, 0.04);
+}
+
+.card-interactive {
+  cursor: pointer;
+}
+.card-interactive:hover {
+  transform: translateY(-2px);
+  border-color: rgba(0, 163, 255, 0.4);
+  box-shadow: 0 10px 25px -4px rgba(11, 19, 43, 0.12), 0 0 16px -2px rgba(0, 163, 255, 0.15);
+}
+.dark .card-interactive:hover {
+  border-color: rgba(0, 163, 255, 0.5);
+  box-shadow: 0 10px 28px -4px rgba(0, 0, 0, 0.6), 0 0 20px -2px rgba(0, 163, 255, 0.25);
+}
+
+.glass-panel {
+  background-color: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(226, 232, 240, 0.8);
+}
+.dark .glass-panel {
+  background-color: rgba(11, 19, 43, 0.85);
+  border-color: rgba(28, 37, 65, 0.8);
+}
+
+/* KaTeX BiDi & Equation Styling */
+.katex {
+  direction: ltr !important;
+  text-align: left !important;
+  font-family: KaTeX_Main, 'Times New Roman', serif;
+  font-size: 1.05em;
+  color: inherit;
+}
+
+.katex-display {
+  direction: ltr !important;
+  text-align: center !important;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.75rem 0;
+  margin: 0.75rem 0;
+}
+
+/* High-Contrast Print Styles for Branded Printable A4 Sheet */
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 15mm 15mm 15mm 15mm;
+  }
+
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+    font-size: 11pt;
+  }
+
+  .katex {
+    color: #000000 !important;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  .print-only {
+    display: block !important;
+  }
+
+  .card-elevated {
+    box-shadow: none !important;
+    border: 1px solid #d1d5db !important;
+  }
+
+  .break-inside-avoid {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+}
