@@ -19,6 +19,7 @@ import {
   User,
   Attendance,
   SessionAttendanceStats,
+  Subject,
 } from '@/lib/dal/types';
 import {
   playSuccessChime,
@@ -42,6 +43,11 @@ import {
   type ReceptionEntryMode,
 } from '@/components/attendance/lesson-exam-score-panel';
 import { useReceptionLessonScores } from '@/lib/attendance/use-lesson-scores';
+import { useTeacherContracts } from '@/lib/teachers/client';
+import { matchTeacherContract, TEACHER_MODELS } from '@/lib/teachers/profile';
+import { calculateTeacherSessionPay, countTeacherSessionAttendance } from '@/lib/teachers/session-compensation';
+
+const currency = new Intl.NumberFormat('ar-EG', { style: 'currency', currency: 'EGP' });
 
 export default function ReceptionScanPage() {
   const { tenant, currentRole } = useTenant();
@@ -51,7 +57,7 @@ export default function ReceptionScanPage() {
   const [classrooms, setClassrooms] = useState<Classroom[]>([]);
   const [teachers, setTeachers] = useState<User[]>([]);
   const [allUsers, setAllUsers] = useState<User[]>([]);
-  const [subjects, setSubjects] = useState<Array<{ id: string; nameAr: string }>>([]);
+  const [subjects, setSubjects] = useState<Subject[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [enrolledStudents, setEnrolledStudents] = useState<User[]>([]);
@@ -82,6 +88,9 @@ export default function ReceptionScanPage() {
     sessions,
     groups,
   });
+
+  const { profiles: teacherContracts } = useTeacherContracts(tenant.id, tenant.slug,
+    ['CENTER_ADMIN', 'PLATFORM_OWNER', 'ACCOUNTANT'].includes(currentRole), lessonScores.auth.idToken);
 
   useEffect(() => {
     const timer = window.setInterval(() => setClock(cairoClock()), 1000);
@@ -134,7 +143,7 @@ export default function ReceptionScanPage() {
       setSessions(sess);
       setAllUsers(users);
       setTeachers(users.filter((u) => u.role === 'TEACHER'));
-      setSubjects(subs.map((s) => ({ id: s.id, nameAr: s.nameAr })));
+      setSubjects(subs);
 
     } catch {
       // transient load error
@@ -328,6 +337,16 @@ export default function ReceptionScanPage() {
   };
 
   // Find classroom capacity
+  const contract = selectedSession && matchTeacherContract(
+    teacherContracts.find(profile => profile.id === selectedSession.teacherId)?.contracts ?? [],
+    subjects.find(subject => subject.id === selectedGroup?.subjectId),
+  );
+  const liveAttendance = selectedSession ? countTeacherSessionAttendance(sessionAttendance, selectedSession) : 0;
+  const sessionRevenue = Math.round(liveAttendance * (selectedGroup?.sessionFee ?? 0) * 100) / 100;
+  const sessionPay = contract && contract.model !== 'private' && selectedSession && sessionStats?.sessionId === selectedSession.id &&
+    receptionSessionState(selectedSession, clock) === 'current'
+    ? calculateTeacherSessionPay(contract, selectedSession, liveAttendance, sessionRevenue, true) : undefined;
+
   const activeClassroom = useMemo(() => {
     if (!selectedSession) return null;
     return classrooms.find((c) => c.id === selectedSession.classroomId);
@@ -462,8 +481,20 @@ export default function ReceptionScanPage() {
         </div>
 
         {/* Live Circular Attendance Stats (5 cols) */}
-        <div className="lg:col-span-5">
+        <div className="space-y-4 lg:col-span-5">
           <LiveStatsRing stats={selectedSession ? sessionStats : null} capacity={activeClassroom?.capacity} />
+          {sessionPay && contract && <section className="card-elevated rounded-2xl border border-border p-4">
+            <h2 className="text-sm font-bold">حساب المعلم في الحصة</h2>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {contract.model === 'per_attendee' ? `${liveAttendance} حاضر × ${currency.format(contract.value)}` : TEACHER_MODELS[contract.model]}
+            </p>
+            <dl className="mt-3 grid grid-cols-3 gap-2 text-xs">
+              <div><dt className="text-muted-foreground">إجمالي رسوم الحصة</dt><dd className="font-bold">{currency.format(sessionRevenue)}</dd></div>
+              <div><dt className="text-muted-foreground">مستحق المعلم</dt><dd className="font-bold">{currency.format(sessionPay.teacherDue)}</dd></div>
+              <div><dt className="text-muted-foreground">صافي السنتر</dt><dd className="font-bold">{currency.format(sessionPay.centerNet)}</dd></div>
+            </dl>
+            <p className="mt-2 text-xs text-muted-foreground">تقدير حسب الحضور ورسوم الحصة المسجلة للمجموعة.</p>
+          </section>}
         </div>
       </div>
 

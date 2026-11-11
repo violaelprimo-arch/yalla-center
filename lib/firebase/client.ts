@@ -4,6 +4,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { initializeApp, getApps, getApp, type FirebaseApp } from 'firebase/app';
 import {
   getAuth,
+  GoogleAuthProvider,
+  signInWithPopup,
   onIdTokenChanged,
   signInWithEmailAndPassword,
   signOut,
@@ -90,6 +92,14 @@ export async function signInFirebaseStaff(email: string, password: string): Prom
   const credential = await signInWithEmailAndPassword(services.auth, email.trim(), password);
   const idToken = await credential.user.getIdToken(true);
   return { user: credential.user, idToken };
+}
+
+export async function signInFirebaseGoogle(): Promise<void> {
+  const services = getFirebaseClientServices();
+  if (!services) throw new Error('إعدادات Firebase Web غير مكتملة');
+  const provider = new GoogleAuthProvider();
+  provider.setCustomParameters({ prompt: 'select_account' });
+  await signInWithPopup(services.auth, provider);
 }
 
 export async function signOutFirebaseStaff(): Promise<void> {

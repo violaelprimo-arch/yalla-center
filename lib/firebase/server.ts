@@ -46,12 +46,11 @@ interface JwksCacheEntry {
 }
 
 let jwksCache: JwksCacheEntry | null = null;
-let serviceAccountTokenCache: { token: string; expiresAtMs: number; cacheKey: string } | null =
-  null;
+const serviceAccountTokenCache = new Map<string, { token: string; expiresAtMs: number }>();
 
 export function clearFirebaseServerCachesForTests(): void {
   jwksCache = null;
-  serviceAccountTokenCache = null;
+  serviceAccountTokenCache.clear();
 }
 
 export function getFirebaseProjectId(): string {
@@ -253,22 +252,20 @@ export async function verifyFirebaseIdToken(
   };
 }
 
-export async function getServiceAccountAccessToken(fetchImpl: typeof fetch = fetch): Promise<string | null> {
+export async function getServiceAccountAccessToken(
+  fetchImpl: typeof fetch = fetch,
+  scope = 'https://www.googleapis.com/auth/datastore'
+): Promise<string | null> {
   const clientEmail = process.env.FIREBASE_ADMIN_CLIENT_EMAIL?.trim() || '';
   const privateKey = process.env.FIREBASE_ADMIN_PRIVATE_KEY?.trim() || '';
   if (!clientEmail || !privateKey) {
     return null;
   }
 
-  const cacheKey = `${clientEmail}:${privateKey.length}`;
+  const cacheKey = `${clientEmail}:${privateKey.length}:${scope}`;
   const nowMs = Date.now();
-  if (
-    serviceAccountTokenCache &&
-    serviceAccountTokenCache.cacheKey === cacheKey &&
-    serviceAccountTokenCache.expiresAtMs > nowMs + 60_000
-  ) {
-    return serviceAccountTokenCache.token;
-  }
+  const cachedToken = serviceAccountTokenCache.get(cacheKey);
+  if (cachedToken && cachedToken.expiresAtMs > nowMs + 60_000) return cachedToken.token;
 
   const nowSec = Math.floor(nowMs / 1000);
   const headerB64 = stringToBase64Url(JSON.stringify({ alg: 'RS256', typ: 'JWT' }));
@@ -277,7 +274,7 @@ export async function getServiceAccountAccessToken(fetchImpl: typeof fetch = fet
       iss: clientEmail,
       sub: clientEmail,
       aud: GOOGLE_OAUTH_TOKEN_URL,
-      scope: 'https://www.googleapis.com/auth/datastore',
+      scope,
       iat: nowSec,
       exp: nowSec + 3600,
     })
@@ -314,11 +311,10 @@ export async function getServiceAccountAccessToken(fetchImpl: typeof fetch = fet
   }
 
   const expiresInSec = Number(tokenData.expires_in ?? 3600);
-  serviceAccountTokenCache = {
+  serviceAccountTokenCache.set(cacheKey, {
     token: tokenData.access_token,
     expiresAtMs: nowMs + expiresInSec * 1000,
-    cacheKey,
-  };
+  });
   return tokenData.access_token;
 }
 
@@ -335,12 +331,13 @@ export interface ILessonScoreStore {
 
 export async function createServerFirestoreStore(params: {
   callerIdToken: string;
+  requireServiceAccount?: boolean;
   fetchImpl?: typeof fetch;
 }): Promise<ILessonScoreStore> {
   const projectId = getFirebaseProjectId();
   const fetchImpl = params.fetchImpl ?? fetch;
   const adminToken = await getServiceAccountAccessToken(fetchImpl);
-  const accessToken = adminToken || params.callerIdToken;
+  const accessToken = adminToken || (params.requireServiceAccount ? null : params.callerIdToken);
 
   if (!projectId || !accessToken) {
     throw new FirebaseAuthError(

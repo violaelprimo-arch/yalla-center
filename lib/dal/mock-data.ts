@@ -1,3 +1,5 @@
+import { matchTeacherContract, type TeacherProfile } from '@/lib/teachers/profile';
+import { calculateTeacherSessionPay, countTeacherSessionAttendance } from '@/lib/teachers/session-compensation';
 import {
   Tenant,
   Branch,
@@ -1746,10 +1748,14 @@ export class MockDataProvider implements IDataProvider {
     teacherId: string;
     year: number;
     month: number;
+    teacherProfile?: Pick<TeacherProfile, 'id' | 'tenantId' | 'fullName' | 'phone' | 'contracts'>;
+    persistDraft?: boolean;
   }): Promise<TeacherMonthlyStatement> {
     const teacher = this.users.find((u) => u.id === params.teacherId && (!u.tenantId || u.tenantId === params.tenantId));
-    const teacherName = teacher?.fullName || 'معلم';
-    const teacherPhone = teacher?.phone;
+    const profile = params.teacherProfile?.id === params.teacherId && params.teacherProfile.tenantId === params.tenantId
+      ? params.teacherProfile : undefined;
+    const teacherName = profile?.fullName ?? teacher?.fullName ?? 'معلم';
+    const teacherPhone = profile?.phone ?? teacher?.phone;
 
     const teacherGroups = this.groups.filter(
       (g) => g.teacherId === params.teacherId && g.tenantId === params.tenantId
@@ -1762,8 +1768,36 @@ export class MockDataProvider implements IDataProvider {
       )
     );
 
-    // Center Subscription Groups
-    const centerGroups = teacherGroups.filter((g) => g.pricingModel === 'center');
+    const contractsByGroup = new Map(teacherGroups.map(group => [
+      group.id, matchTeacherContract(profile?.contracts ?? [], this.subjects.find(subject =>
+        subject.id === group.subjectId && subject.tenantId === params.tenantId)),
+    ]));
+    const monthKey = `${params.year}-${String(params.month).padStart(2, '0')}`;
+    const lessonRows: NonNullable<TeacherMonthlyStatement['lessonCompensation']>['sessions'] = [];
+    for (const group of teacherGroups) {
+      const contract = contractsByGroup.get(group.id);
+      if (!contract || contract.model === 'private') continue;
+      const sessions = this.sessions.filter(session => session.tenantId === params.tenantId &&
+        session.groupId === group.id && session.teacherId === params.teacherId &&
+        session.status === 'completed' && session.sessionDate.startsWith(monthKey + '-'));
+      for (const session of sessions) {
+        const attendanceCount = countTeacherSessionAttendance(this.attendance, session);
+        const revenue = Math.round(attendanceCount * group.sessionFee * 100) / 100;
+        lessonRows.push({
+          sessionId: session.id, sessionDate: session.sessionDate, groupName: group.nameAr,
+          attendanceCount, revenue, model: contract.model, rate: contract.value,
+          ...calculateTeacherSessionPay(contract, session, attendanceCount, revenue),
+        });
+      }
+    }
+    const totalLessonCompensation = lessonRows.reduce((sum, session) => sum + Math.round(session.teacherDue * 100), 0) / 100;
+    const lessonCompensation = lessonRows.length ? {
+      sessions: lessonRows.sort((a, b) => a.sessionDate.localeCompare(b.sessionDate)),
+      totalCompensation: totalLessonCompensation,
+    } : undefined;
+
+    // Legacy contracts retain their calculation until replaced for that grade.
+    const centerGroups = teacherGroups.filter(g => !contractsByGroup.get(g.id) && g.pricingModel === 'center');
     let totalCenterCompensation = 0;
     const centerGroupStatements = centerGroups.map((group) => {
       const rateObj = this.teacherRates.find((r) => r.teacherId === params.teacherId && r.model === 'center');
@@ -1810,7 +1844,10 @@ export class MockDataProvider implements IDataProvider {
     });
 
     // Private Lessons Groups
-    const privateGroups = teacherGroups.filter((g) => g.pricingModel === 'private');
+    const privateGroups = teacherGroups.filter(group => {
+      const contract = contractsByGroup.get(group.id);
+      return contract ? contract.model === 'private' : group.pricingModel === 'private';
+    });
     let totalInvoicedTeacherShare = 0;
     let totalCollectedTeacherShare = 0;
     let totalCenterShare = 0;
@@ -1818,7 +1855,8 @@ export class MockDataProvider implements IDataProvider {
 
     const privateGroupStatements = privateGroups.map((group) => {
       const rateObj = this.teacherRates.find((r) => r.teacherId === params.teacherId && r.model === 'private');
-      const teacherPct = rateObj?.teacherPercentage ?? 70.0;
+      const configuredContract = contractsByGroup.get(group.id);
+      const teacherPct = configuredContract?.value ?? rateObj?.teacherPercentage ?? 70.0;
       const centerPct = 100 - teacherPct;
 
       const enrollments = this.enrollments.filter((e) => e.groupId === group.id && e.isActive);
@@ -1834,7 +1872,8 @@ export class MockDataProvider implements IDataProvider {
         const teacherShare = Math.round(discount.netPrice * (teacherPct / 100) * 100) / 100;
         const centerShare = Math.round((discount.netPrice - teacherShare) * 100) / 100;
 
-        const invoice = this.invoices.find((inv) => inv.studentId === e.studentId && inv.groupId === group.id);
+        const invoice = this.invoices.find(inv => inv.studentId === e.studentId && inv.groupId === group.id &&
+          (!configuredContract || (inv.billingMonth === params.month && inv.billingYear === params.year && inv.status !== 'void')));
         const collectedAmount = invoice ? invoice.paidAmount : 0.0;
 
         return {
@@ -1891,33 +1930,49 @@ export class MockDataProvider implements IDataProvider {
     );
     const totalAdvances = advances.reduce((acc, a) => acc + a.amount, 0);
 
-    const grossCompensation = Math.round((totalCenterCompensation + totalInvoicedTeacherShare) * 100) / 100;
-    const grossCollectedCompensation = Math.round((totalCenterCompensation + totalCollectedTeacherShare) * 100) / 100;
+    const grossCompensation = Math.round((totalCenterCompensation + totalLessonCompensation + totalInvoicedTeacherShare) * 100) / 100;
+    const grossCollectedCompensation = Math.round((totalCenterCompensation + totalLessonCompensation + totalCollectedTeacherShare) * 100) / 100;
     const netPayrollInvoiced = Math.max(0, Math.round((grossCompensation - totalAdvances) * 100) / 100);
     const netPayrollCollected = Math.max(0, Math.round((grossCollectedCompensation - totalAdvances) * 100) / 100);
 
     let payrollRecord = this.teacherPayroll.find(
       (p) => p.tenantId === params.tenantId && p.teacherId === params.teacherId && p.payrollYear === params.year && p.payrollMonth === params.month
     );
-    if (!payrollRecord) {
+    const conductedSessions = centerGroupStatements.reduce((acc, g) => acc + g.conductedSessionsCount, 0) + lessonRows.length;
+    const totalAttendance = centerGroupStatements.reduce((acc, g) => acc + g.totalValidAttendance, 0) +
+      lessonRows.reduce((acc, lesson) => acc + lesson.attendanceCount, 0);
+    const averageAttendance = conductedSessions > 0 ? Math.round(totalAttendance * 100 / conductedSessions) / 100 : 0;
+
+    if (!payrollRecord && params.persistDraft !== false) {
       payrollRecord = {
         id: `payr-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
         tenantId: params.tenantId,
         teacherId: params.teacherId,
         payrollMonth: params.month,
         payrollYear: params.year,
-        conductedSessions: centerGroupStatements.reduce((acc, g) => acc + g.conductedSessionsCount, 0),
-        totalAttendance: centerGroupStatements.reduce((acc, g) => acc + g.totalValidAttendance, 0),
-        averageAttendance: centerGroupStatements[0]?.averageAttendance || 0,
+        conductedSessions,
+        totalAttendance,
+        averageAttendance,
         calculatedCompensation: grossCompensation,
         bonuses: 0,
         deductions: totalAdvances,
         netPayroll: netPayrollInvoiced,
+        lessonCompensation,
         status: 'draft',
         createdAt: new Date().toISOString(),
       };
       this.teacherPayroll.push(payrollRecord);
+    } else if (payrollRecord && (payrollRecord.status === 'draft' || payrollRecord.status === 'reviewed') && profile && params.persistDraft !== false) {
+      Object.assign(payrollRecord, {
+        conductedSessions, totalAttendance, averageAttendance,
+        calculatedCompensation: grossCompensation,
+        deductions: totalAdvances,
+        netPayroll: Math.round((netPayrollInvoiced + payrollRecord.bonuses) * 100) / 100,
+        lessonCompensation,
+      });
     }
+    const locked = profile && payrollRecord && (payrollRecord.status === 'approved' || payrollRecord.status === 'paid')
+      ? payrollRecord : undefined;
 
     return {
       tenantId: params.tenantId,
@@ -1938,6 +1993,7 @@ export class MockDataProvider implements IDataProvider {
         totalCenterShare: Math.round(totalCenterShare * 100) / 100,
         totalRoundingLeakage: Math.round(totalRoundingLeakage * 100) / 100,
       },
+      lessonCompensation: locked ? locked.lessonCompensation : lessonCompensation,
       adjustments: {
         advances,
         totalAdvances,
@@ -1947,13 +2003,13 @@ export class MockDataProvider implements IDataProvider {
         totalDeductions: 0,
       },
       summary: {
-        grossCompensation,
-        grossCollectedCompensation,
-        totalAdvances,
-        totalBonuses: 0,
+        grossCompensation: locked?.calculatedCompensation ?? grossCompensation,
+        grossCollectedCompensation: locked?.calculatedCompensation ?? grossCollectedCompensation,
+        totalAdvances: locked?.deductions ?? totalAdvances,
+        totalBonuses: locked?.bonuses ?? 0,
         totalDeductions: 0,
-        netPayrollInvoiced,
-        netPayrollCollected,
+        netPayrollInvoiced: locked?.netPayroll ?? netPayrollInvoiced,
+        netPayrollCollected: locked?.netPayroll ?? netPayrollCollected,
         payrollRecord,
       },
     };

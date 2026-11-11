@@ -204,6 +204,21 @@ export interface TeacherRate {
   splitPercentage?: number;
 }
 
+export interface TeacherLessonCompensation {
+  sessions: Array<{
+    sessionId: string;
+    sessionDate: string;
+    groupName: string;
+    attendanceCount: number;
+    model: 'fixed_session' | 'per_attendee';
+    rate: number;
+    revenue: number;
+    teacherDue: number;
+    centerNet: number;
+  }>;
+  totalCompensation: number;
+}
+
 export interface TeacherPayroll {
   id: string;
   tenantId: string;
@@ -217,6 +232,7 @@ export interface TeacherPayroll {
   bonuses: number;
   deductions: number;
   netPayroll: number;
+  lessonCompensation?: TeacherLessonCompensation;
   status: PayrollStatus;
   approvedByUserId?: string;
   approvedAt?: string;
@@ -457,6 +473,7 @@ export interface TeacherMonthlyStatement {
     totalCenterShare: number;
     totalRoundingLeakage: number;
   };
+  lessonCompensation?: TeacherLessonCompensation;
   adjustments: {
     advances: TeacherAdvance[];
     totalAdvances: number;

@@ -1,3 +1,4 @@
+import type { TeacherProfile } from '@/lib/teachers/profile';
 import {
   Tenant,
   Branch,
@@ -187,6 +188,8 @@ export interface IDataProvider {
     teacherId: string;
     year: number;
     month: number;
+    teacherProfile?: Pick<TeacherProfile, 'id' | 'tenantId' | 'fullName' | 'phone' | 'contracts'>;
+    persistDraft?: boolean;
   }): Promise<TeacherMonthlyStatement>;
   approveTeacherPayroll(
     payrollId: string,

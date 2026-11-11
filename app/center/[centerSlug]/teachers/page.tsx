@@ -1,386 +1,304 @@
 'use client';
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import Link from 'next/link';
 import {
-  Briefcase,
-  Users,
-  Search,
-  Filter,
-  DollarSign,
-  Layers,
-  Edit3,
-  FileText,
-  AlertTriangle,
-  CheckCircle2,
-  Lock,
-  X,
-  Phone,
-  Calendar,
-  Percent,
+  AlertTriangle, Briefcase, CheckCircle2, Edit3, FileText, Phone, Plus, Search, Trash2, Users, X,
 } from 'lucide-react';
 import { useTenant } from '@/components/layout/tenant-provider';
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
+import { TeacherEditor } from '@/components/teachers/teacher-editor';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { getDataProvider } from '@/lib/dal/factory';
+import type { IDataProvider } from '@/lib/dal';
+import type { Group, PricingModel, Subject, TeacherRate, User, UserRole } from '@/lib/dal/types';
+import { useFirebaseAuthSession } from '@/lib/firebase/client';
+import { readDemoTeacherProfiles, teacherApi, writeDemoTeacherProfile } from '@/lib/teachers/client';
 import {
-  User,
-  Group,
-  TeacherRate,
-  Subject,
-  PricingModel,
-  UserRole,
-} from '@/lib/dal/types';
+  describeTeacherLevel, teacherInputFrom, teacherProfileUser, TEACHER_MODELS,
+  type ExtraSessionRequest, type TeacherInput, type TeacherProfile,
+} from '@/lib/teachers/profile';
+
+interface DirectoryData {
+  profiles: TeacherProfile[];
+  requests: ExtraSessionRequest[];
+}
+
+interface EditorState {
+  id: string;
+  teacher?: User;
+  profile?: TeacherProfile;
+}
+
+const emptyDirectory: DirectoryData = { profiles: [], requests: [] };
+const control = 'rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-cyan-500';
 
 export default function TeachersDirectoryPage() {
-  const { tenant, currentUser, currentRole } = useTenant();
-  const dal = useMemo(() => getDataProvider(), []);
+  const { tenant } = useTenant();
+  return <TeachersDirectory key={tenant.id} />;
+}
 
-  const [teachers, setTeachers] = useState<User[]>([]);
-  const [groups, setGroups] = useState<Group[]>([]);
-  const [subjects, setSubjects] = useState<Subject[]>([]);
-  const [rates, setRates] = useState<TeacherRate[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-
-  // Search & Filter
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedModel, setSelectedModel] = useState<string>('all');
-
-  // Modals
-  const [selectedTeacherForRate, setSelectedTeacherForRate] = useState<User | null>(null);
-
-  const isTeacherRole = currentRole === 'TEACHER';
-
-  const loadData = useCallback(async () => {
-    setIsLoading(true);
-    try {
-      const [allUsers, allGroups, allSubjects, allRates] = await Promise.all([
-        dal.getUsers(tenant.id, { role: 'TEACHER' }),
-        dal.getGroups(tenant.id),
-        dal.getSubjects(tenant.id),
-        dal.getTeacherRates(tenant.id),
-      ]);
-      setTeachers(allUsers);
-      setGroups(allGroups);
-      setSubjects(allSubjects);
-      setRates(allRates);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [dal, tenant.id]);
+function TeachersDirectory() {
+  const { tenant, currentRole } = useTenant();
+  const dal = useMemo(getDataProvider, []);
+  const auth = useFirebaseAuthSession();
+  const demo = !auth.configured;
+  const mayManageDemo = currentRole === 'PLATFORM_OWNER' || currentRole === 'CENTER_ADMIN';
+  const [catalog, setCatalog] = useState<{ users: User[]; groups: Group[]; subjects: Subject[]; rates: TeacherRate[] }>();
+  const [directory, setDirectory] = useState<{ token: string | null; data: DirectoryData }>();
+  const [editor, setEditor] = useState<EditorState>();
+  const [legacyRate, setLegacyRate] = useState<{ teacher: User; rate: TeacherRate }>();
+  const [query, setQuery] = useState('');
+  const [model, setModel] = useState('all');
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [revision, setRevision] = useState(0);
+  const [archiving, setArchiving] = useState<string>();
 
   useEffect(() => {
-    loadData();
-  }, [loadData]);
+    let active = true;
+    Promise.all([
+      dal.getUsers(tenant.id, { role: 'TEACHER' }), dal.getGroups(tenant.id),
+      dal.getSubjects(tenant.id), dal.getTeacherRates(tenant.id),
+    ]).then(([users, groups, subjects, rates]) => {
+      if (active) setCatalog({ users: users.filter(user => user.tenantId === tenant.id), groups, subjects, rates });
+    }).catch(() => { if (active) setError('تعذّر تحميل دليل المعلمين والمواد'); });
+    return () => { active = false; };
+  }, [dal, tenant.id, revision]);
 
-  // Filtered teachers list (if logged in as Teacher, AC-6 allows viewing self or read-only directory)
-  const filteredTeachers = useMemo(() => {
-    return teachers.filter((t) => {
-      // If logged in as Teacher, they may only see their own row if strictly restricted,
-      // or view directory in read-only mode with action buttons locked
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase();
-        const matchesName = t.fullName.toLowerCase().includes(q);
-        const matchesPhone = t.phone?.includes(q);
-        if (!matchesName && !matchesPhone) return false;
+  useEffect(() => {
+    if (demo) {
+      if (!mayManageDemo) return;
+      try {
+        setDirectory({ token: null, data: { profiles: readDemoTeacherProfiles(tenant.id), requests: [] } });
+      } catch {
+        setError('تعذّر تحميل بيانات المعلمين على هذا المتصفح');
       }
+      return;
+    }
+    const token = auth.idToken;
+    if (!token) return;
+    const request = new AbortController();
+    setError('');
+    teacherApi<DirectoryData>(tenant.slug, token, '', undefined, request.signal)
+      .then(data => setDirectory({ token, data }))
+      .catch(cause => { if (!request.signal.aborted) setError(cause.message); });
+    return () => request.abort();
+  }, [demo, mayManageDemo, auth.idToken, tenant.id, tenant.slug, revision]);
 
-      if (selectedModel !== 'all') {
-        const teacherRate = rates.find((r) => r.teacherId === t.id);
-        if (teacherRate && teacherRate.model !== selectedModel) return false;
-      }
+  const authorized = demo ? mayManageDemo : Boolean(auth.idToken && directory?.token === auth.idToken);
+  const data = authorized ? directory?.data ?? emptyDirectory : emptyDirectory;
+  const teachers = useMemo(() => {
+    if (!authorized || !catalog) return [];
+    const byId = new Map(catalog.users.map(user => [user.id, { teacher: user, profile: undefined as TeacherProfile | undefined }]));
+    for (const profile of data.profiles) {
+      byId.set(profile.id, { profile, teacher: teacherProfileUser(profile, byId.get(profile.id)?.teacher) });
+    }
+    return [...byId.values()].filter(({ teacher }) => teacher.isActive);
+  }, [catalog, data.profiles, authorized]);
 
-      return true;
-    });
-  }, [teachers, searchQuery, selectedModel, rates]);
+  const visibleTeachers = teachers.filter(({ teacher, profile }) => {
+    const search = query.trim().toLowerCase();
+    const found = !search || [teacher.fullName, teacher.phone, profile?.phone2].some(value => value?.toLowerCase().includes(search));
+    const rates = catalog?.rates.filter(rate => rate.teacherId === teacher.id && rate.isActive) ?? [];
+    const hasModel = profile?.contracts.length
+      ? profile.contracts.some(contract => contract.model === model)
+      : rates.some(rate => rate.model === model);
+    return found && (model === 'all' || hasModel);
+  });
 
-  // KPIs
-  const totalTeachers = teachers.length;
-  const centerGroupsCount = groups.filter((g) => g.pricingModel === 'center').length;
-  const privateGroupsCount = groups.filter((g) => g.pricingModel === 'private').length;
-  const avgCenterRate = useMemo(() => {
-    const centerRates = rates.filter((r) => r.model === 'center' && r.fixedRatePerStudent > 0);
-    if (centerRates.length === 0) return 20;
-    const sum = centerRates.reduce((acc, r) => acc + r.fixedRatePerStudent, 0);
-    return Math.round(sum / centerRates.length);
-  }, [rates]);
+  async function persistTeacher(id: string, version: number, input: TeacherInput, password?: string, archive = false) {
+    if (!authorized) throw new Error('يلزم حساب إدارة السنتر');
+    const profile = demo
+      ? { ...input, id, tenantId: tenant.id, active: !archive, version: version + 1, updatedAt: new Date().toISOString() }
+      : (await teacherApi<{ profile: TeacherProfile }>(tenant.slug, auth.idToken!, '', archive
+        ? { action: 'archive', id, version }
+        : { action: 'save', id, version, input, password })).profile;
+    if (demo) {
+      setDirectory({ token: null, data: { profiles: writeDemoTeacherProfile(profile), requests: [] } });
+    } else {
+      setDirectory(previous => previous?.token === auth.idToken ? {
+        ...previous,
+        data: { ...previous.data, profiles: [...previous.data.profiles.filter(record => record.id !== id), profile] },
+      } : previous);
+    }
+  }
+
+  async function archiveTeacher(teacher: User, profile?: TeacherProfile) {
+    if (!window.confirm(`حذف ${teacher.fullName} من قائمة المعلمين وإيقاف دخوله؟ سجل الحصص والحسابات هيفضل متاح للإدارة.`)) return;
+    setArchiving(teacher.id);
+    setNotice('');
+    setError('');
+    try {
+      await persistTeacher(teacher.id, profile?.version ?? 0, teacherInputFrom(profile, teacher, catalog?.groups), undefined, true);
+      setNotice('تم حذف المعلم من القائمة وإيقاف دخوله إلى البوابة');
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'تعذّر حذف المعلم');
+    } finally {
+      setArchiving(undefined);
+    }
+  }
 
   return (
     <div className="space-y-6" dir="rtl">
-      {/* Page Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-border">
+      <header className="flex flex-wrap items-end justify-between gap-4 border-b border-border pb-4">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-black text-foreground flex items-center gap-2">
-            <Briefcase className="w-8 h-8 text-brand-cyan-600" />
-            <span>شؤون المعلمين وأسعار التعاقد</span>
+          <h1 className="flex items-center gap-2 text-2xl font-black sm:text-3xl">
+            <Briefcase className="text-brand-cyan-600" size={29} /> شؤون المعلمين
           </h1>
-          <p className="text-xs sm:text-sm text-muted-foreground mt-1">
-            سجل هيئة التدريس، ضبط نماذج التسعير (سنتر / برايفت)، ومعدلات الأجر الثابت ونسب التقاسم في {tenant.nameAr}.
-          </p>
+          <p className="mt-1 text-sm text-muted-foreground">{tenant.nameAr} · بيانات المعلمين والتعاقدات والصلاحيات</p>
         </div>
-      </div>
-
-      {/* AC-6 Security Lockout Banner for Teachers */}
-      {isTeacherRole && (
-        <div className="p-4 bg-amber-500/10 border border-amber-500/30 rounded-2xl flex items-center gap-3 text-xs sm:text-sm text-amber-800 dark:text-amber-300">
-          <Lock className="w-5 h-5 shrink-0 text-amber-600" />
-          <div>
-            <p className="font-bold">وضع العرض المقيد للمعلم (AC-6 Security Enforcement):</p>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              بصفتك معلماً، أسعار التعاقد ونسب التقاسم للقراءة فقط. تعديل العقود مقتصر حصراً على إدارة السنتر والمحاسب.
-            </p>
-          </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Link href={`/teacher/${tenant.slug}`} className="rounded-xl border border-border px-3 py-2 text-sm hover:bg-muted">بوابة دخول المعلمين</Link>
+          {authorized && catalog && <Button onClick={() => { setNotice(''); setEditor({ id: `teacher-${crypto.randomUUID()}` }); }}>
+            <Plus size={17} /> إضافة معلم جديد
+          </Button>}
         </div>
-      )}
+      </header>
 
-      {/* 4 Summary Metric Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card className="card-elevated border-border">
-          <CardContent className="p-5 flex items-center justify-between">
-            <div>
-              <p className="text-xs text-muted-foreground font-semibold">إجمالي المعلمين النشطين</p>
-              <h3 className="text-2xl font-black text-foreground mt-1">{totalTeachers}</h3>
-              <p className="text-[11px] text-brand-cyan-600 font-medium mt-1">هيئة التدريس المعتمدة</p>
-            </div>
-            <div className="w-12 h-12 rounded-2xl bg-brand-cyan-500/10 text-brand-cyan-600 flex items-center justify-center">
-              <Users className="w-6 h-6" />
-            </div>
-          </CardContent>
-        </Card>
+      {error && <p role="alert" className="rounded-xl border border-red-500/25 bg-red-500/10 p-3 text-sm text-red-700 dark:text-red-300">
+        {error}
+        {auth.idToken && <button className="ms-3 underline" type="button" onClick={() => setRevision(value => value + 1)}>إعادة التحميل</button>}
+      </p>}
+      {notice && <p role="status" className="rounded-xl bg-emerald-500/10 p-3 text-sm text-emerald-700 dark:text-emerald-300">{notice}</p>}
 
-        <Card className="card-elevated border-border">
-          <CardContent className="p-5 flex items-center justify-between">
-            <div>
-              <p className="text-xs text-muted-foreground font-semibold">مجموعات نظام السنتر</p>
-              <h3 className="text-2xl font-black text-foreground mt-1">{centerGroupsCount}</h3>
-              <p className="text-[11px] text-teal-600 font-medium mt-1">محاسبة متوسط الحضور</p>
-            </div>
-            <div className="w-12 h-12 rounded-2xl bg-teal-500/10 text-teal-600 flex items-center justify-center">
-              <Layers className="w-6 h-6" />
-            </div>
-          </CardContent>
-        </Card>
+      {!demo && !auth.idToken && (!auth.loading || auth.error) && <StaffLogin signIn={auth.signIn} failedLogin={Boolean(auth.error)} />}
+      {!demo && auth.idToken && <button type="button" onClick={() => void auth.signOut()} className="text-sm text-muted-foreground underline">
+        تسجيل خروج حساب الإدارة
+      </button>}
+      {demo && !mayManageDemo && <p className="text-sm text-muted-foreground">إدارة المعلمين متاحة لمدير السنتر ومالك المنصة.</p>}
+      {(auth.loading || (!catalog && authorized) || (auth.idToken && !authorized && !error)) && <p role="status" className="text-sm text-muted-foreground">جارٍ تحميل المعلمين…</p>}
 
-        <Card className="card-elevated border-border">
-          <CardContent className="p-5 flex items-center justify-between">
-            <div>
-              <p className="text-xs text-muted-foreground font-semibold">مجموعات نظام البرايفت</p>
-              <h3 className="text-2xl font-black text-purple-600 mt-1">{privateGroupsCount}</h3>
-              <p className="text-[11px] text-purple-600 font-medium mt-1">تقاسم نسب الإيرادات</p>
+      {authorized && catalog && <>
+        <section className="card-elevated rounded-2xl border border-border p-4">
+          <div className="flex flex-wrap items-center gap-3">
+            <Badge variant="cyan" className="gap-1"><Users size={14} /> {teachers.length} معلم نشط</Badge>
+            {demo && <span className="text-xs text-muted-foreground">نسخة تجريبية · الحفظ على هذا المتصفح</span>}
+            <div className="relative min-w-52 flex-1">
+              <Search size={16} className="absolute end-3 top-3 text-muted-foreground" />
+              <input aria-label="بحث المعلمين" placeholder="بحث بالاسم أو رقم الهاتف" className={control + ' w-full pe-10'}
+                value={query} onChange={event => setQuery(event.target.value)} />
             </div>
-            <div className="w-12 h-12 rounded-2xl bg-purple-500/10 text-purple-600 flex items-center justify-center">
-              <Percent className="w-6 h-6" />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="card-elevated border-border">
-          <CardContent className="p-5 flex items-center justify-between">
-            <div>
-              <p className="text-xs text-muted-foreground font-semibold">متوسط أجر الطالب للسنتر</p>
-              <h3 className="text-2xl font-black text-amber-500 mt-1">
-                {avgCenterRate} <span className="text-xs">ج.م</span>
-              </h3>
-              <p className="text-[11px] text-amber-600 font-medium mt-1">لكل طالب بالحصة</p>
-            </div>
-            <div className="w-12 h-12 rounded-2xl bg-amber-500/10 text-amber-600 flex items-center justify-center">
-              <DollarSign className="w-6 h-6" />
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Filter and Search Bar */}
-      <Card className="card-elevated border-border">
-        <CardContent className="p-4">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div className="relative sm:col-span-2">
-              <Search className="w-4 h-4 absolute right-3 top-3 text-muted-foreground" />
-              <input
-                type="text"
-                placeholder="بحث بالاسم أو رقم الهاتف..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-3 pr-9 py-2 text-xs sm:text-sm bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-cyan-500"
-              />
-            </div>
-
-            <div>
-              <select
-                value={selectedModel}
-                onChange={(e) => setSelectedModel(e.target.value)}
-                className="w-full px-3 py-2 text-xs sm:text-sm bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-cyan-500"
-              >
-                <option value="all">كل نماذج التعاقد</option>
-                <option value="center">نظام السنتر (أجر ثابت)</option>
-                <option value="private">نظام البرايفت (نسبة مئوية)</option>
-              </select>
-            </div>
+            <select aria-label="طريقة التعاقد" className={control} value={model} onChange={event => setModel(event.target.value)}>
+              <option value="all">كل طرق الحساب</option>
+              <option value="center">متوسط الحضور · عقود سابقة</option>
+              {Object.entries(TEACHER_MODELS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+            </select>
           </div>
-        </CardContent>
-      </Card>
+        </section>
 
-      {/* Teachers Directory Table */}
-      <Card className="card-elevated border-border overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-right text-xs sm:text-sm">
-            <thead className="bg-muted/50 border-b border-border text-muted-foreground font-bold">
+        <div className="card-elevated overflow-x-auto rounded-2xl border border-border">
+          <table className="min-w-[780px] w-full text-start text-sm">
+            <thead className="bg-muted/50 text-muted-foreground">
               <tr>
-                <th className="py-3 px-4">المعلم</th>
-                <th className="py-3 px-4">المواد والمراحل</th>
-                <th className="py-3 px-4">المجموعات النشطة</th>
-                <th className="py-3 px-4">نموذج التعاقد السائد</th>
-                <th className="py-3 px-4">سعر التعاقد المعتمد</th>
-                <th className="py-3 px-4 text-center">الإجراءات</th>
+                <th className="p-4 text-start">المعلم</th>
+                <th className="p-4 text-start">المواد والمجموعات</th>
+                <th className="p-4 text-start">العقود حسب المرحلة أو الصف</th>
+                <th className="p-4 text-start">الإجراءات</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {filteredTeachers.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="py-12 text-center text-muted-foreground">
-                    <Briefcase className="w-10 h-10 mx-auto text-muted-foreground/40 mb-2" />
-                    <p className="font-bold">لا يوجد معلمون مطابقون للبحث</p>
+              {!visibleTeachers.length && <tr><td colSpan={4} className="p-10 text-center text-muted-foreground">لا يوجد معلمون مطابقون للبحث</td></tr>}
+              {visibleTeachers.map(({ teacher, profile }) => {
+                const groups = catalog.groups.filter(group => group.teacherId === teacher.id && group.isActive);
+                const subjectIds = new Set([...(profile?.subjectIds ?? []), ...groups.map(group => group.subjectId)]);
+                const subjects = catalog.subjects.filter(subject => subjectIds.has(subject.id));
+                const rate = catalog.rates.find(item => item.teacherId === teacher.id && item.isActive);
+                return <tr key={teacher.id} className="hover:bg-muted/20">
+                  <td className="p-4">
+                    <div className="flex items-center gap-3">
+                      <img className="size-11 rounded-xl border border-border object-cover" alt=""
+                        src={teacher.avatarUrl || '/brand/yalla-center-icon.png'} />
+                      <div>
+                        <p className="font-bold">{teacher.fullName}</p>
+                        {[teacher.phone, profile?.phone2].filter(Boolean).map(phone => <p key={phone} className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
+                          <Phone size={12} /> <span dir="ltr">{phone}</span>
+                        </p>)}
+                      </div>
+                    </div>
                   </td>
-                </tr>
-              ) : (
-                filteredTeachers.map((teacher) => {
-                  const teacherGroups = groups.filter((g) => g.teacherId === teacher.id);
-                  const teacherRate = rates.find((r) => r.teacherId === teacher.id);
-                  const subjectNames = Array.from(
-                    new Set(
-                      teacherGroups
-                        .map((g) => subjects.find((s) => s.id === g.subjectId)?.nameAr)
-                        .filter(Boolean)
-                    )
-                  );
-
-                  return (
-                    <tr key={teacher.id} className="hover:bg-muted/30 transition-colors">
-                      {/* Teacher Identity */}
-                      <td className="py-3 px-4">
-                        <div className="flex items-center gap-3">
-                          <img
-                            src={teacher.avatarUrl || '/brand/yalla-center-icon.png'}
-                            alt={teacher.fullName}
-                            className="w-10 h-10 rounded-xl object-cover border border-border shadow-sm"
-                          />
-                          <div>
-                            <p className="font-bold text-foreground text-sm">{teacher.fullName}</p>
-                            {teacher.phone && (
-                              <p className="text-[11px] text-muted-foreground flex items-center gap-1 mt-0.5">
-                                <Phone className="w-3 h-3 text-brand-cyan-600" />
-                                {teacher.phone}
-                              </p>
-                            )}
-                          </div>
-                        </div>
-                      </td>
-
-                      {/* Subjects & Stages */}
-                      <td className="py-3 px-4">
-                        <div className="flex flex-wrap gap-1">
-                          {subjectNames.length === 0 ? (
-                            <span className="text-muted-foreground text-xs">عام</span>
-                          ) : (
-                            subjectNames.map((s, i) => (
-                              <Badge key={i} variant="outline" className="text-[11px] font-semibold">
-                                {s}
-                              </Badge>
-                            ))
-                          )}
-                        </div>
-                      </td>
-
-                      {/* Active Groups */}
-                      <td className="py-3 px-4">
-                        <Badge variant="cyan" className="font-bold">
-                          {teacherGroups.length} مجموعات
-                        </Badge>
-                      </td>
-
-                      {/* Compensation Model Badge */}
-                      <td className="py-3 px-4">
-                        {teacherRate?.model === 'private' ? (
-                          <Badge variant="outline" className="bg-purple-500/10 text-purple-600 border-purple-500/30">
-                            نظام البرايفت
-                          </Badge>
-                        ) : (
-                          <Badge variant="outline" className="bg-teal-500/10 text-teal-600 border-teal-500/30">
-                            نظام السنتر
-                          </Badge>
-                        )}
-                      </td>
-
-                      {/* Contractual Rate Value */}
-                      <td className="py-3 px-4 font-mono font-bold">
-                        {teacherRate?.model === 'private' ? (
-                          <span className="text-purple-600">
-                            {teacherRate.teacherPercentage || 70}% معلم / {teacherRate.centerPercentage || 30}% سنتر
-                          </span>
-                        ) : (
-                          <span className="text-teal-600">
-                            {(teacherRate?.fixedRatePerStudent || 20).toFixed(2)} ج.م / طالب
-                          </span>
-                        )}
-                      </td>
-
-                      {/* Actions */}
-                      <td className="py-3 px-4 text-center">
-                        <div className="flex items-center justify-center gap-2">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            disabled={isTeacherRole}
-                            onClick={() => setSelectedTeacherForRate(teacher)}
-                            className="h-8 px-2.5 text-xs gap-1 border-border disabled:opacity-40"
-                            title={isTeacherRole ? 'تعديل الأسعار محظور على المعلمين (AC-6)' : 'تعديل أسعار التعاقد'}
-                          >
-                            <Edit3 className="w-3.5 h-3.5 text-brand-cyan-600" />
-                            <span>تعديل الأسعار</span>
-                          </Button>
-
-                          <a
-                            href={`/center/${tenant.slug}/finance?tab=payroll&teacherId=${teacher.id}`}
-                            className="inline-flex items-center justify-center h-8 px-2.5 text-xs gap-1 rounded-md border border-border bg-background hover:bg-muted text-foreground transition-colors font-medium"
-                          >
-                            <FileText className="w-3.5 h-3.5 text-amber-500" />
-                            <span>كشف الحساب</span>
-                          </a>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
+                  <td className="p-4">
+                    <div className="flex flex-wrap gap-1">{subjects.map(subject => <Badge key={subject.id} variant="outline">{subject.nameAr}</Badge>)}</div>
+                    <p className="mt-1 text-xs text-muted-foreground">{groups.length} مجموعات نشطة</p>
+                  </td>
+                  <td className="p-4">
+                    {profile?.contracts.length ? <ul className="space-y-1 text-xs">
+                      {profile.contracts.map(contract => <li key={contract.level}>
+                        <b>{describeTeacherLevel(contract.level)}</b><br />
+                        {TEACHER_MODELS[contract.model]} · {contract.value}{contract.model === 'private' ? '%' : ' ج.م'}
+                      </li>)}
+                    </ul> : rate ? <span className="text-xs text-muted-foreground">{rate.model === 'private'
+                      ? `برايفت · ${rate.teacherPercentage}% للمعلم`
+                      : `متوسط الحضور · ${rate.fixedRatePerStudent} ج.م`}</span> : <span className="text-xs text-muted-foreground">لم يُحدد</span>}
+                  </td>
+                  <td className="p-4">
+                    <div className="flex flex-wrap gap-1.5">
+                      <Button variant="outline" size="sm" onClick={() => setEditor({ id: teacher.id, teacher, profile })}><Edit3 size={14} /> تعديل</Button>
+                      <Button variant="ghost" size="sm" className="text-red-600 dark:text-red-400" disabled={Boolean(archiving)}
+                        onClick={() => void archiveTeacher(teacher, profile)}><Trash2 size={14} /> {archiving === teacher.id ? 'جارٍ الحذف…' : 'حذف'}</Button>
+                      <Link href={`/center/${tenant.slug}/finance?tab=payroll&teacherId=${encodeURIComponent(teacher.id)}`}
+                        className="inline-flex h-8 items-center gap-1 rounded-lg border border-border px-2 text-xs hover:bg-muted"><FileText size={14} /> كشف الحساب</Link>
+                      {demo && rate && !profile?.contracts.length && <Button variant="ghost" size="sm" onClick={() => setLegacyRate({ teacher, rate })}>العقد السابق</Button>}
+                    </div>
+                  </td>
+                </tr>;
+              })}
             </tbody>
           </table>
         </div>
-      </Card>
 
-      {/* Modal: Teacher Rate Configuration */}
-      {selectedTeacherForRate && (
-        <TeacherRateModal
-          tenantId={tenant.id}
-          teacher={selectedTeacherForRate}
-          currentRate={rates.find((r) => r.teacherId === selectedTeacherForRate.id)}
-          currentRole={currentRole}
-          onClose={() => setSelectedTeacherForRate(null)}
-          onSuccess={() => {
-            setSelectedTeacherForRate(null);
-            loadData();
-          }}
-          dal={dal}
-        />
-      )}
+        {data.requests.length > 0 && <section className="card-elevated space-y-3 rounded-2xl border border-border p-4">
+          <h2 className="font-bold">طلبات المحاضرات الإضافية</h2>
+          <ul className="divide-y divide-border text-sm">
+            {data.requests.map(request => <li key={request.teacherId + request.id} className="py-2">
+              <b>{request.teacherName}</b> · {request.groupName} · <span dir="ltr">{request.date} {request.time}</span>
+              {request.note && <p className="mt-1 text-muted-foreground">{request.note}</p>}
+            </li>)}
+          </ul>
+        </section>}
+
+        {editor && <TeacherEditor key={editor.id} editing={Boolean(editor.teacher)} demo={demo}
+          initial={teacherInputFrom(editor.profile, editor.teacher, catalog.groups)}
+          originalAvatar={catalog.users.find(user => user.id === editor.id)?.avatarUrl} subjects={catalog.subjects} onClose={() => setEditor(undefined)}
+          onSave={async (input, password) => {
+            await persistTeacher(editor.id, editor.profile?.version ?? 0, input, password);
+            setEditor(undefined);
+            setError('');
+            setNotice(editor.teacher ? 'تم تحديث بيانات المعلم' : 'تمت إضافة المعلم');
+          }} />}
+      </>}
+      {legacyRate && authorized && demo && <TeacherRateModal teacher={legacyRate.teacher} currentRate={legacyRate.rate}
+        currentRole={currentRole} onClose={() => setLegacyRate(undefined)} onSuccess={() => {
+          setLegacyRate(undefined);
+          setRevision(value => value + 1);
+        }} dal={dal} />}
     </div>
   );
 }
 
-// ---------------------------------------------------------------------------
-// Sub-Component: Teacher Rate Configuration Modal (AC-6 Guarded)
-// ---------------------------------------------------------------------------
+function StaffLogin({ signIn, failedLogin }: { signIn: (email: string, password: string) => Promise<void>; failedLogin: boolean }) {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [failed, setFailed] = useState(false);
+  const [busy, setBusy] = useState(false);
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setBusy(true);
+    setFailed(false);
+    try { await signIn(email, password); }
+    catch { setFailed(true); }
+    finally { setBusy(false); }
+  }
+  return <form onSubmit={submit} className="card-elevated max-w-md space-y-3 rounded-2xl border border-border p-4">
+    <h2 className="font-bold">دخول إدارة السنتر</h2>
+    <label className="block text-sm">البريد الإلكتروني<input className={control + ' mt-1 block w-full'} dir="ltr" type="email" autoComplete="username" required value={email} onChange={event => setEmail(event.target.value)} /></label>
+    <label className="block text-sm">كلمة المرور<input className={control + ' mt-1 block w-full'} dir="ltr" type="password" autoComplete="current-password" required value={password} onChange={event => setPassword(event.target.value)} /></label>
+    {(failed || failedLogin) && <p role="alert" className="text-sm text-red-600">تعذّر تسجيل الدخول. راجع البريد وكلمة المرور.</p>}
+    <Button type="submit" disabled={busy}>{busy ? 'جارٍ تسجيل الدخول…' : 'دخول'}</Button>
+  </form>;
+}
+
 function TeacherRateModal({
-  tenantId,
   teacher,
   currentRate,
   currentRole,
@@ -388,17 +306,16 @@ function TeacherRateModal({
   onSuccess,
   dal,
 }: {
-  tenantId: string;
   teacher: User;
-  currentRate?: TeacherRate;
+  currentRate: TeacherRate;
   currentRole: UserRole;
   onClose: () => void;
   onSuccess: () => void;
-  dal: any;
+  dal: IDataProvider;
 }) {
-  const [model, setModel] = useState<PricingModel>(currentRate?.model || 'center');
-  const [fixedRate, setFixedRate] = useState<number>(currentRate?.fixedRatePerStudent || 20);
-  const [teacherPercentage, setTeacherPercentage] = useState<number>(currentRate?.teacherPercentage || 70);
+  const [model, setModel] = useState<PricingModel>(currentRate.model || 'center');
+  const [fixedRate, setFixedRate] = useState<number>(currentRate.fixedRatePerStudent ?? 20);
+  const [teacherPercentage, setTeacherPercentage] = useState<number>(currentRate.teacherPercentage ?? 70);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -410,7 +327,7 @@ function TeacherRateModal({
     e.preventDefault();
 
     // Invariant check: teacher + center === 100%
-    if (model === 'private' && teacherPercentage + centerPercentage !== 100) {
+    if (model === 'private' && (teacherPercentage < 0 || teacherPercentage > 100)) {
       setErrorMessage('مجموع نسبة المعلم ونسبة السنتر يجب أن يساوي 100% بالضبط دون تسريب');
       return;
     }
@@ -419,7 +336,7 @@ function TeacherRateModal({
     setErrorMessage(null);
 
     try {
-      const rateId = currentRate?.id || `rate-${teacher.id}`;
+      const rateId = currentRate.id;
       const res = await dal.updateTeacherRate(
         rateId,
         {
@@ -483,7 +400,7 @@ function TeacherRateModal({
                     : 'border-border bg-background text-muted-foreground hover:bg-muted/50'
                 }`}
               >
-                نظام السنتر (أجر ثابت للحصة)
+                نظام السنتر (متوسط الحضور)
               </button>
 
               <button

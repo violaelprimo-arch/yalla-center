@@ -60,6 +60,10 @@ import {
   TeacherPayrollExportRecord,
 } from '@/lib/finance/export';
 import { BrandLogo } from '@/components/brand/brand-logo';
+import { useFirebaseAuthSession } from '@/lib/firebase/client';
+import { useTeacherContracts } from '@/lib/teachers/client';
+import { TEACHER_MODELS } from '@/lib/teachers/profile';
+import { cairoClock } from '@/lib/attendance/reception';
 
 type TabKey = 'shifts' | 'invoices' | 'payments' | 'payroll' | 'expenses';
 
@@ -69,6 +73,11 @@ export default function FinancePage() {
 
   // Active Tab
   const [activeTab, setActiveTab] = useState<TabKey>('shifts');
+  const [statementTeacherId, setStatementTeacherId] = useState('');
+  const auth = useFirebaseAuthSession();
+  const mayReadContracts = ['PLATFORM_OWNER', 'CENTER_ADMIN', 'ACCOUNTANT'].includes(currentRole);
+  const { profiles: teacherContracts, ready: contractsReady, error: contractsError } =
+    useTeacherContracts(tenant.id, tenant.slug, mayReadContracts, auth.idToken);
 
   // Core Data States
   const [invoices, setInvoices] = useState<Invoice[]>([]);
@@ -106,6 +115,17 @@ export default function FinancePage() {
   const [isStatementModalOpen, setIsStatementModalOpen] = useState(false);
   const [statementData, setStatementData] = useState<TeacherMonthlyStatement | null>(null);
   const [isStatementLoading, setIsStatementLoading] = useState(false);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('tab') !== 'payroll') return;
+    setActiveTab('payroll');
+    const teacherId = params.get('teacherId');
+    if (teacherId) setStatementTeacherId(teacherId);
+    const [year, month] = cairoClock().split('-').map(Number);
+    setPayrollMonthFilter(month);
+    setPayrollYearFilter(year);
+  }, []);
 
   // AC-6 RBAC Security
   const isTeacherRole = currentRole === 'TEACHER';
@@ -174,8 +194,16 @@ export default function FinancePage() {
   const teacherMap = useMemo(() => {
     const map = new Map<string, User>();
     teachers.forEach((t) => map.set(t.id, t));
+    for (const profile of teacherContracts) {
+      const base = map.get(profile.id);
+      map.set(profile.id, {
+        ...base, id: profile.id, tenantId: profile.tenantId, role: 'TEACHER', fullName: profile.fullName,
+        phone: profile.phone, isActive: profile.active, balanceDue: base?.balanceDue ?? 0,
+        createdAt: base?.createdAt ?? '', updatedAt: base?.updatedAt ?? '',
+      });
+    }
     return map;
-  }, [teachers]);
+  }, [teachers, teacherContracts]);
 
   const groupMap = useMemo(() => {
     const map = new Map<string, Group>();
@@ -289,6 +317,11 @@ export default function FinancePage() {
 
   // View Teacher Monthly Statement
   const handleViewStatement = async (teacherId: string, month: number, year: number) => {
+    if (isTeacherRole && teacherId !== currentUser.id) return;
+    if (auth.configured && mayReadContracts && !contractsReady) {
+      setActionError(contractsError || 'سجّل دخول الإدارة من صفحة شؤون المعلمين لتحميل العقود');
+      return;
+    }
     setIsStatementLoading(true);
     setIsStatementModalOpen(true);
     try {
@@ -297,8 +330,11 @@ export default function FinancePage() {
         teacherId,
         month,
         year,
+        teacherProfile: teacherContracts.find(profile => profile.id === teacherId),
       });
       setStatementData(stmt);
+      const payroll = stmt.summary.payrollRecord;
+      if (payroll) setPayrollList(previous => [...previous.filter(item => item.id !== payroll.id), { ...payroll }]);
     } catch (err: any) {
       console.error('Error fetching statement:', err);
       setActionError(err?.message || 'تعذر حساب كشف الحساب التفصيلي للمعلم');
@@ -1109,6 +1145,20 @@ export default function FinancePage() {
                   </Button>
                 )}
               </div>
+
+              {!isTeacherRole && <div className="flex flex-wrap items-center gap-2">
+                <select aria-label="المعلم لعرض كشف الحساب" className="min-w-48 rounded-xl border border-border bg-background p-2 text-sm"
+                  value={statementTeacherId} onChange={event => setStatementTeacherId(event.target.value)}>
+                  <option value="">اختر المعلم</option>
+                  {[...teacherMap.values()].map(teacher => <option key={teacher.id} value={teacher.id}>
+                    {teacher.fullName}{teacher.isActive ? '' : ' (مؤرشف)'}
+                  </option>)}
+                </select>
+                <Button variant="outline" disabled={!teacherMap.has(statementTeacherId) || isStatementLoading}
+                  onClick={() => void handleViewStatement(statementTeacherId, payrollMonthFilter, payrollYearFilter)}>
+                  <Eye size={16} /> عرض كشف الحساب
+                </Button>
+              </div>}
 
               {/* Payroll Records Table */}
               <Card className="card-elevated border-border">
@@ -2874,6 +2924,26 @@ function TeacherStatementModal({
                 </table>
               </div>
             )}
+
+            {statement.lessonCompensation && <div className="space-y-2">
+              <h4 className="font-bold text-foreground">مستحقات الحصص · {statement.lessonCompensation.totalCompensation.toFixed(2)} ج.م</h4>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[650px] text-right border-collapse border border-border">
+                  <thead className="bg-muted/50 text-muted-foreground"><tr>
+                    {['الحصة', 'التعاقد', 'الحضور', 'إجمالي الرسوم', 'مستحق المعلم', 'صافي السنتر'].map(label =>
+                      <th className="border border-border p-2" key={label}>{label}</th>)}
+                  </tr></thead>
+                  <tbody>{statement.lessonCompensation.sessions.map(lesson => <tr key={lesson.sessionId}>
+                    <td className="border border-border p-2">{lesson.groupName}<br />{lesson.sessionDate}</td>
+                    <td className="border border-border p-2">{TEACHER_MODELS[lesson.model]} · {lesson.rate.toFixed(2)} ج.م</td>
+                    <td className="border border-border p-2">{lesson.attendanceCount}</td>
+                    <td className="border border-border p-2">{lesson.revenue.toFixed(2)} ج.م</td>
+                    <td className="border border-border p-2 font-bold">{lesson.teacherDue.toFixed(2)} ج.م</td>
+                    <td className="border border-border p-2">{lesson.centerNet.toFixed(2)} ج.م</td>
+                  </tr>)}</tbody>
+                </table>
+              </div>
+            </div>}
 
             {/* Part 2: Private Lessons Model Breakdown */}
             {statement.privateLessons.groups.length > 0 && (
