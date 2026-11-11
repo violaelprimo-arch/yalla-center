@@ -1,10 +1,17 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { getDataProvider } from '@/lib/dal/factory';
 import { readReceptionRecord, summarizeReception, writeReceptionRecord } from '@/lib/attendance/reception';
+import {
+  formatCleanNumber,
+  lessonGradeDocId,
+  type LessonExamRecord,
+  type LessonGradeRecord,
+} from '@/lib/attendance/lesson-scores';
+import { LESSON_GRADE_SYNC_EVENT } from '@/lib/attendance/use-lesson-scores';
 import type { Attendance, Enrollment, Exam, ExamSubmission, Group, Session, User } from '@/lib/dal/types';
 
 interface Props {
@@ -13,6 +20,23 @@ interface Props {
   session: Session;
   group?: Group;
   centerSlug: string;
+  remoteExams?: LessonExamRecord[];
+  remoteGradesByKey?: Record<string, LessonGradeRecord>;
+  onSaveUnifiedGrade?: (params: {
+    sessionId: string;
+    examId: string;
+    totalMarks: number;
+    studentId: string;
+    studentIdOrCode: string;
+    rawScore: string;
+    source: 'card';
+  }) => Promise<{ ok: true; grade: LessonGradeRecord } | { ok: false; errorAr: string }>;
+  onDeleteUnifiedGrade?: (params: {
+    sessionId: string;
+    examId: string;
+    studentId: string;
+    source: 'card';
+  }) => Promise<{ ok: boolean; errorAr?: string }>;
 }
 
 interface StudentData {
@@ -33,7 +57,17 @@ function formatPercentage(value: number | null) {
   return value === null ? 'بيانات غير كافية' : percentage.format(value / 100);
 }
 
-export function ReceptionStudentCard({ tenantId, student, session, group, centerSlug }: Props) {
+export function ReceptionStudentCard({
+  tenantId,
+  student,
+  session,
+  group,
+  centerSlug,
+  remoteExams,
+  remoteGradesByKey,
+  onSaveUnifiedGrade,
+  onDeleteUnifiedGrade,
+}: Props) {
   const [data, setData] = useState<StudentData | null>(null);
   const [error, setError] = useState('');
   const [homework, setHomework] = useState<boolean>();
@@ -41,6 +75,13 @@ export function ReceptionStudentCard({ tenantId, student, session, group, center
   const [gradeExams, setGradeExams] = useState<Exam[]>();
   const studentId = student.id;
   const { id: sessionId, groupId } = session;
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handler = () => setRevision((v) => v + 1);
+    window.addEventListener(LESSON_GRADE_SYNC_EVENT, handler);
+    return () => window.removeEventListener(LESSON_GRADE_SYNC_EVENT, handler);
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -64,16 +105,53 @@ export function ReceptionStudentCard({ tenantId, student, session, group, center
     return () => { active = false; };
   }, [tenantId, groupId, sessionId, studentId, student.tenantId, student.role]);
 
+  const mergedExams = useMemo(() => {
+    if (!data) return [] as Exam[];
+    if (!remoteExams || remoteExams.length === 0) return data.exams;
+    const byId = new Map<string, Exam>(data.exams.map((e) => [e.id, e]));
+    for (const remote of remoteExams) {
+      if (remote.groupId !== groupId) continue;
+      const existing = byId.get(remote.id);
+      byId.set(remote.id, {
+        ...(existing ?? {
+          id: remote.id,
+          tenantId: remote.tenantId,
+          sessionId: remote.sessionId,
+          groupId: remote.groupId,
+          subjectId: remote.subjectId,
+          subjectNameAr: remote.subjectNameAr,
+          teacherId: remote.teacherId,
+          title: remote.title,
+          durationMinutes: 15,
+          totalMarks: remote.totalMarks,
+          passMarks: remote.passMarks,
+          isAiGenerated: false,
+          groundedMaterialIds: [],
+          status: 'draft',
+          createdAt: remote.createdAt,
+        }),
+        title: remote.title,
+        totalMarks: remote.totalMarks,
+        passMarks: remote.passMarks,
+      });
+    }
+    return Array.from(byId.values());
+  }, [data, groupId, remoteExams]);
+
   const { summary, history } = (() => {
     if (!data) return { summary: null, history: [] };
     try {
       const records = new Map(data.sessions.map(item =>
         [item.id, readReceptionRecord(tenantId, item.id, studentId)]));
-      const manualGrade = (exam: Exam) => exam.sessionId ? records.get(exam.sessionId)?.grades[exam.id] : undefined;
+      const manualGrade = (exam: Exam) => {
+        const remote = remoteGradesByKey?.[lessonGradeDocId(exam.id, studentId)];
+        if (remote) return remote.score;
+        return exam.sessionId ? records.get(exam.sessionId)?.grades[exam.id] : undefined;
+      };
       return {
         summary: summarizeReception(session, data.enrollment, data.sessions, data.attendance,
-          data.exams, data.submissions, manualGrade),
-        history: data.exams.filter(exam => exam.sessionId !== sessionId && manualGrade(exam) !== undefined),
+          mergedExams, data.submissions, manualGrade),
+        history: mergedExams.filter(exam => exam.sessionId !== sessionId && manualGrade(exam) !== undefined),
       };
     } catch {
       return { summary: null, history: [] };
@@ -123,7 +201,7 @@ export function ReceptionStudentCard({ tenantId, student, session, group, center
           </ul>
         </details>}
         <div className="flex flex-wrap gap-2">
-          <Button type="button" size="sm" variant="cyan" onClick={() => setGradeExams(data.exams.filter(exam => exam.sessionId === sessionId && exam.status !== 'archived'))}>
+          <Button type="button" size="sm" variant="cyan" onClick={() => setGradeExams(mergedExams.filter(exam => exam.sessionId === sessionId && exam.status !== 'archived'))}>
             تسجيل درجة اختبار الحصة
           </Button>
           {history.length > 0 && <Button type="button" size="sm" variant="outline" onClick={() => setGradeExams(history)}>
@@ -133,6 +211,9 @@ export function ReceptionStudentCard({ tenantId, student, session, group, center
         {gradeExams && <GradeDialog
           exams={gradeExams}
           sessions={data.sessions} student={student} group={group} centerSlug={centerSlug} tenantId={tenantId}
+          remoteGradesByKey={remoteGradesByKey}
+          onSaveUnifiedGrade={onSaveUnifiedGrade}
+          onDeleteUnifiedGrade={onDeleteUnifiedGrade}
           onChange={() => setRevision(value => value + 1)} onClose={() => setGradeExams(undefined)} />}
       </>}
     </section>
@@ -146,14 +227,31 @@ interface GradeProps {
   group?: Group;
   centerSlug: string;
   tenantId: string;
+  remoteGradesByKey?: Record<string, LessonGradeRecord>;
+  onSaveUnifiedGrade?: Props['onSaveUnifiedGrade'];
+  onDeleteUnifiedGrade?: Props['onDeleteUnifiedGrade'];
   onChange: () => void;
   onClose: () => void;
 }
 
-function GradeDialog({ exams, sessions, student, group, centerSlug, tenantId, onChange, onClose }: GradeProps) {
+function GradeDialog({
+  exams,
+  sessions,
+  student,
+  group,
+  centerSlug,
+  tenantId,
+  remoteGradesByKey,
+  onSaveUnifiedGrade,
+  onDeleteUnifiedGrade,
+  onChange,
+  onClose,
+}: GradeProps) {
   const dialog = useRef<HTMLDialogElement>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const activeExamRef = useRef<string | undefined>(exams[0]?.id);
   const [examId, setExamId] = useState(exams[0]?.id);
+  activeExamRef.current = examId;
   const exam = exams.find(item => item.id === examId);
   const session = sessions.find(item => item.id === exam?.sessionId);
   const [value, setValue] = useState('');
@@ -169,48 +267,109 @@ function GradeDialog({ exams, sessions, student, group, centerSlug, tenantId, on
   useEffect(() => {
     if (!exam || !session) return;
     try {
-      const grade = readReceptionRecord(tenantId, session.id, student.id).grades[exam.id];
-      setValue(grade?.toString() ?? '');
+      const remoteGrade = remoteGradesByKey?.[lessonGradeDocId(exam.id, student.id)]?.score;
+      const grade = remoteGrade ?? readReceptionRecord(tenantId, session.id, student.id).grades[exam.id];
+      setValue(grade !== undefined ? formatCleanNumber(grade) : '');
       setSaved(grade);
       setStatus('');
     } catch { setStatus('تعذّر قراءة الدرجة'); }
-  }, [exam, session, tenantId, student.id]);
+  }, [exam, session, tenantId, student.id, remoteGradesByKey]);
 
-  function save(input: string, remove = false) {
+  async function save(
+    input: string,
+    remove = false,
+    ctxExam: Exam | undefined = exam,
+    ctxSession: Session | undefined = session
+  ): Promise<boolean> {
     if (timer.current) clearTimeout(timer.current);
     timer.current = null;
-    if (!exam || !session || (!remove && !input.trim())) return true;
+    if (!ctxExam || !ctxSession || (!remove && !input.trim())) return true;
     const normalized = input.replace(/[٠-٩]/g, digit => String('٠١٢٣٤٥٦٧٨٩'.indexOf(digit)))
       .replace(/[۰-۹]/g, digit => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(digit))).replace('٫', '.');
     const grade = Number(normalized);
-    if (!remove && (!/^\d+(?:\.\d{1,2})?$/.test(normalized) || grade < 0 || grade > exam.totalMarks)) {
-      setStatus(`أدخل درجة من ٠ إلى ${exam.totalMarks} بدقة منزلتين عشريتين`);
+    if (!remove && (!/^\d+(?:\.\d{1,2})?$/.test(normalized) || grade < 0 || grade > ctxExam.totalMarks)) {
+      if (activeExamRef.current === ctxExam.id) {
+        setStatus(`أدخل درجة من ٠ إلى ${ctxExam.totalMarks} بدقة منزلتين عشريتين`);
+      }
       return false;
     }
+
+    if (remove && onDeleteUnifiedGrade) {
+      if (activeExamRef.current === ctxExam.id) setStatus('جارٍ الحذف…');
+      const res = await onDeleteUnifiedGrade({
+        sessionId: ctxSession.id,
+        examId: ctxExam.id,
+        studentId: student.id,
+        source: 'card',
+      });
+      if (!res.ok) {
+        if (activeExamRef.current === ctxExam.id) {
+          setStatus(res.errorAr || 'تعذّر الحفظ. أعد المحاولة.');
+        }
+        return false;
+      }
+      if (activeExamRef.current === ctxExam.id) {
+        setSaved(undefined);
+        setValue('');
+        setStatus('تم حذف الدرجة');
+      }
+      onChange();
+      return true;
+    }
+
+    if (!remove && onSaveUnifiedGrade) {
+      if (activeExamRef.current === ctxExam.id) setStatus('جارٍ الحفظ…');
+      const res = await onSaveUnifiedGrade({
+        sessionId: ctxSession.id,
+        examId: ctxExam.id,
+        totalMarks: ctxExam.totalMarks,
+        studentId: student.id,
+        studentIdOrCode: student.studentCode || student.id,
+        rawScore: input,
+        source: 'card',
+      });
+      if (!res.ok) {
+        if (activeExamRef.current === ctxExam.id) {
+          setStatus(`تعذّر الحفظ. ${res.errorAr}`);
+        }
+        return false;
+      }
+      if (activeExamRef.current === ctxExam.id) {
+        setSaved(res.grade.score);
+        setStatus('تم الحفظ');
+      }
+      onChange();
+      return true;
+    }
+
     try {
-      const record = readReceptionRecord(tenantId, session.id, student.id);
-      if (remove) delete record.grades[exam.id];
-      else record.grades[exam.id] = grade;
-      writeReceptionRecord(tenantId, session.id, student.id, record);
-      setSaved(remove ? undefined : grade);
-      if (remove) setValue('');
-      setStatus(remove ? 'تم حذف الدرجة' : 'تم الحفظ على هذا المتصفح');
+      const record = readReceptionRecord(tenantId, ctxSession.id, student.id);
+      if (remove) delete record.grades[ctxExam.id];
+      else record.grades[ctxExam.id] = grade;
+      writeReceptionRecord(tenantId, ctxSession.id, student.id, record);
+      if (activeExamRef.current === ctxExam.id) {
+        setSaved(remove ? undefined : grade);
+        if (remove) setValue('');
+        setStatus(remove ? 'تم حذف الدرجة' : 'تم الحفظ على هذا المتصفح');
+      }
       onChange();
       return true;
     } catch {
-      setStatus('تعذّر الحفظ. أعد المحاولة.');
+      if (activeExamRef.current === ctxExam.id) {
+        setStatus('تعذّر الحفظ. أعد المحاولة.');
+      }
       return false;
     }
   }
 
-  function close() {
-    if ((!timer.current && !status.startsWith('تعذّر الحفظ')) || save(value)) onClose();
+  async function close() {
+    if ((!timer.current && !status.startsWith('تعذّر الحفظ')) || (await save(value))) onClose();
   }
 
   return (
     <dialog ref={dialog} aria-labelledby="reception-grade-title"
       onKeyDown={event => event.stopPropagation()}
-      onCancel={event => { event.preventDefault(); close(); }}
+      onCancel={event => { event.preventDefault(); void close(); }}
       className="m-auto w-[min(92vw,28rem)] rounded-2xl border border-border bg-card p-5 text-foreground backdrop:bg-black/60">
       <h2 id="reception-grade-title" className="text-lg font-bold">درجة اختبار الحصة</h2>
       <p className="mt-1 text-sm text-muted-foreground">{student.fullName} · {group?.nameAr}</p>
@@ -219,7 +378,9 @@ function GradeDialog({ exams, sessions, student, group, centerSlug, tenantId, on
         {exams.length > 1 && <label className="block text-sm">الاختبار
           <select className="mt-1 block w-full rounded-lg border border-border bg-background p-2"
             value={examId} onChange={event => {
-              if (timer.current && !save(value)) return;
+              if (timer.current) {
+                void save(value, false, exam, session);
+              }
               setConfirmDelete(false);
               setExamId(event.target.value);
             }}>
@@ -229,28 +390,30 @@ function GradeDialog({ exams, sessions, student, group, centerSlug, tenantId, on
         {exam ? <>
           <label className="block text-sm">{exam.title} · الدرجة من {exam.totalMarks}
             <input className="mt-1 block w-full rounded-lg border border-border bg-background p-2"
-              inputMode="decimal" value={value} onBlur={() => { if (timer.current) save(value); }}
+              inputMode="decimal" value={value} onBlur={() => { if (timer.current) void save(value); }}
               onChange={event => {
                 const input = event.target.value;
+                const capturedExam = exam;
+                const capturedSession = session;
                 setValue(input);
                 if (timer.current) clearTimeout(timer.current);
                 timer.current = null;
                 if (!input.trim()) { setStatus(''); return; }
                 setStatus('جارٍ الحفظ…');
-                timer.current = setTimeout(() => save(input), 400);
+                timer.current = setTimeout(() => { void save(input, false, capturedExam, capturedSession); }, 400);
               }} />
           </label>
           <p role="status" className="text-sm text-muted-foreground">{status}</p>
-          {status.startsWith('تعذّر الحفظ') && <Button type="button" variant="outline" size="sm" onClick={() => save(value)}>إعادة المحاولة</Button>}
+          {status.startsWith('تعذّر الحفظ') && <Button type="button" variant="outline" size="sm" onClick={() => void save(value)}>إعادة المحاولة</Button>}
           {saved !== undefined && !confirmDelete && <Button type="button" variant="outline" size="sm"
             onClick={() => setConfirmDelete(true)}>حذف الدرجة</Button>}
           {confirmDelete && <div className="flex flex-wrap items-center gap-2 text-sm">
             <span>تأكيد حذف درجة الطالب؟</span>
-            <Button type="button" variant="outline" size="sm" onClick={() => { if (save('', true)) setConfirmDelete(false); }}>تأكيد الحذف</Button>
+            <Button type="button" variant="outline" size="sm" onClick={() => { void save('', true).then(ok => { if (ok) setConfirmDelete(false); }); }}>تأكيد الحذف</Button>
             <Button type="button" variant="outline" size="sm" onClick={() => setConfirmDelete(false)}>إلغاء</Button>
           </div>}
         </> : <p className="text-sm">لا يوجد اختبار لهذه الحصة. <Link className="underline" href={`/center/${centerSlug}/exams`}>فتح الاختبارات</Link></p>}
-        <Button type="button" variant="outline" size="sm" onClick={close}>إغلاق</Button>
+        <Button type="button" variant="outline" size="sm" onClick={() => void close()}>إغلاق</Button>
       </div>
     </dialog>
   );

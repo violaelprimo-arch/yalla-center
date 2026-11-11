@@ -37,6 +37,11 @@ import { ManualCheckinTable } from '@/components/attendance/manual-checkin-table
 import { cairoClock, receptionSessionState, sessionStart } from '@/lib/attendance/reception';
 import { ReceptionStudentCard } from '@/components/attendance/reception-student-card';
 import { RecentScansFeed, RecentScanItem } from '@/components/attendance/recent-scans-feed';
+import {
+  LessonExamScorePanel,
+  type ReceptionEntryMode,
+} from '@/components/attendance/lesson-exam-score-panel';
+import { useReceptionLessonScores } from '@/lib/attendance/use-lesson-scores';
 
 export default function ReceptionScanPage() {
   const { tenant, currentRole } = useTenant();
@@ -45,6 +50,8 @@ export default function ReceptionScanPage() {
   const [branches, setBranches] = useState<Branch[]>([]);
   const [classrooms, setClassrooms] = useState<Classroom[]>([]);
   const [teachers, setTeachers] = useState<User[]>([]);
+  const [allUsers, setAllUsers] = useState<User[]>([]);
+  const [subjects, setSubjects] = useState<Array<{ id: string; nameAr: string }>>([]);
   const [groups, setGroups] = useState<Group[]>([]);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [enrolledStudents, setEnrolledStudents] = useState<User[]>([]);
@@ -52,6 +59,8 @@ export default function ReceptionScanPage() {
   // Active Selections
   const [selectedBranchId, setSelectedBranchId] = useState<string>('ALL');
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+  const [entryMode, setEntryMode] = useState<ReceptionEntryMode>('attendance');
+  const [incomingGradeScan, setIncomingGradeScan] = useState<{ code: string; seq: number } | null>(null);
   const [clock, setClock] = useState(cairoClock);
   const visibleSessions = useMemo(() => sessions.filter(session =>
     receptionSessionState(session, clock) && (selectedBranchId === 'ALL' ||
@@ -61,7 +70,18 @@ export default function ReceptionScanPage() {
   const selectedSession = visibleSessions.find(session => session.id === selectedSessionId) ??
     (selectedSessionId === null ? visibleSessions[0] : undefined);
   const selectedGroup = groups.find(group => group.id === selectedSession?.groupId);
-  const canEdit = ['CENTER_ADMIN', 'BRANCH_MANAGER', 'RECEPTIONIST'].includes(currentRole);
+  const selectedSubjectName = subjects.find((s) => s.id === selectedGroup?.subjectId)?.nameAr;
+  const canRecordAttendance = ['CENTER_ADMIN', 'BRANCH_MANAGER', 'RECEPTIONIST'].includes(currentRole);
+  const canEditScores = ['CENTER_ADMIN', 'BRANCH_MANAGER', 'RECEPTIONIST', 'TEACHER'].includes(currentRole);
+
+  const lessonScores = useReceptionLessonScores({
+    tenantId: tenant.id,
+    centerSlug: tenant.slug,
+    selectedSession,
+    selectedGroup,
+    sessions,
+    groups,
+  });
 
   useEffect(() => {
     const timer = window.setInterval(() => setClock(cairoClock()), 1000);
@@ -99,19 +119,22 @@ export default function ReceptionScanPage() {
   const loadTenantData = useCallback(async () => {
     const dal = getDataProvider();
     try {
-      const [brs, cls, grps, sess, users] = await Promise.all([
+      const [brs, cls, grps, sess, users, subs] = await Promise.all([
         dal.getBranches(tenant.id),
         dal.getClassrooms(tenant.id),
         dal.getGroups(tenant.id),
         dal.getSessions(tenant.id),
         dal.getUsers(tenant.id),
+        dal.getSubjects(tenant.id),
       ]);
 
       setBranches(brs);
       setClassrooms(cls);
       setGroups(grps);
       setSessions(sess);
+      setAllUsers(users);
       setTeachers(users.filter((u) => u.role === 'TEACHER'));
+      setSubjects(subs.map((s) => ({ id: s.id, nameAr: s.nameAr })));
 
     } catch {
       // transient load error
@@ -174,11 +197,11 @@ export default function ReceptionScanPage() {
     return () => { statsRequest.current += 1; };
   }, [refreshSessionData]);
 
-  // Execute Idempotent Scan
+  // Execute Idempotent Scan (Attendance mode only)
   const handleProcessScan = useCallback(
     async (rawCode: string, method: 'barcode' | 'qr' | 'manual' = 'barcode') => {
       const trimmedCode = rawCode.trim();
-      if (!trimmedCode || !canEdit) return;
+      if (!trimmedCode || !canRecordAttendance) return;
       if (!selectedSession || !receptionSessionState(selectedSession)) {
         setHudData({ state: 'error', messageAr: 'اختر حصة متاحة لتسجيل الحضور' });
         return;
@@ -264,7 +287,7 @@ export default function ReceptionScanPage() {
         setManualCodeInput('');
       }
     },
-    [selectedSession, tenant.id, selectedGroup, refreshSessionData, canEdit]
+    [selectedSession, tenant.id, selectedGroup, refreshSessionData, canRecordAttendance]
   );
 
   const handleManualFormSubmit = (e: React.FormEvent) => {
@@ -358,7 +381,13 @@ export default function ReceptionScanPage() {
 
       {/* Hardware Laser Scanner Listener */}
       <BarcodeListener
-        onScan={(code) => handleProcessScan(code, 'barcode')}
+        onScan={(code) => {
+          if (entryMode === 'grades') {
+            setIncomingGradeScan((prev) => ({ code, seq: (prev?.seq ?? 0) + 1 }));
+            return;
+          }
+          void handleProcessScan(code, 'barcode');
+        }}
         isMuted={isMuted}
         onToggleMute={handleToggleMute}
       />
@@ -397,9 +426,13 @@ export default function ReceptionScanPage() {
             }}
           />
 
-          {canEdit && hudData.student && selectedSession && hudData.session?.id === selectedSession.id && (
+          {canRecordAttendance && hudData.student && selectedSession && hudData.session?.id === selectedSession.id && (
             <ReceptionStudentCard key={`${tenant.id}:${selectedSession.id}:${hudData.student.id}`}
-              tenantId={tenant.id} centerSlug={tenant.slug} student={hudData.student} session={selectedSession} group={selectedGroup} />
+              tenantId={tenant.id} centerSlug={tenant.slug} student={hudData.student} session={selectedSession} group={selectedGroup}
+              remoteExams={lessonScores.sessionExams}
+              remoteGradesByKey={lessonScores.gradesByKey}
+              onSaveUnifiedGrade={lessonScores.saveStudentScore}
+              onDeleteUnifiedGrade={lessonScores.deleteStudentScore} />
           )}
 
           {/* Manual Barcode / Code Fast Input */}
@@ -420,7 +453,7 @@ export default function ReceptionScanPage() {
             <Button
               type="submit"
               variant="primary"
-              disabled={!canEdit || !selectedSession || isProcessingScan || !manualCodeInput.trim()}
+              disabled={!canRecordAttendance || !selectedSession || isProcessingScan || !manualCodeInput.trim()}
               className="h-10 px-5 text-xs font-bold shrink-0"
             >
               <span>{isProcessingScan ? 'جاري التحقق...' : 'تسجيل'}</span>
@@ -446,9 +479,53 @@ export default function ReceptionScanPage() {
           />
         </div>
 
-        {/* Reverse Chronological Stream (5 cols) */}
-        <div className="lg:col-span-5">
-          <RecentScansFeed scans={selectedSession ? recentScans : []} />
+        {/* Lesson Exam Score Entry & Reverse Chronological Stream (5 cols) */}
+        <div className="lg:col-span-5 space-y-6">
+          {selectedSession && receptionSessionState(selectedSession, clock) && canEditScores && (
+            <LessonExamScorePanel
+              session={selectedSession}
+              group={selectedGroup}
+              subjectNameAr={selectedSubjectName}
+              enrolledStudents={enrolledStudents}
+              allTenantUsers={allUsers}
+              mode={entryMode}
+              onModeChange={setEntryMode}
+              exams={lessonScores.sessionExams}
+              activeExam={lessonScores.activeExam}
+              onSelectExam={lessonScores.setSelectedExamId}
+              gradesForActiveExamByStudent={lessonScores.gradesForActiveExamByStudent}
+              saveStateByKey={lessonScores.saveStateByKey}
+              audits={lessonScores.audits}
+              authProps={{
+                configured: lessonScores.auth.configured,
+                loading: lessonScores.auth.loading,
+                signedIn: Boolean(lessonScores.auth.user),
+                userEmail: lessonScores.auth.user?.email,
+                error: lessonScores.auth.error,
+                onSignIn: lessonScores.auth.signIn,
+                onSignOut: lessonScores.auth.signOut,
+              }}
+              syncError={lessonScores.syncError}
+              isLoadingScores={lessonScores.isLoadingSessionScores}
+              onSaveTotalMarks={lessonScores.saveExamMaxMarks}
+              onSaveScore={lessonScores.saveStudentScore}
+              incomingBarcodeScan={incomingGradeScan}
+              pendingLocalCount={lessonScores.pendingLocalCount}
+              importReviewRows={lessonScores.importReviewRows}
+              onOpenImportReview={lessonScores.prepareLocalImportReview}
+              onCommitImport={lessonScores.commitReviewedImport}
+            />
+          )}
+
+          <RecentScansFeed
+            scans={selectedSession ? recentScans : []}
+            sessionId={selectedSession?.id}
+            activeExam={lessonScores.activeExam}
+            gradesByStudent={lessonScores.gradesForActiveExamByStudent}
+            saveStateByKey={lessonScores.saveStateByKey}
+            canEditScores={canEditScores}
+            onSaveInlineScore={lessonScores.saveStudentScore}
+          />
         </div>
       </div>
 

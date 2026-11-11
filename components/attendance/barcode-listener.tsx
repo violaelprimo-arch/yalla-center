@@ -43,8 +43,11 @@ export function BarcodeListener({
     if (!isEnabled) return;
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      // Grade inputs are modal and own their keyboard interaction.
-      if (event.target instanceof HTMLElement && event.target.closest('dialog[open]')) {
+      // Grade modals and inline grade entry panels own their keyboard and scanner focus.
+      if (
+        event.target instanceof HTMLElement &&
+        (event.target.closest('dialog[open]') || event.target.closest('[data-grade-entry-scope]'))
+      ) {
         resetBuffer();
         return;
       }

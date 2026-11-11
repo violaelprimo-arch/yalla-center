@@ -1,0 +1,194 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function hasStaffDoc() {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/staff_memberships/$(request.auth.uid));
+    }
+
+    function staffDoc() {
+      return get(/databases/$(database)/documents/staff_memberships/$(request.auth.uid)).data;
+    }
+
+    function isActiveStaff() {
+      return hasStaffDoc() && staffDoc().isActive == true;
+    }
+
+    function staffRole() {
+      return staffDoc().role;
+    }
+
+    function isGradeAllowedRole() {
+      return isActiveStaff() && (
+        staffRole() == 'PLATFORM_OWNER' ||
+        staffRole() == 'CENTER_ADMIN' ||
+        staffRole() == 'BRANCH_MANAGER' ||
+        staffRole() == 'RECEPTIONIST' ||
+        staffRole() == 'TEACHER'
+      );
+    }
+
+    function matchesTenant(tenantId) {
+      return staffRole() == 'PLATFORM_OWNER' || staffDoc().tenantId == tenantId;
+    }
+
+    function matchesBranch(branchId) {
+      return staffRole() == 'PLATFORM_OWNER' ||
+        staffRole() == 'CENTER_ADMIN' ||
+        !('branchIds' in staffDoc()) ||
+        staffDoc().branchIds.size() == 0 ||
+        branchId in staffDoc().branchIds;
+    }
+
+    function matchesTeacher(teacherId) {
+      return staffRole() != 'TEACHER' ||
+        staffDoc().teacherId == teacherId ||
+        request.auth.uid == teacherId;
+    }
+
+    function isAuthorizedStaff(tenantId, branchId, teacherId) {
+      return isGradeAllowedRole() &&
+        matchesTenant(tenantId) &&
+        matchesBranch(branchId) &&
+        matchesTeacher(teacherId);
+    }
+
+    function isValidScoreNumber(score, totalMarks) {
+      return score is number && score >= 0 && score <= totalMarks;
+    }
+
+    // Staff permission registry: server-managed only (no client privilege escalation)
+    match /staff_memberships/{uid} {
+      allow read: if isSignedIn() && (
+        request.auth.uid == uid ||
+        (isActiveStaff() && (staffRole() == 'PLATFORM_OWNER' || (staffRole() == 'CENTER_ADMIN' && resource.data.tenantId == staffDoc().tenantId)))
+      );
+      allow write: if false;
+    }
+
+    // Lesson exam definitions (totalMarks shared once per exam per session)
+    match /lesson_exams/{examId} {
+      allow read: if isActiveStaff() && matchesTenant(resource.data.tenantId) && matchesBranch(resource.data.branchId);
+      allow create: if isAuthorizedStaff(
+          request.resource.data.tenantId,
+          request.resource.data.branchId,
+          request.resource.data.teacherId
+        ) &&
+        request.resource.data.id == examId &&
+        request.resource.data.totalMarks is number &&
+        request.resource.data.totalMarks > 0 &&
+        request.resource.data.totalMarks <= 1000 &&
+        request.resource.data.updatedByUid == request.auth.uid &&
+        request.resource.data.version == 1;
+      allow update: if isAuthorizedStaff(
+          resource.data.tenantId,
+          resource.data.branchId,
+          resource.data.teacherId
+        ) &&
+        request.resource.data.id == resource.data.id &&
+        request.resource.data.tenantId == resource.data.tenantId &&
+        request.resource.data.sessionId == resource.data.sessionId &&
+        request.resource.data.groupId == resource.data.groupId &&
+        request.resource.data.branchId == resource.data.branchId &&
+        request.resource.data.totalMarks is number &&
+        request.resource.data.totalMarks > 0 &&
+        request.resource.data.totalMarks <= 1000 &&
+        request.resource.data.updatedByUid == request.auth.uid &&
+        request.resource.data.version == resource.data.version + 1;
+      allow delete: if false;
+    }
+
+    // Student lesson grades: unique deterministic key ${examId}_${studentId}
+    match /lesson_grades/{gradeId} {
+      allow read: if (
+        isActiveStaff() &&
+        matchesTenant(resource.data.tenantId) &&
+        matchesBranch(resource.data.branchId)
+      ) || (
+        isSignedIn() &&
+        'studentUid' in resource.data &&
+        resource.data.studentUid == request.auth.uid
+      );
+
+      allow create: if isAuthorizedStaff(
+          request.resource.data.tenantId,
+          request.resource.data.branchId,
+          request.resource.data.teacherId
+        ) &&
+        gradeId == request.resource.data.examId + '_' + request.resource.data.studentId &&
+        request.resource.data.id == gradeId &&
+        request.resource.data.recordedByUid == request.auth.uid &&
+        request.resource.data.version == 1 &&
+        exists(/databases/$(database)/documents/lesson_exams/$(request.resource.data.examId)) &&
+        get(/databases/$(database)/documents/lesson_exams/$(request.resource.data.examId)).data.tenantId == request.resource.data.tenantId &&
+        get(/databases/$(database)/documents/lesson_exams/$(request.resource.data.examId)).data.sessionId == request.resource.data.sessionId &&
+        get(/databases/$(database)/documents/lesson_exams/$(request.resource.data.examId)).data.groupId == request.resource.data.groupId &&
+        isValidScoreNumber(
+          request.resource.data.score,
+          get(/databases/$(database)/documents/lesson_exams/$(request.resource.data.examId)).data.totalMarks
+        );
+
+      allow update: if isAuthorizedStaff(
+          resource.data.tenantId,
+          resource.data.branchId,
+          resource.data.teacherId
+        ) &&
+        gradeId == resource.data.examId + '_' + resource.data.studentId &&
+        request.resource.data.id == resource.data.id &&
+        request.resource.data.tenantId == resource.data.tenantId &&
+        request.resource.data.sessionId == resource.data.sessionId &&
+        request.resource.data.groupId == resource.data.groupId &&
+        request.resource.data.examId == resource.data.examId &&
+        request.resource.data.studentId == resource.data.studentId &&
+        request.resource.data.recordedByUid == request.auth.uid &&
+        request.resource.data.version == resource.data.version + 1 &&
+        exists(/databases/$(database)/documents/lesson_exams/$(resource.data.examId)) &&
+        isValidScoreNumber(
+          request.resource.data.score,
+          get(/databases/$(database)/documents/lesson_exams/$(resource.data.examId)).data.totalMarks
+        );
+
+      allow delete: if isAuthorizedStaff(
+        resource.data.tenantId,
+        resource.data.branchId,
+        resource.data.teacherId
+      );
+    }
+
+    // Immutable grade audit trail
+    match /lesson_grade_audits/{auditId} {
+      allow read: if isActiveStaff() &&
+        matchesTenant(resource.data.tenantId) &&
+        matchesBranch(resource.data.branchId);
+      allow create: if isAuthorizedStaff(
+          request.resource.data.tenantId,
+          request.resource.data.branchId,
+          request.resource.data.teacherId
+        ) &&
+        request.resource.data.actorUid == request.auth.uid &&
+        request.resource.data.keys().hasAll([
+          'tenantId',
+          'branchId',
+          'sessionId',
+          'groupId',
+          'examId',
+          'action',
+          'actorUid',
+          'previousScore',
+          'newScore',
+          'timestamp'
+        ]);
+      allow update, delete: if false;
+    }
+
+    // Default closed guardrail
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
