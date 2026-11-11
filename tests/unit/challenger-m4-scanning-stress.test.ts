@@ -676,6 +676,18 @@ describe('Challenger M4-1: Scanning & Attendance Idempotency Empirical Stress Te
    * 6. SCAN API ENDPOINT INTEGRATION (/api/center/[centerSlug]/attendance/scan)
    * ======================================================================== */
   describe('Mission 6: Fast Scan API Route Integration', () => {
+    beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(new Date('2026-10-18T12:00:00Z')); });
+    afterEach(() => { vi.useRealTimers(); });
+
+    it('rejects new check-ins for a completed session', async () => {
+      const req = new NextRequest('http://localhost/api/center/al-maher/attendance/scan', {
+        method: 'POST',
+        body: JSON.stringify({ sessionId: 'sess-math-1', studentCodeOrBarcode: 'STD-1001' }),
+      });
+      const result = await scanApiRoute(req, { params: { centerSlug: 'al-maher' } });
+      expect(result.status).toBe(409);
+    });
+
     it('returns 200 with idempotent scan result for valid student and session', async () => {
       const session = dal.sessions.find((s) => s.id === 'sess-live-today') || dal.sessions[0];
       const student = dal.users.find(

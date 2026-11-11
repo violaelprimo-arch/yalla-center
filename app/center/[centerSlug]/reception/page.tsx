@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   QrCode,
   Camera,
@@ -10,7 +10,7 @@ import {
 import { useTenant } from '@/components/layout/tenant-provider';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { getDataProvider } from '@/lib/dal/factory';
+import { getReceptionDataProvider as getDataProvider } from '@/lib/dal/factory';
 import {
   Session,
   Group,
@@ -34,10 +34,12 @@ import { QuickPaymentModal } from '@/components/attendance/quick-payment-modal';
 import { SessionSelector } from '@/components/attendance/session-selector';
 import { LiveStatsRing } from '@/components/attendance/live-stats-ring';
 import { ManualCheckinTable } from '@/components/attendance/manual-checkin-table';
+import { cairoClock, receptionSessionState, sessionStart } from '@/lib/attendance/reception';
+import { ReceptionStudentCard } from '@/components/attendance/reception-student-card';
 import { RecentScansFeed, RecentScanItem } from '@/components/attendance/recent-scans-feed';
 
 export default function ReceptionScanPage() {
-  const { tenant } = useTenant();
+  const { tenant, currentRole } = useTenant();
 
   // Master Data State
   const [branches, setBranches] = useState<Branch[]>([]);
@@ -49,12 +51,27 @@ export default function ReceptionScanPage() {
 
   // Active Selections
   const [selectedBranchId, setSelectedBranchId] = useState<string>('ALL');
-  const [selectedSession, setSelectedSession] = useState<Session | null>(null);
-  const [selectedGroup, setSelectedGroup] = useState<Group | null>(null);
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+  const [clock, setClock] = useState(cairoClock);
+  const visibleSessions = useMemo(() => sessions.filter(session =>
+    receptionSessionState(session, clock) && (selectedBranchId === 'ALL' ||
+      groups.some(group => group.id === session.groupId && group.branchId === selectedBranchId)))
+    .sort((a, b) => sessionStart(a).localeCompare(sessionStart(b))), [sessions, groups, selectedBranchId, clock]);
+  const cairoDate = clock.slice(0, 10);
+  const selectedSession = visibleSessions.find(session => session.id === selectedSessionId) ??
+    (selectedSessionId === null ? visibleSessions[0] : undefined);
+  const selectedGroup = groups.find(group => group.id === selectedSession?.groupId);
+  const canEdit = ['CENTER_ADMIN', 'BRANCH_MANAGER', 'RECEPTIONIST'].includes(currentRole);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setClock(cairoClock()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   // Live Attendance & Stats
   const [sessionAttendance, setSessionAttendance] = useState<Attendance[]>([]);
   const [sessionStats, setSessionStats] = useState<SessionAttendanceStats | null>(null);
+  const statsRequest = useRef(0);
   const [recentScans, setRecentScans] = useState<RecentScanItem[]>([]);
 
   // HUD & Scanner State
@@ -96,24 +113,18 @@ export default function ReceptionScanPage() {
       setSessions(sess);
       setTeachers(users.filter((u) => u.role === 'TEACHER'));
 
-      // Auto-select first active or scheduled session
-      if (sess.length > 0 && !selectedSession) {
-        const liveOrFirst = sess.find((s) => s.status === 'in_progress') || sess[0];
-        const grp = grps.find((g) => g.id === liveOrFirst.groupId);
-        setSelectedSession(liveOrFirst);
-        if (grp) setSelectedGroup(grp);
-      }
     } catch {
       // transient load error
     }
-  }, [tenant.id, selectedSession]);
+  }, [tenant.id]);
 
   useEffect(() => {
-    loadTenantData();
-  }, [loadTenantData]);
+    void loadTenantData();
+  }, [loadTenantData, cairoDate]);
 
   // Load Session-Specific Data (Attendance & Enrolled Students)
   const refreshSessionData = useCallback(async () => {
+    const request = ++statsRequest.current;
     if (!selectedSession) return;
     const dal = getDataProvider();
 
@@ -125,6 +136,7 @@ export default function ReceptionScanPage() {
         dal.getUsers(tenant.id, { role: 'STUDENT' }),
       ]);
 
+      if (request !== statsRequest.current) return;
       setSessionStats(stats);
       setSessionAttendance(atts);
 
@@ -154,14 +166,23 @@ export default function ReceptionScanPage() {
   }, [selectedSession, tenant.id]);
 
   useEffect(() => {
-    refreshSessionData();
+    setSessionStats(null);
+    setSessionAttendance([]);
+    setEnrolledStudents([]);
+    setRecentScans([]);
+    void refreshSessionData();
+    return () => { statsRequest.current += 1; };
   }, [refreshSessionData]);
 
   // Execute Idempotent Scan
   const handleProcessScan = useCallback(
     async (rawCode: string, method: 'barcode' | 'qr' | 'manual' = 'barcode') => {
       const trimmedCode = rawCode.trim();
-      if (!trimmedCode || !selectedSession) return;
+      if (!trimmedCode || !canEdit) return;
+      if (!selectedSession || !receptionSessionState(selectedSession)) {
+        setHudData({ state: 'error', messageAr: 'اختر حصة متاحة لتسجيل الحضور' });
+        return;
+      }
 
       setIsProcessingScan(true);
       const dal = getDataProvider();
@@ -243,7 +264,7 @@ export default function ReceptionScanPage() {
         setManualCodeInput('');
       }
     },
-    [selectedSession, tenant.id, selectedGroup, refreshSessionData]
+    [selectedSession, tenant.id, selectedGroup, refreshSessionData, canEdit]
   );
 
   const handleManualFormSubmit = (e: React.FormEvent) => {
@@ -325,7 +346,7 @@ export default function ReceptionScanPage() {
             type="button"
             variant="outline"
             size="sm"
-            onClick={refreshSessionData}
+            onClick={() => { void loadTenantData(); void refreshSessionData(); }}
             className="h-10 text-xs gap-1.5"
             title="تحديث البيانات"
           >
@@ -346,15 +367,20 @@ export default function ReceptionScanPage() {
       <SessionSelector
         branches={branches}
         selectedBranchId={selectedBranchId}
-        onSelectBranch={(bId) => setSelectedBranchId(bId)}
-        sessions={sessions}
+        onSelectBranch={(branchId) => {
+          setSelectedBranchId(branchId);
+          setSelectedSessionId(null);
+          setHudData({ state: 'idle' });
+        }}
+        sessions={visibleSessions}
+        clock={clock}
         groups={groups}
         classrooms={classrooms}
         teachers={teachers}
         selectedSessionId={selectedSession?.id || null}
-        onSelectSession={(sess, grp) => {
-          setSelectedSession(sess);
-          if (grp) setSelectedGroup(grp);
+        onSelectSession={(session) => {
+          setSelectedSessionId(session.id);
+          setHudData({ state: 'idle' });
         }}
       />
 
@@ -363,13 +389,18 @@ export default function ReceptionScanPage() {
         {/* Verification HUD Card (7 cols) */}
         <div className="lg:col-span-7 space-y-4">
           <VerificationHud
-            data={hudData}
+            data={selectedSession ? hudData : { state: 'idle' }}
             onQuickPayClick={handleOpenQuickPay}
             onManualSearchFallback={() => {
               const el = document.getElementById('manual-search-table');
               el?.scrollIntoView({ behavior: 'smooth' });
             }}
           />
+
+          {canEdit && hudData.student && selectedSession && hudData.session?.id === selectedSession.id && (
+            <ReceptionStudentCard key={`${tenant.id}:${selectedSession.id}:${hudData.student.id}`}
+              tenantId={tenant.id} centerSlug={tenant.slug} student={hudData.student} session={selectedSession} group={selectedGroup} />
+          )}
 
           {/* Manual Barcode / Code Fast Input */}
           <form
@@ -389,7 +420,7 @@ export default function ReceptionScanPage() {
             <Button
               type="submit"
               variant="primary"
-              disabled={isProcessingScan || !manualCodeInput.trim()}
+              disabled={!canEdit || !selectedSession || isProcessingScan || !manualCodeInput.trim()}
               className="h-10 px-5 text-xs font-bold shrink-0"
             >
               <span>{isProcessingScan ? 'جاري التحقق...' : 'تسجيل'}</span>
@@ -399,7 +430,7 @@ export default function ReceptionScanPage() {
 
         {/* Live Circular Attendance Stats (5 cols) */}
         <div className="lg:col-span-5">
-          <LiveStatsRing stats={sessionStats} capacity={activeClassroom?.capacity} />
+          <LiveStatsRing stats={selectedSession ? sessionStats : null} capacity={activeClassroom?.capacity} />
         </div>
       </div>
 
@@ -408,7 +439,7 @@ export default function ReceptionScanPage() {
         {/* Manual Table (7 cols) */}
         <div className="lg:col-span-7">
           <ManualCheckinTable
-            students={enrolledStudents}
+            students={selectedSession ? enrolledStudents : []}
             attendanceRecords={sessionAttendance}
             onManualCheckin={(code) => handleProcessScan(code, 'manual')}
             isLoading={isProcessingScan}
@@ -417,7 +448,7 @@ export default function ReceptionScanPage() {
 
         {/* Reverse Chronological Stream (5 cols) */}
         <div className="lg:col-span-5">
-          <RecentScansFeed scans={recentScans} />
+          <RecentScansFeed scans={selectedSession ? recentScans : []} />
         </div>
       </div>
 

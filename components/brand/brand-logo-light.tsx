@@ -28,7 +28,8 @@ export function BrandLogoLight({
         height={height}
         priority={priority}
         unoptimized
-        className="object-contain w-auto h-auto max-h-full"
+        style={{ width, height }}
+        className="object-contain object-center max-w-full"
       />
     </div>
   );

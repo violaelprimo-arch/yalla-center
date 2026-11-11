@@ -3,6 +3,7 @@
 import React from 'react';
 import { Calendar, Clock, MapPin, CheckCircle } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { receptionSessionState } from '@/lib/attendance/reception';
 import { Session, Group, Branch, Classroom, User } from '@/lib/dal/types';
 
 interface SessionSelectorProps {
@@ -10,6 +11,7 @@ interface SessionSelectorProps {
   selectedBranchId: string;
   onSelectBranch: (branchId: string) => void;
   sessions: Session[];
+  clock: string;
   groups: Group[];
   classrooms: Classroom[];
   teachers: User[];
@@ -22,28 +24,23 @@ export function SessionSelector({
   selectedBranchId,
   onSelectBranch,
   sessions,
+  clock,
   groups,
   classrooms,
   teachers,
   selectedSessionId,
   onSelectSession,
 }: SessionSelectorProps) {
-  // Filter sessions by branch
-  const filteredSessions = sessions.filter((s) => {
-    if (!selectedBranchId || selectedBranchId === 'ALL') return true;
-    const grp = groups.find((g) => g.id === s.groupId);
-    return grp ? grp.branchId === selectedBranchId : true;
-  });
-
   return (
     <div className="card-elevated rounded-3xl p-5 border border-border/80 bg-card space-y-4">
       {/* Branch & Date Controls */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-border/70">
         <div className="flex items-center gap-2">
           <Calendar className="w-4 h-4 text-brand-cyan-500" />
-          <span className="text-xs font-bold text-foreground">حصص اليوم:</span>
+          <span className="text-xs font-bold text-foreground">الحصص الحالية والقادمة</span>
           <span className="text-xs font-mono font-medium text-muted-foreground">
             {new Date().toLocaleDateString('ar-EG', {
+              timeZone: 'Africa/Cairo',
               weekday: 'long',
               day: 'numeric',
               month: 'long',
@@ -73,18 +70,18 @@ export function SessionSelector({
 
       {/* Session Pills / Grid */}
       <div className="space-y-2">
-        {filteredSessions.length === 0 ? (
+        {sessions.length === 0 ? (
           <div className="text-center py-6 text-xs text-muted-foreground">
-            لا توجد حصص مجدولة لهذا الفرع اليوم.
+            لا توجد حصص حالية أو قادمة لهذا الفرع.
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-            {filteredSessions.map((s) => {
+            {sessions.map((s) => {
               const grp = groups.find((g) => g.id === s.groupId);
               const teacher = teachers.find((t) => t.id === s.teacherId);
               const room = classrooms.find((c) => c.id === s.classroomId);
               const isSelected = selectedSessionId === s.id;
-              const isLive = s.status === 'in_progress' || s.status === 'scheduled';
+              const isLive = receptionSessionState(s, clock) === 'current';
 
               return (
                 <button
@@ -108,7 +105,7 @@ export function SessionSelector({
                       </span>
                     ) : (
                       <Badge variant="outline" className="text-[10px]">
-                        {s.status === 'completed' ? 'منتهية' : 'مجدولة'}
+                        قادمة
                       </Badge>
                     )}
                   </div>
@@ -124,7 +121,7 @@ export function SessionSelector({
                     <span className="flex items-center gap-1 font-mono">
                       <Clock className="w-3 h-3 text-brand-cyan-500" />
                       <span>
-                        {s.startTime} - {s.endTime}
+                        {s.sessionDate} · {s.startTime} - {s.endTime}
                       </span>
                     </span>
                   </div>

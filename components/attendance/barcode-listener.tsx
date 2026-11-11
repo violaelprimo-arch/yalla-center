@@ -43,6 +43,12 @@ export function BarcodeListener({
     if (!isEnabled) return;
 
     const handleKeyDown = (event: KeyboardEvent) => {
+      // Grade inputs are modal and own their keyboard interaction.
+      if (event.target instanceof HTMLElement && event.target.closest('dialog[open]')) {
+        resetBuffer();
+        return;
+      }
+
       // Ignore functional modifier keys
       if (['Shift', 'Control', 'Alt', 'Meta', 'CapsLock', 'Tab'].includes(event.key)) {
         return;

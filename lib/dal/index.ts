@@ -308,6 +308,7 @@ export interface IDataProvider {
     questionCounts?: { mcq?: number; shortAnswer?: number };
   }): Promise<{ exam: Exam; questions: ExamQuestion[] }>;
   getExams(tenantId: string, filter?: { groupId?: string; teacherId?: string; status?: ExamStatus; subjectId?: string }): Promise<Exam[]>;
+  getStudentExamSubmissions(tenantId: string, groupId: string, studentId: string): Promise<ExamSubmission[]>;
   getExamById(examId: string): Promise<{ exam: Exam; questions: ExamQuestion[] } | null>;
   updateExamQuestion(params: {
     tenantId: string;

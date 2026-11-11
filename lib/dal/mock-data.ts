@@ -2647,6 +2647,11 @@ export class MockDataProvider implements IDataProvider {
     });
   }
 
+  async getStudentExamSubmissions(tenantId: string, groupId: string, studentId: string): Promise<ExamSubmission[]> {
+    const examIds = new Set((await this.getExams(tenantId, { groupId })).map(exam => exam.id));
+    return this.examSubmissions.filter(item => item.studentId === studentId && examIds.has(item.examId));
+  }
+
   async getExamById(examId: string): Promise<{ exam: Exam; questions: ExamQuestion[] } | null> {
     const exam = this.exams.find((e) => e.id === examId);
     if (!exam) return null;

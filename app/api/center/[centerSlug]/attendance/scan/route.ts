@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDataProvider } from '@/lib/dal/factory';
+import { getReceptionDataProvider } from '@/lib/dal/factory';
+import { receptionSessionState } from '@/lib/attendance/reception';
 import { recordReceptionScan } from '@/lib/attendance/checkin';
 
 export async function POST(
@@ -10,7 +11,7 @@ export async function POST(
     const resolvedParams = await Promise.resolve(params);
     const { centerSlug } = resolvedParams;
 
-    const dal = getDataProvider();
+    const dal = getReceptionDataProvider();
     const tenant = await dal.getTenantBySlug(centerSlug);
     if (!tenant) {
       return NextResponse.json(
@@ -30,6 +31,14 @@ export async function POST(
           message: 'معرف الحصة وكود الطالب أو الباركود مطلوبان',
         },
         { status: 400 }
+      );
+    }
+
+    const session = await dal.getSessionById(tenant.id, sessionId);
+    if (session && !receptionSessionState(session)) {
+      return NextResponse.json(
+        { success: false, error: 'SESSION_CLOSED', message: 'الحصة غير متاحة لتسجيل الحضور' },
+        { status: 409 }
       );
     }
 
