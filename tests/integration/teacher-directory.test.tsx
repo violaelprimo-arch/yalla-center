@@ -55,7 +55,7 @@ it('adds a teacher with different grade contracts and saved permissions, then ed
   expect(form.getByRole('checkbox', { name: 'الاطلاع على بيانات الطلاب' })).toBeDisabled();
   fireEvent.click(form.getByRole('checkbox', { name: 'الاطلاع على الطلاب' }));
   fireEvent.click(form.getByRole('checkbox', { name: 'الاطلاع على بيانات الطلاب' }));
-  fireEvent.click(form.getByRole('checkbox', { name: 'الطلاب', exact: true }));
+  fireEvent.click(form.getByRole('checkbox', { name: 'الطلاب' }));
   fireEvent.click(form.getByRole('button', { name: 'حفظ المعلم' }));
 
   await screen.findByText('تمت إضافة المعلم');
@@ -71,17 +71,17 @@ it('adds a teacher with different grade contracts and saved permissions, then ed
   first.unmount();
   render(page);
   const row = within(await screen.findByRole('row', { name: new RegExp(teacherName) }));
-  fireEvent.click(row.getByRole('button', { name: 'تعديل', exact: true }));
+  fireEvent.click(row.getByRole('button', { name: 'تعديل' }));
   form = within(screen.getByRole('dialog'));
   fireEvent.change(form.getByLabelText(/رقم الهاتف \(2\)/), { target: { value: '01123456789' } });
   fireEvent.click(form.getByRole('button', { name: 'التالي' }));
   expect(form.getByRole('checkbox', { name: 'الاطلاع على بيانات الطلاب' })).toBeChecked();
-  expect(form.getByRole('checkbox', { name: 'الطلاب', exact: true })).not.toBeChecked();
+  expect(form.getByRole('checkbox', { name: 'الطلاب' })).not.toBeChecked();
   fireEvent.click(form.getByRole('button', { name: 'حفظ المعلم' }));
   await row.findByText('01123456789');
 
   vi.spyOn(window, 'confirm').mockReturnValue(true);
-  fireEvent.click(row.getByRole('button', { name: 'حذف', exact: true }));
+  fireEvent.click(row.getByRole('button', { name: 'حذف' }));
   await waitFor(() => expect(screen.queryByText(teacherName)).not.toBeInTheDocument());
   expect(readDemoTeacherProfiles(tenantId)[0]).toMatchObject({ active: false, version: 3 });
 });
