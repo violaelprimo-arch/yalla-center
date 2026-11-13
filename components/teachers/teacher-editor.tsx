@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Camera, Plus, Trash2, UserRound, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { EGYPTIAN_STAGES, getGradeNameArabic } from '@/lib/materials/taxonomy';
-import type { Subject } from '@/lib/dal/types';
+import type { Subject, EducationalStage } from '@/lib/dal/types';
 import {
   normalizeDigits, TEACHER_MODELS, TEACHER_PERMISSIONS, TEACHER_TABS, teacherInputSchema,
   teacherModels, teacherPermissions, teacherTabs, type TeacherContract, type TeacherInput,
@@ -17,6 +17,7 @@ interface Props {
   originalAvatar?: string;
   demo: boolean;
   subjects: Subject[];
+  stages?: EducationalStage[];
   onSave: (input: TeacherInput, password?: string) => Promise<void>;
   onClose: () => void;
 }
@@ -46,7 +47,7 @@ async function thumbnail(file: File) {
   }
 }
 
-export function TeacherEditor({ initial, editing, originalAvatar, demo, subjects, onSave, onClose }: Props) {
+export function TeacherEditor({ initial, editing, originalAvatar, demo, subjects, stages, onSave, onClose }: Props) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [step, setStep] = useState(1);
   const [input, setInput] = useState(initial);
@@ -56,6 +57,14 @@ export function TeacherEditor({ initial, editing, originalAvatar, demo, subjects
   const [saving, setSaving] = useState(false);
   const [processingPhoto, setProcessingPhoto] = useState(false);
   const [showOldPhoto, setShowOldPhoto] = useState(true);
+
+  const stageList = stages && stages.length > 0
+    ? stages.map(s => ({
+        code: s.id,
+        nameAr: s.nameAr,
+        grades: (s.grades || []).map(g => ({ code: g.id, nameAr: g.nameAr })),
+      }))
+    : EGYPTIAN_STAGES;
 
   useEffect(() => { dialog.current?.showModal(); }, []);
 
@@ -174,7 +183,7 @@ export function TeacherEditor({ initial, editing, originalAvatar, demo, subjects
                   <label className="text-xs font-semibold">المرحلة أو الصف
                     <select className={control} value={contract.level} onChange={event => updateContract(index, { level: event.target.value })}>
                       <option value="">اختر</option>
-                      {EGYPTIAN_STAGES.map(stage => <optgroup key={stage.code} label={stage.nameAr}>
+                      {stageList.map(stage => <optgroup key={stage.code} label={stage.nameAr}>
                         <option value={stage.code} disabled={contracts.some((item, at) => at !== index && item.level === stage.code)}>{stage.nameAr} بالكامل</option>
                         {stage.grades.map(grade => <option key={grade.code} value={grade.code}
                           disabled={contracts.some((item, at) => at !== index && item.level === grade.code)}>{grade.nameAr}</option>)}

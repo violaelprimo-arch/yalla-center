@@ -43,6 +43,12 @@ import {
   MaterialsSummaryStats,
   DocumentCategory,
   MaterialIndexStatus,
+  EducationalStage,
+  EducationalStageInput,
+  EducationalGrade,
+  EducationalGradeInput,
+  SubjectInput,
+  BranchInput,
 } from './types';
 import {
   IDataProvider,
@@ -63,7 +69,75 @@ import { countArabicWords, evaluateIndexingStatus, simulateTextExtraction } from
 import { generateGroundedExam } from '../exams/generator';
 import { gradeExamSubmission as gradeExam } from '../exams/grading';
 
+export function buildDefaultStages(tenantId: string): EducationalStage[] {
+  return [
+    {
+      id: 'primary',
+      tenantId,
+      nameAr: 'المرحلة الابتدائية',
+      order: 1,
+      grades: [
+        { id: '1_prim', tenantId, stageId: 'primary', nameAr: 'الصف الأول الابتدائي', order: 1 },
+        { id: '2_prim', tenantId, stageId: 'primary', nameAr: 'الصف الثاني الابتدائي', order: 2 },
+        { id: '3_prim', tenantId, stageId: 'primary', nameAr: 'الصف الثالث الابتدائي', order: 3 },
+        { id: '4_prim', tenantId, stageId: 'primary', nameAr: 'الصف الرابع الابتدائي', order: 4 },
+        { id: '5_prim', tenantId, stageId: 'primary', nameAr: 'الصف الخامس الابتدائي', order: 5 },
+        { id: '6_prim', tenantId, stageId: 'primary', nameAr: 'الصف السادس الابتدائي', order: 6 },
+      ],
+    },
+    {
+      id: 'preparatory',
+      tenantId,
+      nameAr: 'المرحلة الإعدادية',
+      order: 2,
+      grades: [
+        { id: '1_prep', tenantId, stageId: 'preparatory', nameAr: 'الصف الأول الإعدادي', order: 1 },
+        { id: '2_prep', tenantId, stageId: 'preparatory', nameAr: 'الصف الثاني الإعدادي', order: 2 },
+        { id: '3_prep', tenantId, stageId: 'preparatory', nameAr: 'الصف الثالث الإعدادي', order: 3 },
+      ],
+    },
+    {
+      id: 'secondary',
+      tenantId,
+      nameAr: 'المرحلة الثانوية',
+      order: 3,
+      grades: [
+        { id: '1_sec', tenantId, stageId: 'secondary', nameAr: 'الصف الأول الثانوي', order: 1 },
+        {
+          id: '2_sec',
+          tenantId,
+          stageId: 'secondary',
+          nameAr: 'الصف الثاني الثانوي',
+          order: 2,
+          hasDivisions: true,
+          divisions: [
+            { id: 'scientific', nameAr: 'علمي' },
+            { id: 'literary', nameAr: 'أدبي' },
+          ],
+        },
+        {
+          id: '3_sec',
+          tenantId,
+          stageId: 'secondary',
+          nameAr: 'الصف الثالث الثانوي',
+          order: 3,
+          hasDivisions: true,
+          divisions: [
+            { id: 'scientific_math', nameAr: 'علمي رياضة' },
+            { id: 'scientific_science', nameAr: 'علمي علوم' },
+            { id: 'literary', nameAr: 'أدبي' },
+          ],
+        },
+      ],
+    },
+  ];
+}
+
 export const INITIAL_SEEDED_DATA = {
+  stages: [
+    ...buildDefaultStages('tenant-maher-001'),
+    ...buildDefaultStages('tenant-rowad-002'),
+  ],
   tenants: [
     {
       id: 'tenant-maher-001',
@@ -996,6 +1070,7 @@ export const INITIAL_SEEDED_DATA = {
 
 export class MockDataProvider implements IDataProvider {
   public tenants: Tenant[];
+  public stages: EducationalStage[];
   public branches: Branch[];
   public classrooms: Classroom[];
   public users: User[];
@@ -1020,6 +1095,7 @@ export class MockDataProvider implements IDataProvider {
 
   constructor() {
     this.tenants = JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.tenants));
+    this.stages = JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.stages));
     this.branches = JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.branches));
     this.classrooms = JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.classrooms));
     this.users = JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.users));
@@ -1060,10 +1136,240 @@ export class MockDataProvider implements IDataProvider {
     return this.branches.filter((b) => b.tenantId === tenantId);
   }
 
+  async saveBranch(tenantId: string, input: BranchInput): Promise<Branch> {
+    const trimmedName = input.nameAr.trim();
+    if (!trimmedName) {
+      throw new Error('اسم الفرع مطلوب');
+    }
+
+    if (input.id) {
+      const existingIndex = this.branches.findIndex(
+        (b) => b.tenantId === tenantId && b.id === input.id
+      );
+      if (existingIndex >= 0) {
+        const existing = this.branches[existingIndex];
+        const updated: Branch = {
+          ...existing,
+          nameAr: trimmedName,
+          address: input.address !== undefined ? input.address.trim() : (existing.address || ''),
+          phone: input.phone !== undefined ? input.phone.trim() : (existing.phone || ''),
+          isActive: input.isActive !== undefined ? input.isActive : existing.isActive,
+        };
+        this.branches[existingIndex] = updated;
+        return JSON.parse(JSON.stringify(updated));
+      }
+    }
+
+    const newBranch: Branch = {
+      id: input.id?.trim() || `branch-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      tenantId,
+      nameAr: trimmedName,
+      address: input.address?.trim() || '',
+      phone: input.phone?.trim() || '',
+      isActive: input.isActive !== undefined ? input.isActive : true,
+      createdAt: new Date().toISOString(),
+    };
+    this.branches.push(newBranch);
+    return JSON.parse(JSON.stringify(newBranch));
+  }
+
+  async deleteBranch(tenantId: string, branchId: string): Promise<{ success: boolean; error?: string }> {
+    const branch = this.branches.find((b) => b.tenantId === tenantId && b.id === branchId);
+    if (!branch) {
+      return { success: false, error: 'الفرع غير موجود' };
+    }
+
+    const hasClassrooms = this.classrooms.some(
+      (c) => c.tenantId === tenantId && c.branchId === branchId
+    );
+    if (hasClassrooms) {
+      return { success: false, error: 'لا يمكن حذف الفرع لوجود قاعات مرتبطة به' };
+    }
+
+    const hasGroups = this.groups.some(
+      (g) => g.tenantId === tenantId && g.branchId === branchId
+    );
+    if (hasGroups) {
+      return { success: false, error: 'لا يمكن حذف الفرع لوجود مجموعات مرتبطة به' };
+    }
+
+    this.branches = this.branches.filter((b) => !(b.tenantId === tenantId && b.id === branchId));
+    return { success: true };
+  }
+
   async getClassrooms(tenantId: string, branchId?: string): Promise<Classroom[]> {
     return this.classrooms.filter(
       (c) => c.tenantId === tenantId && (!branchId || c.branchId === branchId)
     );
+  }
+
+  // Stages & Grades (Master Data)
+  async getStages(tenantId: string): Promise<EducationalStage[]> {
+    let tenantStages = this.stages.filter((s) => s.tenantId === tenantId);
+    if (tenantStages.length === 0) {
+      const defaults = buildDefaultStages(tenantId);
+      this.stages.push(...defaults);
+      tenantStages = defaults;
+    }
+    return JSON.parse(JSON.stringify(tenantStages.sort((a, b) => (a.order || 0) - (b.order || 0))));
+  }
+
+  async saveStage(tenantId: string, input: EducationalStageInput): Promise<EducationalStage> {
+    const trimmedName = input.nameAr.trim();
+    if (!trimmedName) {
+      throw new Error('اسم المرحلة التعليمية مطلوب');
+    }
+
+    const duplicate = this.stages.find(
+      (s) =>
+        s.tenantId === tenantId &&
+        s.nameAr.trim().toLowerCase() === trimmedName.toLowerCase() &&
+        s.id !== input.id
+    );
+    if (duplicate) {
+      throw new Error('توجد مرحلة تعليمية بنفس الاسم بالفعل');
+    }
+
+    if (input.id) {
+      const existing = this.stages.find((s) => s.tenantId === tenantId && s.id === input.id);
+      if (existing) {
+        existing.nameAr = trimmedName;
+        if (input.order !== undefined) existing.order = input.order;
+        return JSON.parse(JSON.stringify(existing));
+      }
+    }
+
+    const maxOrder = this.stages
+      .filter((s) => s.tenantId === tenantId)
+      .reduce((max, s) => Math.max(max, s.order || 0), 0);
+
+    const newStage: EducationalStage = {
+      id: input.id?.trim() || `stage-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      tenantId,
+      nameAr: trimmedName,
+      order: input.order !== undefined ? input.order : maxOrder + 1,
+      grades: [],
+      createdAt: new Date().toISOString(),
+    };
+    this.stages.push(newStage);
+    return JSON.parse(JSON.stringify(newStage));
+  }
+
+  async deleteStage(tenantId: string, stageId: string): Promise<{ success: boolean; error?: string }> {
+    const stage = this.stages.find((s) => s.tenantId === tenantId && s.id === stageId);
+    if (!stage) {
+      return { success: false, error: 'المرحلة التعليمية غير موجودة' };
+    }
+
+    const hasSubjects = this.subjects.some((s) => s.tenantId === tenantId && s.stage === stageId);
+    if (hasSubjects) {
+      return { success: false, error: 'لا يمكن حذف المرحلة لوجود مواد دراسية مرتبطة بها' };
+    }
+
+    const hasStudents = this.users.some(
+      (u) => u.tenantId === tenantId && u.role === 'STUDENT' && u.stage === stageId
+    );
+    if (hasStudents) {
+      return { success: false, error: 'لا يمكن حذف المرحلة لوجود طلاب مسجلين بها' };
+    }
+
+    const gradeIds = (stage.grades || []).map((g) => g.id);
+    const hasGradeSubjects = this.subjects.some(
+      (s) => s.tenantId === tenantId && gradeIds.includes(s.grade)
+    );
+    if (hasGradeSubjects) {
+      return { success: false, error: 'لا يمكن حذف المرحلة لوجود مواد دراسية مرتبطة بصفوفها' };
+    }
+
+    this.stages = this.stages.filter((s) => !(s.tenantId === tenantId && s.id === stageId));
+    return { success: true };
+  }
+
+  async saveGrade(tenantId: string, input: EducationalGradeInput): Promise<EducationalGrade> {
+    const trimmedName = input.nameAr.trim();
+    if (!trimmedName) {
+      throw new Error('اسم الصف الدراسي مطلوب');
+    }
+    if (!input.stageId) {
+      throw new Error('المرحلة التابعة للصف مطلوبة');
+    }
+
+    // Ensure stages are populated
+    await this.getStages(tenantId);
+
+    const stage = this.stages.find((s) => s.tenantId === tenantId && s.id === input.stageId);
+    if (!stage) {
+      throw new Error('المرحلة التعليمية التابع لها الصف غير موجودة');
+    }
+
+    const duplicate = stage.grades.find(
+      (g) =>
+        g.nameAr.trim().toLowerCase() === trimmedName.toLowerCase() &&
+        g.id !== input.id
+    );
+    if (duplicate) {
+      throw new Error('يوجد صف بنفس الاسم في هذه المرحلة بالفعل');
+    }
+
+    if (input.id) {
+      const existingGrade = stage.grades.find((g) => g.id === input.id);
+      if (existingGrade) {
+        existingGrade.nameAr = trimmedName;
+        if (input.order !== undefined) existingGrade.order = input.order;
+        if (input.hasDivisions !== undefined) existingGrade.hasDivisions = input.hasDivisions;
+        if (input.divisions !== undefined) existingGrade.divisions = input.divisions;
+        return JSON.parse(JSON.stringify(existingGrade));
+      }
+    }
+
+    const maxOrder = stage.grades.reduce((max, g) => Math.max(max, g.order || 0), 0);
+    const newGrade: EducationalGrade = {
+      id: input.id?.trim() || `grade-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      tenantId,
+      stageId: input.stageId,
+      nameAr: trimmedName,
+      order: input.order !== undefined ? input.order : maxOrder + 1,
+      hasDivisions: input.hasDivisions || false,
+      divisions: input.divisions || [],
+      createdAt: new Date().toISOString(),
+    };
+    stage.grades.push(newGrade);
+    return JSON.parse(JSON.stringify(newGrade));
+  }
+
+  async deleteGrade(tenantId: string, gradeId: string): Promise<{ success: boolean; error?: string }> {
+    let targetStage: EducationalStage | undefined;
+    let targetGrade: EducationalGrade | undefined;
+
+    for (const stage of this.stages) {
+      if (stage.tenantId === tenantId) {
+        const found = stage.grades.find((g) => g.id === gradeId);
+        if (found) {
+          targetStage = stage;
+          targetGrade = found;
+          break;
+        }
+      }
+    }
+
+    if (!targetStage || !targetGrade) {
+      return { success: false, error: 'الصف الدراسي غير موجود' };
+    }
+
+    const hasSubjects = this.subjects.some((s) => s.tenantId === tenantId && s.grade === gradeId);
+    if (hasSubjects) {
+      return { success: false, error: 'لا يمكن حذف الصف لوجود مواد دراسية مرتبطة به' };
+    }
+
+    const hasStudents = this.users.some(
+      (u) => u.tenantId === tenantId && u.role === 'STUDENT' && u.grade === gradeId
+    );
+    if (hasStudents) {
+      return { success: false, error: 'لا يمكن حذف الصف لوجود طلاب مسجلين به' };
+    }
+
+    targetStage.grades = targetStage.grades.filter((g) => g.id !== gradeId);
+    return { success: true };
   }
 
   // 2. Users & RBAC
@@ -1154,8 +1460,97 @@ export class MockDataProvider implements IDataProvider {
   }
 
   // 3. Courses, Groups & Timetable
-  async getSubjects(tenantId: string): Promise<Subject[]> {
-    return this.subjects.filter((s) => s.tenantId === tenantId);
+  async getSubjects(
+    tenantId: string,
+    filter?: { stage?: string; grade?: string }
+  ): Promise<Subject[]> {
+    return this.subjects.filter((s) => {
+      if (s.tenantId !== tenantId) return false;
+      if (filter?.stage && s.stage !== filter.stage) return false;
+      if (filter?.grade && s.grade !== filter.grade) return false;
+      return true;
+    });
+  }
+
+  async saveSubject(tenantId: string, input: SubjectInput): Promise<Subject> {
+    const trimmedName = input.nameAr.trim();
+    if (!trimmedName) {
+      throw new Error('اسم المادة مطلوب');
+    }
+    if (!input.stage) {
+      throw new Error('المرحلة التعليمية مطلوبة');
+    }
+    if (!input.grade) {
+      throw new Error('الصف الدراسي مطلوب');
+    }
+
+    const duplicate = this.subjects.find(
+      (s) =>
+        s.tenantId === tenantId &&
+        s.grade === input.grade &&
+        s.nameAr.trim().toLowerCase() === trimmedName.toLowerCase() &&
+        s.id !== input.id
+    );
+    if (duplicate) {
+      throw new Error('يوجد مادة بنفس الاسم في هذا الصف بالفعل');
+    }
+
+    if (input.id) {
+      const existingIndex = this.subjects.findIndex(
+        (s) => s.tenantId === tenantId && s.id === input.id
+      );
+      if (existingIndex >= 0) {
+        const existing = this.subjects[existingIndex];
+        const updated: Subject = {
+          ...existing,
+          nameAr: trimmedName,
+          code: input.code !== undefined ? input.code.trim() : (existing.code || ''),
+          stage: input.stage,
+          grade: input.grade,
+        };
+        this.subjects[existingIndex] = updated;
+        return JSON.parse(JSON.stringify(updated));
+      }
+    }
+
+    const newSubject: Subject = {
+      id: input.id?.trim() || `subj-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      tenantId,
+      nameAr: trimmedName,
+      code: input.code?.trim() || '',
+      stage: input.stage,
+      grade: input.grade,
+      createdAt: new Date().toISOString(),
+    };
+    this.subjects.push(newSubject);
+    return JSON.parse(JSON.stringify(newSubject));
+  }
+
+  async deleteSubject(tenantId: string, subjectId: string): Promise<{ success: boolean; error?: string }> {
+    const subject = this.subjects.find((s) => s.tenantId === tenantId && s.id === subjectId);
+    if (!subject) {
+      return { success: false, error: 'المادة الدراسية غير موجودة' };
+    }
+
+    const hasGroups = this.groups.some((g) => g.tenantId === tenantId && g.subjectId === subjectId);
+    if (hasGroups) {
+      return { success: false, error: 'لا يمكن حذف المادة لوجود مجموعات مرتبطة بها' };
+    }
+
+    const hasMaterials = this.materials.some(
+      (m) => m.tenantId === tenantId && m.subjectId === subjectId
+    );
+    if (hasMaterials) {
+      return { success: false, error: 'لا يمكن حذف المادة لوجود مذكرات ومواد تعليمية مرتبطة بها' };
+    }
+
+    const hasExams = this.exams.some((e) => e.tenantId === tenantId && e.subjectId === subjectId);
+    if (hasExams) {
+      return { success: false, error: 'لا يمكن حذف المادة لوجود امتحانات مرتبطة بها' };
+    }
+
+    this.subjects = this.subjects.filter((s) => !(s.tenantId === tenantId && s.id === subjectId));
+    return { success: true };
   }
 
   async getGroups(

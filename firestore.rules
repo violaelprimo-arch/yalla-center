@@ -1,7 +1,98 @@
 rules_version = '2';
 
+// ===============================================================
+// Assumed Data Models
+// ===============================================================
+//
+// Collection: staff_memberships
+// Document ID: {uid} (Firebase Auth UID)
+// Fields:
+//   - uid: string (required) - Firebase Auth UID
+//   - email: string (optional) - Staff email address
+//   - displayName: string (optional) - Staff display name
+//   - role: string (required) - PLATFORM_OWNER, CENTER_ADMIN, BRANCH_MANAGER, RECEPTIONIST, TEACHER
+//   - tenantId: string (required) - Associated center/tenant identifier
+//   - branchIds: list (optional) - Authorized branch IDs (empty or omitted means all branches)
+//   - teacherId: string (optional) - Link to teacher record if role == 'TEACHER'
+//   - isActive: bool (required) - Whether account is active
+//
+// Collection: master_stages
+// Document ID: {tenantId}~{stageId}
+// Fields:
+//   - id: string (required) - Stage identifier
+//   - tenantId: string (required, immutable) - Center/tenant ID
+//   - nameAr: string (required) - Arabic stage title (e.g. الثانوية العامة)
+//   - order: int/number (optional) - Display sort order
+//   - grades: list of maps (optional) - Embedded educational grades
+//   - createdAt: string/timestamp (optional)
+//   - updatedAt: string/timestamp (optional)
+//
+// Collection: master_subjects
+// Document ID: {tenantId}~{subjectId}
+// Fields:
+//   - id: string (required) - Subject identifier
+//   - tenantId: string (required, immutable) - Center/tenant ID
+//   - nameAr: string (required) - Arabic subject title (e.g. الرياضيات التطبيقية)
+//   - code: string (optional) - Subject short code
+//   - stage: string (required) - Associated stage ID
+//   - grade: string (required) - Associated grade ID
+//   - createdAt: string/timestamp (optional)
+//   - updatedAt: string/timestamp (optional)
+//
+// Collection: master_branches
+// Document ID: {tenantId}~{branchId}
+// Fields:
+//   - id: string (required) - Branch identifier
+//   - tenantId: string (required, immutable) - Center/tenant ID
+//   - nameAr: string (required) - Arabic branch name
+//   - address: string (optional) - Branch street address
+//   - phone: string (optional) - Branch telephone number
+//   - isActive: bool (optional) - Branch active status
+//   - createdAt: string/timestamp (optional)
+//   - updatedAt: string/timestamp (optional)
+//
+// Collection: lesson_exams
+// Document ID: {examId}
+// Fields:
+//   - id: string (required)
+//   - tenantId: string (required, immutable)
+//   - branchId: string (required, immutable)
+//   - sessionId: string (required, immutable)
+//   - groupId: string (required, immutable)
+//   - teacherId: string (required)
+//   - totalMarks: number (required, 1..1000)
+//   - updatedByUid: string (required)
+//   - version: int/number (required, incrementing)
+//
+// Collection: lesson_grades
+// Document ID: {examId}_{studentId}
+// Fields:
+//   - id: string (required, must match {examId}_{studentId})
+//   - tenantId: string (required, immutable)
+//   - branchId: string (required)
+//   - sessionId: string (required, immutable)
+//   - groupId: string (required, immutable)
+//   - examId: string (required, immutable)
+//   - studentId: string (required, immutable)
+//   - studentUid: string (optional, for student portal read)
+//   - score: number (required, 0..totalMarks)
+//   - recordedByUid: string (required)
+//   - version: int/number (required, incrementing)
+//
+// Collection: lesson_grade_audits
+// Document ID: {auditId}
+// Fields:
+//   - tenantId, branchId, sessionId, groupId, examId, action, actorUid,
+//     previousScore, newScore, timestamp
+//
+// ===============================================================
+
 service cloud.firestore {
   match /databases/{database}/documents {
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+
     function isSignedIn() {
       return request.auth != null;
     }
@@ -62,6 +153,10 @@ service cloud.firestore {
       return score is number && score >= 0 && score <= totalMarks;
     }
 
+    // ===============================================================
+    // Collection Match Rules
+    // ===============================================================
+
     // Staff permission registry: server-managed only (no client privilege escalation)
     match /staff_memberships/{uid} {
       allow read: if isSignedIn() && (
@@ -69,6 +164,49 @@ service cloud.firestore {
         (isActiveStaff() && (staffRole() == 'PLATFORM_OWNER' || (staffRole() == 'CENTER_ADMIN' && resource.data.tenantId == staffDoc().tenantId)))
       );
       allow write: if false;
+    }
+
+    // Master data: Educational stages & grades (${tenantId}~${stageId})
+    match /master_stages/{stageDocId} {
+      allow read: if isActiveStaff() && matchesTenant(resource.data.tenantId);
+      allow create: if isActiveStaff() &&
+        (staffRole() == 'PLATFORM_OWNER' || (staffRole() == 'CENTER_ADMIN' && matchesTenant(request.resource.data.tenantId))) &&
+        request.resource.data.tenantId is string &&
+        request.resource.data.nameAr is string;
+      allow update: if isActiveStaff() &&
+        (staffRole() == 'PLATFORM_OWNER' || (staffRole() == 'CENTER_ADMIN' && matchesTenant(resource.data.tenantId))) &&
+        request.resource.data.tenantId == resource.data.tenantId;
+      allow delete: if isActiveStaff() &&
+        (staffRole() == 'PLATFORM_OWNER' || (staffRole() == 'CENTER_ADMIN' && matchesTenant(resource.data.tenantId)));
+    }
+
+    // Master data: Educational subjects (${tenantId}~${subjectId})
+    match /master_subjects/{subjectDocId} {
+      allow read: if isActiveStaff() && matchesTenant(resource.data.tenantId);
+      allow create: if isActiveStaff() &&
+        (staffRole() == 'PLATFORM_OWNER' || (staffRole() == 'CENTER_ADMIN' && matchesTenant(request.resource.data.tenantId))) &&
+        request.resource.data.tenantId is string &&
+        request.resource.data.nameAr is string &&
+        request.resource.data.grade is string;
+      allow update: if isActiveStaff() &&
+        (staffRole() == 'PLATFORM_OWNER' || (staffRole() == 'CENTER_ADMIN' && matchesTenant(resource.data.tenantId))) &&
+        request.resource.data.tenantId == resource.data.tenantId;
+      allow delete: if isActiveStaff() &&
+        (staffRole() == 'PLATFORM_OWNER' || (staffRole() == 'CENTER_ADMIN' && matchesTenant(resource.data.tenantId)));
+    }
+
+    // Master data: Center branches (${tenantId}~${branchId})
+    match /master_branches/{branchDocId} {
+      allow read: if isActiveStaff() && matchesTenant(resource.data.tenantId);
+      allow create: if isActiveStaff() &&
+        (staffRole() == 'PLATFORM_OWNER' || (staffRole() == 'CENTER_ADMIN' && matchesTenant(request.resource.data.tenantId))) &&
+        request.resource.data.tenantId is string &&
+        request.resource.data.nameAr is string;
+      allow update: if isActiveStaff() &&
+        (staffRole() == 'PLATFORM_OWNER' || (staffRole() == 'CENTER_ADMIN' && matchesTenant(resource.data.tenantId))) &&
+        request.resource.data.tenantId == resource.data.tenantId;
+      allow delete: if isActiveStaff() &&
+        (staffRole() == 'PLATFORM_OWNER' || (staffRole() == 'CENTER_ADMIN' && matchesTenant(resource.data.tenantId)));
     }
 
     // Lesson exam definitions (totalMarks shared once per exam per session)

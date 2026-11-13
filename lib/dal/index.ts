@@ -2,9 +2,15 @@ import type { TeacherProfile } from '@/lib/teachers/profile';
 import {
   Tenant,
   Branch,
+  BranchInput,
   Classroom,
   User,
   Subject,
+  SubjectInput,
+  EducationalStage,
+  EducationalStageInput,
+  EducationalGrade,
+  EducationalGradeInput,
   Group,
   Session,
   Enrollment,
@@ -109,7 +115,16 @@ export interface IDataProvider {
   getTenantById(id: string): Promise<Tenant | null>;
   getTenants(): Promise<Tenant[]>;
   getBranches(tenantId: string): Promise<Branch[]>;
+  saveBranch(tenantId: string, branch: BranchInput): Promise<Branch>;
+  deleteBranch(tenantId: string, branchId: string): Promise<{ success: boolean; error?: string }>;
   getClassrooms(tenantId: string, branchId?: string): Promise<Classroom[]>;
+
+  // Stages & Grades (Master Data)
+  getStages(tenantId: string): Promise<EducationalStage[]>;
+  saveStage(tenantId: string, stage: EducationalStageInput): Promise<EducationalStage>;
+  deleteStage(tenantId: string, stageId: string): Promise<{ success: boolean; error?: string }>;
+  saveGrade(tenantId: string, grade: EducationalGradeInput): Promise<EducationalGrade>;
+  deleteGrade(tenantId: string, gradeId: string): Promise<{ success: boolean; error?: string }>;
 
   // 2. Users & RBAC
   getUserById(userId: string): Promise<User | null>;
@@ -129,7 +144,9 @@ export interface IDataProvider {
   ): Promise<{ success: boolean; data?: User; error?: string }>;
 
   // 3. Courses, Groups & Timetable
-  getSubjects(tenantId: string): Promise<Subject[]>;
+  getSubjects(tenantId: string, filter?: { stage?: string; grade?: string }): Promise<Subject[]>;
+  saveSubject(tenantId: string, subject: SubjectInput): Promise<Subject>;
+  deleteSubject(tenantId: string, subjectId: string): Promise<{ success: boolean; error?: string }>;
   getGroups(tenantId: string, filter?: { branchId?: string; teacherId?: string }): Promise<Group[]>;
   getGroupById(tenantId: string, groupId: string): Promise<Group | null>;
 

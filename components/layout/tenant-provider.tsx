@@ -6,6 +6,8 @@ import { Tenant, Branch, User, UserRole } from '@/lib/dal/types';
 export interface TenantContextType {
   tenant: Tenant;
   branches: Branch[];
+  setBranches: React.Dispatch<React.SetStateAction<Branch[]>>;
+  refreshBranches: () => Promise<void>;
   activeBranch: Branch | null;
   activeBranchId: string | null;
   setActiveBranchId: (id: string | null) => void;
@@ -32,9 +34,28 @@ export function TenantProvider({
   branches,
   initialUsers,
 }: TenantProviderProps) {
+  const [currentBranches, setCurrentBranches] = useState<Branch[]>(branches);
   const [activeBranchId, setActiveBranchId] = useState<string | null>(
     branches[0]?.id || null
   );
+
+  React.useEffect(() => {
+    setCurrentBranches(branches);
+  }, [branches]);
+
+  const refreshBranches = async () => {
+    try {
+      const res = await fetch(`/api/center/${tenant.slug}/master-data`, {
+        cache: 'no-store',
+      });
+      const data = await res.json();
+      if (data.success && data.data?.branches) {
+        setCurrentBranches(data.data.branches);
+      }
+    } catch (err) {
+      console.warn('Failed to refresh branches in TenantProvider:', err);
+    }
+  };
 
   const [availableUsers] = useState<User[]>(initialUsers);
 
@@ -60,8 +81,8 @@ export function TenantProvider({
   const [isOwnerMode, setIsOwnerMode] = useState<boolean>(false);
 
   const activeBranch = useMemo(
-    () => branches.find((b) => b.id === activeBranchId) || branches[0] || null,
-    [branches, activeBranchId]
+    () => currentBranches.find((b) => b.id === activeBranchId) || currentBranches[0] || null,
+    [currentBranches, activeBranchId]
   );
 
   const switchRole = (role: UserRole) => {
@@ -119,7 +140,9 @@ export function TenantProvider({
     <TenantContext.Provider
       value={{
         tenant,
-        branches,
+        branches: currentBranches,
+        setBranches: setCurrentBranches,
+        refreshBranches,
         activeBranch,
         activeBranchId,
         setActiveBranchId,

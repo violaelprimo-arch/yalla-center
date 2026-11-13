@@ -17,6 +17,9 @@ import {
   UserCircle,
   LucideIcon,
   ExternalLink,
+  Layers,
+  ChevronDown,
+  BookOpen,
 } from 'lucide-react';
 import { UserRole } from '@/lib/dal/types';
 import { useTenant } from './tenant-provider';
@@ -133,6 +136,33 @@ export const CENTER_NAV_ITEMS: CenterNavItem[] = [
   },
 ];
 
+export const MASTER_DATA_NAV = {
+  id: 'master-data',
+  titleAr: 'البيانات الأساسية',
+  icon: Layers,
+  roles: ['PLATFORM_OWNER', 'CENTER_ADMIN', 'BRANCH_MANAGER'] as UserRole[],
+  items: [
+    {
+      id: 'stages',
+      titleAr: 'قائمة المراحل التعليمية',
+      href: (slug: string) => `/center/${slug}/stages`,
+      icon: GraduationCap,
+    },
+    {
+      id: 'subjects',
+      titleAr: 'قائمة المواد الدراسية',
+      href: (slug: string) => `/center/${slug}/subjects`,
+      icon: BookOpen,
+    },
+    {
+      id: 'branches-list',
+      titleAr: 'قائمة الفروع',
+      href: (slug: string) => `/center/${slug}/branches-list`,
+      icon: Building2,
+    },
+  ],
+};
+
 const ROLE_LABELS: Record<UserRole, { label: string; color: string }> = {
   PLATFORM_OWNER: { label: 'مدير المنصة', color: 'bg-purple-500/20 text-purple-300 border-purple-500/30' },
   CENTER_ADMIN: { label: 'مدير السنتر', color: 'bg-brand-cyan-500/20 text-brand-cyan-400 border-brand-cyan-500/30' },
@@ -147,6 +177,21 @@ const ROLE_LABELS: Record<UserRole, { label: string; color: string }> = {
 export function Sidebar() {
   const { tenant, currentRole, currentUser, isOwnerMode } = useTenant();
   const pathname = usePathname();
+
+  const isMasterDataActive =
+    pathname.startsWith(`/center/${tenant.slug}/stages`) ||
+    pathname.startsWith(`/center/${tenant.slug}/subjects`) ||
+    pathname.startsWith(`/center/${tenant.slug}/branches-list`);
+
+  const [isMasterDataOpen, setIsMasterDataOpen] = React.useState(isMasterDataActive);
+
+  React.useEffect(() => {
+    if (isMasterDataActive) {
+      setIsMasterDataOpen(true);
+    }
+  }, [isMasterDataActive]);
+
+  const canViewMasterData = MASTER_DATA_NAV.roles.includes(currentRole);
 
   // Filter navigation items based on the active role
   const visibleNavItems = CENTER_NAV_ITEMS.filter((item) =>
@@ -207,43 +252,111 @@ export function Sidebar() {
           const Icon = item.icon;
 
           return (
-            <Link
-              key={item.id}
-              href={itemHref}
-              className={cn(
-                'group relative flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150',
-                isActive
-                  ? 'bg-[#111A38] text-brand-cyan-400 font-bold shadow-soft-sm'
-                  : 'text-slate-300 hover:text-white hover:bg-[#111A38]/60'
-              )}
-            >
-              {/* Electric Cyan Active Glow Indicator */}
-              {isActive && (
-                <span className="absolute right-0 top-1/2 -translate-y-1/2 w-1.5 h-6 bg-[#00A3FF] rounded-l-full shadow-[0_0_12px_#00A3FF]" />
-              )}
-
-              <Icon
+            <React.Fragment key={item.id}>
+              <Link
+                href={itemHref}
                 className={cn(
-                  'w-5 h-5 shrink-0 transition-colors',
+                  'group relative flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150',
                   isActive
-                    ? 'text-[#00A3FF]'
-                    : 'text-slate-400 group-hover:text-slate-200'
+                    ? 'bg-[#111A38] text-brand-cyan-400 font-bold shadow-soft-sm'
+                    : 'text-slate-300 hover:text-white hover:bg-[#111A38]/60'
                 )}
-              />
+              >
+                {/* Electric Cyan Active Glow Indicator */}
+                {isActive && (
+                  <span className="absolute right-0 top-1/2 -translate-y-1/2 w-1.5 h-6 bg-[#00A3FF] rounded-l-full shadow-[0_0_12px_#00A3FF]" />
+                )}
 
-              <span className="flex-1 truncate">{item.titleAr}</span>
-
-              {item.badge && (
-                <span
+                <Icon
                   className={cn(
-                    'text-[10px] font-bold px-1.5 py-0.5 rounded text-white shrink-0',
-                    item.badge === 'AI' ? 'bg-purple-600' : 'bg-emerald-600'
+                    'w-5 h-5 shrink-0 transition-colors',
+                    isActive
+                      ? 'text-[#00A3FF]'
+                      : 'text-slate-400 group-hover:text-slate-200'
                   )}
-                >
-                  {item.badge}
-                </span>
+                />
+
+                <span className="flex-1 truncate">{item.titleAr}</span>
+
+                {item.badge && (
+                  <span
+                    className={cn(
+                      'text-[10px] font-bold px-1.5 py-0.5 rounded text-white shrink-0',
+                      item.badge === 'AI' ? 'bg-purple-600' : 'bg-emerald-600'
+                    )}
+                  >
+                    {item.badge}
+                  </span>
+                )}
+              </Link>
+
+              {/* Master Data Collapsible Menu right below Dashboard */}
+              {item.id === 'dashboard' && canViewMasterData && (
+                <div className="space-y-1 my-1">
+                  <button
+                    type="button"
+                    onClick={() => setIsMasterDataOpen((prev) => !prev)}
+                    className={cn(
+                      'group relative flex items-center justify-between w-full px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150 cursor-pointer',
+                      isMasterDataActive
+                        ? 'bg-[#111A38] text-brand-cyan-400 font-bold shadow-soft-sm'
+                        : 'text-slate-300 hover:text-white hover:bg-[#111A38]/60'
+                    )}
+                    aria-expanded={isMasterDataOpen}
+                  >
+                    <div className="flex items-center gap-3">
+                      {isMasterDataActive && (
+                        <span className="absolute right-0 top-1/2 -translate-y-1/2 w-1.5 h-6 bg-[#00A3FF] rounded-l-full shadow-[0_0_12px_#00A3FF]" />
+                      )}
+                      <Layers
+                        className={cn(
+                          'w-5 h-5 shrink-0 transition-colors',
+                          isMasterDataActive ? 'text-[#00A3FF]' : 'text-slate-400 group-hover:text-slate-200'
+                        )}
+                      />
+                      <span className="truncate">{MASTER_DATA_NAV.titleAr}</span>
+                    </div>
+                    <ChevronDown
+                      className={cn(
+                        'w-4 h-4 text-slate-400 transition-transform duration-200 shrink-0',
+                        isMasterDataOpen ? 'rotate-180 text-brand-cyan-400' : ''
+                      )}
+                    />
+                  </button>
+
+                  {isMasterDataOpen && (
+                    <div className="mr-4 pr-3 border-r border-[#1C2541] space-y-1 mt-1 transition-all">
+                      {MASTER_DATA_NAV.items.map((subItem) => {
+                        const subHref = subItem.href(tenant.slug);
+                        const isSubActive = pathname === subHref || pathname.startsWith(subHref + '/');
+                        const SubIcon = subItem.icon;
+
+                        return (
+                          <Link
+                            key={subItem.id}
+                            href={subHref}
+                            className={cn(
+                              'group relative flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-xs font-medium transition-all duration-150',
+                              isSubActive
+                                ? 'bg-brand-cyan-500/15 text-brand-cyan-400 font-bold border border-brand-cyan-500/30'
+                                : 'text-slate-400 hover:text-slate-200 hover:bg-[#111A38]/40'
+                            )}
+                          >
+                            <SubIcon
+                              className={cn(
+                                'w-4 h-4 shrink-0',
+                                isSubActive ? 'text-brand-cyan-400' : 'text-slate-500 group-hover:text-slate-300'
+                              )}
+                            />
+                            <span className="truncate">{subItem.titleAr}</span>
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
               )}
-            </Link>
+            </React.Fragment>
           );
         })}
       </nav>

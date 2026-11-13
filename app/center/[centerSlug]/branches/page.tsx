@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useMemo } from 'react';
+import Link from 'next/link';
 import {
   Building2,
   Calendar,
@@ -239,6 +240,12 @@ export default function BranchesTimetablePage() {
             تنظيم الفروع الميدانية، القاعات وسعاتها، والجدول الأسبوعي مع خوارزمية منع التعارضات.
           </p>
         </div>
+        <Link href={`/center/${tenant.slug}/branches-list`}>
+          <Button variant="outline" className="gap-2 border-border text-foreground hover:bg-muted font-bold">
+            <Building2 className="w-4 h-4 text-brand-cyan-500" />
+            <span>قائمة الفروع الأساسية</span>
+          </Button>
+        </Link>
       </div>
 
       {/* Tabs Navigation */}

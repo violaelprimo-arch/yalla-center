@@ -11,7 +11,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { getDataProvider } from '@/lib/dal/factory';
 import type { IDataProvider } from '@/lib/dal';
-import type { Group, PricingModel, Subject, TeacherRate, User, UserRole } from '@/lib/dal/types';
+import type { Group, PricingModel, Subject, TeacherRate, User, UserRole, EducationalStage } from '@/lib/dal/types';
 import { useFirebaseAuthSession } from '@/lib/firebase/client';
 import { readDemoTeacherProfiles, teacherApi, writeDemoTeacherProfile } from '@/lib/teachers/client';
 import {
@@ -44,7 +44,13 @@ function TeachersDirectory() {
   const auth = useFirebaseAuthSession();
   const demo = !auth.configured;
   const mayManageDemo = currentRole === 'PLATFORM_OWNER' || currentRole === 'CENTER_ADMIN';
-  const [catalog, setCatalog] = useState<{ users: User[]; groups: Group[]; subjects: Subject[]; rates: TeacherRate[] }>();
+  const [catalog, setCatalog] = useState<{
+    users: User[];
+    groups: Group[];
+    subjects: Subject[];
+    rates: TeacherRate[];
+    stages: EducationalStage[];
+  }>();
   const [directory, setDirectory] = useState<{ token: string | null; data: DirectoryData }>();
   const [editor, setEditor] = useState<EditorState>();
   const [legacyRate, setLegacyRate] = useState<{ teacher: User; rate: TeacherRate }>();
@@ -58,10 +64,21 @@ function TeachersDirectory() {
   useEffect(() => {
     let active = true;
     Promise.all([
-      dal.getUsers(tenant.id, { role: 'TEACHER' }), dal.getGroups(tenant.id),
-      dal.getSubjects(tenant.id), dal.getTeacherRates(tenant.id),
-    ]).then(([users, groups, subjects, rates]) => {
-      if (active) setCatalog({ users: users.filter(user => user.tenantId === tenant.id), groups, subjects, rates });
+      dal.getUsers(tenant.id, { role: 'TEACHER' }),
+      dal.getGroups(tenant.id),
+      dal.getSubjects(tenant.id),
+      dal.getTeacherRates(tenant.id),
+      dal.getStages(tenant.id),
+    ]).then(([users, groups, subjects, rates, stages]) => {
+      if (active) {
+        setCatalog({
+          users: users.filter(user => user.tenantId === tenant.id),
+          groups,
+          subjects,
+          rates,
+          stages,
+        });
+      }
     }).catch(() => { if (active) setError('تعذّر تحميل دليل المعلمين والمواد'); });
     return () => { active = false; };
   }, [dal, tenant.id, revision]);
@@ -259,7 +276,7 @@ function TeachersDirectory() {
 
         {editor && <TeacherEditor key={editor.id} editing={Boolean(editor.teacher)} demo={demo}
           initial={teacherInputFrom(editor.profile, editor.teacher, catalog.groups)}
-          originalAvatar={catalog.users.find(user => user.id === editor.id)?.avatarUrl} subjects={catalog.subjects} onClose={() => setEditor(undefined)}
+          originalAvatar={catalog.users.find(user => user.id === editor.id)?.avatarUrl} subjects={catalog.subjects} stages={catalog.stages} onClose={() => setEditor(undefined)}
           onSave={async (input, password) => {
             await persistTeacher(editor.id, editor.profile?.version ?? 0, input, password);
             setEditor(undefined);

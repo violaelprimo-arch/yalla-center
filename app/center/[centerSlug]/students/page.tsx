@@ -38,6 +38,8 @@ import {
   StudentAttendanceDetail,
   PricingModel,
   DiscountType,
+  EducationalStage,
+  Subject,
 } from '@/lib/dal/types';
 import {
   checkStudentEnrollmentConflict,
@@ -147,20 +149,28 @@ export default function StudentsDirectoryPage() {
   const [selectedStudentForEnroll, setSelectedStudentForEnroll] = useState<User | null>(null);
   const [selectedStudentForIdCard, setSelectedStudentForIdCard] = useState<User | null>(null);
 
+  // Master Data from DAL
+  const [masterStages, setMasterStages] = useState<EducationalStage[]>([]);
+  const [masterSubjects, setMasterSubjects] = useState<Subject[]>([]);
+
   // Refresh handler
   const loadData = useCallback(async () => {
     setIsLoading(true);
     try {
-      const [allUsers, allGroups, allEnrollments, allInvoices] = await Promise.all([
+      const [allUsers, allGroups, allEnrollments, allInvoices, allStages, allSubjects] = await Promise.all([
         dal.getUsers(tenant.id, { role: 'STUDENT' }),
         dal.getGroups(tenant.id),
         dal.getEnrollments(tenant.id),
         dal.getInvoices(tenant.id),
+        dal.getStages(tenant.id),
+        dal.getSubjects(tenant.id),
       ]);
       setStudents(allUsers);
       setGroups(allGroups);
       setEnrollments(allEnrollments);
       setInvoices(allInvoices);
+      setMasterStages(allStages);
+      setMasterSubjects(allSubjects);
     } finally {
       setIsLoading(false);
     }
@@ -173,21 +183,21 @@ export default function StudentsDirectoryPage() {
   // Available grades for selected stage
   const availableGrades = useMemo(() => {
     if (selectedStage === 'all') return [];
-    const stage = EGYPTIAN_STAGES.find((s) => s.id === selectedStage);
+    const stage = masterStages.find((s) => s.id === selectedStage);
     return stage ? stage.grades : [];
-  }, [selectedStage]);
+  }, [selectedStage, masterStages]);
 
   // Available divisions for selected grade
   const availableDivisions = useMemo(() => {
     if (selectedGrade === 'all') return [];
-    for (const s of EGYPTIAN_STAGES) {
-      const g = s.grades.find((grade) => grade.id === selectedGrade);
+    for (const s of masterStages) {
+      const g = (s.grades || []).find((grade) => grade.id === selectedGrade);
       if (g && g.hasDivisions && g.divisions) {
         return g.divisions;
       }
     }
     return [];
-  }, [selectedGrade]);
+  }, [selectedGrade, masterStages]);
 
   // Filtered Students
   const filteredStudents = useMemo(() => {
@@ -341,7 +351,7 @@ export default function StudentsDirectoryPage() {
                 className="w-full px-3 py-2 text-xs sm:text-sm bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-cyan-500"
               >
                 <option value="all">كل المراحل الدراسية</option>
-                {EGYPTIAN_STAGES.map((s) => (
+                {masterStages.map((s) => (
                   <option key={s.id} value={s.id}>
                     {s.nameAr}
                   </option>
@@ -614,6 +624,8 @@ export default function StudentsDirectoryPage() {
       {isRegisterModalOpen && (
         <StudentRegistrationModal
           tenantId={tenant.id}
+          stages={masterStages}
+          subjects={masterSubjects}
           onClose={() => setIsRegisterModalOpen(false)}
           onSuccess={() => {
             setIsRegisterModalOpen(false);
@@ -629,6 +641,7 @@ export default function StudentsDirectoryPage() {
           tenantId={tenant.id}
           student={selectedStudentForEnroll}
           groups={groups}
+          subjects={masterSubjects}
           enrollments={enrollments}
           onClose={() => setSelectedStudentForEnroll(null)}
           onSuccess={() => {
@@ -675,11 +688,15 @@ export default function StudentsDirectoryPage() {
 // ---------------------------------------------------------------------------
 function StudentRegistrationModal({
   tenantId,
+  stages,
+  subjects,
   onClose,
   onSuccess,
   dal,
 }: {
   tenantId: string;
+  stages: EducationalStage[];
+  subjects: Subject[];
   onClose: () => void;
   onSuccess: () => void;
   dal: any;
@@ -688,14 +705,56 @@ function StudentRegistrationModal({
   const [studentCode, setStudentCode] = useState('');
   const [phone, setPhone] = useState('');
   const [nationalId, setNationalId] = useState('');
-  const [stage, setStage] = useState('secondary');
-  const [grade, setGrade] = useState('3_sec');
-  const [division, setDivision] = useState('scientific_math');
+  const [stage, setStage] = useState(stages[0]?.id || 'secondary');
+  const [grade, setGrade] = useState(stages[0]?.grades?.[0]?.id || '1_sec');
+  const [division, setDivision] = useState('');
   const [seatNumber, setSeatNumber] = useState('');
   const [guardianName, setGuardianName] = useState('');
   const [guardianPhone, setGuardianPhone] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // Sync initial stage/grade once stages arrive
+  useEffect(() => {
+    if (stages.length > 0 && !stages.some((s) => s.id === stage)) {
+      const firstStage = stages[0];
+      setStage(firstStage.id);
+      const firstGrade = firstStage.grades?.[0];
+      setGrade(firstGrade?.id || '');
+      if (firstGrade?.hasDivisions && (firstGrade.divisions || []).length > 0) {
+        setDivision(firstGrade.divisions![0].id);
+      }
+    }
+  }, [stages, stage]);
+
+  const currentStageObj = useMemo(() => stages.find((s) => s.id === stage), [stages, stage]);
+  const currentGrades = useMemo(() => currentStageObj?.grades || [], [currentStageObj]);
+  const currentGradeObj = useMemo(() => currentGrades.find((g) => g.id === grade), [currentGrades, grade]);
+
+  // Subjects available for this selected grade
+  const gradeSubjects = useMemo(() => subjects.filter((s) => s.grade === grade), [subjects, grade]);
+
+  const handleStageChange = (newStageId: string) => {
+    setStage(newStageId);
+    const targetStage = stages.find((s) => s.id === newStageId);
+    const firstGrade = targetStage?.grades?.[0];
+    setGrade(firstGrade?.id || '');
+    if (firstGrade?.hasDivisions && (firstGrade.divisions || []).length > 0) {
+      setDivision(firstGrade.divisions![0].id);
+    } else {
+      setDivision('');
+    }
+  };
+
+  const handleGradeChange = (newGradeId: string) => {
+    setGrade(newGradeId);
+    const targetGrade = currentGrades.find((g) => g.id === newGradeId);
+    if (targetGrade?.hasDivisions && (targetGrade.divisions || []).length > 0) {
+      setDivision(targetGrade.divisions![0].id);
+    } else {
+      setDivision('');
+    }
+  };
 
   // Auto-generate next student code on mount
   useEffect(() => {
@@ -727,7 +786,7 @@ function StudentRegistrationModal({
         nationalId: nationalId.trim() || undefined,
         stage,
         grade,
-        division: stage === 'secondary' ? division : undefined,
+        division: currentGradeObj?.hasDivisions ? division : undefined,
         seatNumber: seatNumber.trim() || undefined,
         guardianName: guardianName.trim() || undefined,
         guardianPhone: guardianPhone.trim(),
@@ -806,17 +865,14 @@ function StudentRegistrationModal({
                 <label className="block text-xs font-semibold mb-1 text-foreground">المرحلة الدراسية *</label>
                 <select
                   value={stage}
-                  onChange={(e) => {
-                    setStage(e.target.value);
-                    if (e.target.value === 'secondary') setGrade('3_sec');
-                    if (e.target.value === 'preparatory') setGrade('3_prep');
-                    if (e.target.value === 'primary') setGrade('6_prim');
-                  }}
+                  onChange={(e) => handleStageChange(e.target.value)}
                   className="w-full px-3 py-2 text-xs bg-background border border-border rounded-xl focus:ring-2 focus:ring-brand-cyan-500 focus:outline-none"
                 >
-                  <option value="secondary">المرحلة الثانوية</option>
-                  <option value="preparatory">المرحلة الإعدادية</option>
-                  <option value="primary">المرحلة الابتدائية</option>
+                  {stages.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.nameAr}
+                    </option>
+                  ))}
                 </select>
               </div>
 
@@ -824,34 +880,18 @@ function StudentRegistrationModal({
                 <label className="block text-xs font-semibold mb-1 text-foreground">الصف الدراسي *</label>
                 <select
                   value={grade}
-                  onChange={(e) => setGrade(e.target.value)}
+                  onChange={(e) => handleGradeChange(e.target.value)}
                   className="w-full px-3 py-2 text-xs bg-background border border-border rounded-xl focus:ring-2 focus:ring-brand-cyan-500 focus:outline-none"
                 >
-                  {stage === 'secondary' && (
-                    <>
-                      <option value="1_sec">الصف الأول الثانوي</option>
-                      <option value="2_sec">الصف الثاني الثانوي</option>
-                      <option value="3_sec">الصف الثالث الثانوي (الثانوية العامة)</option>
-                    </>
-                  )}
-                  {stage === 'preparatory' && (
-                    <>
-                      <option value="1_prep">الصف الأول الإعدادي</option>
-                      <option value="2_prep">الصف الثاني الإعدادي</option>
-                      <option value="3_prep">الصف الثالث الإعدادي</option>
-                    </>
-                  )}
-                  {stage === 'primary' && (
-                    <>
-                      <option value="4_prim">الصف الرابع الابتدائي</option>
-                      <option value="5_prim">الصف الخامس الابتدائي</option>
-                      <option value="6_prim">الصف السادس الابتدائي</option>
-                    </>
-                  )}
+                  {currentGrades.map((g) => (
+                    <option key={g.id} value={g.id}>
+                      {g.nameAr}
+                    </option>
+                  ))}
                 </select>
               </div>
 
-              {stage === 'secondary' && (
+              {currentGradeObj?.hasDivisions && currentGradeObj.divisions && currentGradeObj.divisions.length > 0 && (
                 <div>
                   <label className="block text-xs font-semibold mb-1 text-foreground">الشعبة</label>
                   <select
@@ -859,13 +899,35 @@ function StudentRegistrationModal({
                     onChange={(e) => setDivision(e.target.value)}
                     className="w-full px-3 py-2 text-xs bg-background border border-border rounded-xl focus:ring-2 focus:ring-brand-cyan-500 focus:outline-none"
                   >
-                    <option value="scientific_math">علمي رياضة</option>
-                    <option value="scientific_science">علمي علوم</option>
-                    <option value="literary">أدبي</option>
-                    <option value="general">عام</option>
+                    {currentGradeObj.divisions.map((div) => (
+                      <option key={div.id} value={div.id}>
+                        {div.nameAr}
+                      </option>
+                    ))}
                   </select>
                 </div>
               )}
+
+              {/* Dynamic Subjects List for selected Grade */}
+              <div className="sm:col-span-2 p-3 rounded-xl bg-muted/40 border border-border/60">
+                <span className="text-[11px] font-bold text-muted-foreground block mb-1.5">
+                  المواد الدراسية المقيدة لهذا الصف ({gradeSubjects.length}):
+                </span>
+                {gradeSubjects.length > 0 ? (
+                  <div className="flex flex-wrap gap-1.5">
+                    {gradeSubjects.map((sub) => (
+                      <span
+                        key={sub.id}
+                        className="text-[11px] font-semibold px-2 py-0.5 rounded-md bg-brand-cyan-500/10 text-brand-cyan-400 border border-brand-cyan-500/20"
+                      >
+                        {sub.nameAr} {sub.code ? `(${sub.code})` : ''}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-[11px] text-muted-foreground">لا توجد مواد مسجلة لهذا الصف بعد في البيانات الأساسية.</p>
+                )}
+              </div>
 
               <div>
                 <label className="block text-xs font-semibold mb-1 text-foreground">رقم الجلوس (اختياري)</label>
@@ -936,6 +998,7 @@ function GroupEnrollmentModal({
   tenantId,
   student,
   groups,
+  subjects = [],
   enrollments,
   onClose,
   onSuccess,
@@ -944,11 +1007,13 @@ function GroupEnrollmentModal({
   tenantId: string;
   student: User;
   groups: Group[];
+  subjects?: Subject[];
   enrollments: Enrollment[];
   onClose: () => void;
   onSuccess: () => void;
   dal: any;
 }) {
+  const [selectedSubjectId, setSelectedSubjectId] = useState<string>('all');
   const [selectedGroupId, setSelectedGroupId] = useState<string>(groups[0]?.id || '');
   const [pricingModel, setPricingModel] = useState<PricingModel>('center');
   const [discountType, setDiscountType] = useState<DiscountType>('none');
@@ -956,10 +1021,30 @@ function GroupEnrollmentModal({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  // Filter subjects matching student's grade
+  const studentSubjects = useMemo(() => {
+    if (!student.grade) return subjects;
+    const match = subjects.filter((s) => s.grade === student.grade);
+    return match.length > 0 ? match : subjects;
+  }, [subjects, student.grade]);
+
+  // Filter groups by selected subject
+  const availableGroups = useMemo(() => {
+    if (selectedSubjectId === 'all') return groups;
+    return groups.filter((g) => g.subjectId === selectedSubjectId);
+  }, [groups, selectedSubjectId]);
+
+  // Sync selected group when subject filter changes
+  const handleSubjectChange = (subjectId: string) => {
+    setSelectedSubjectId(subjectId);
+    const filtered = subjectId === 'all' ? groups : groups.filter((g) => g.subjectId === subjectId);
+    setSelectedGroupId(filtered[0]?.id || '');
+  };
+
   // Selected candidate group
   const candidateGroup = useMemo(() => {
-    return groups.find((g) => g.id === selectedGroupId) || null;
-  }, [groups, selectedGroupId]);
+    return availableGroups.find((g) => g.id === selectedGroupId) || null;
+  }, [availableGroups, selectedGroupId]);
 
   // Student's currently active enrolled groups
   const studentActiveGroups = useMemo(() => {
@@ -1059,21 +1144,47 @@ function GroupEnrollmentModal({
             </div>
           )}
 
-          {/* Group Selector */}
-          <div>
-            <label className="block text-xs font-semibold mb-1 text-foreground">اختيار المجموعة الدراسية *</label>
-            <select
-              value={selectedGroupId}
-              onChange={(e) => setSelectedGroupId(e.target.value)}
-              className="w-full px-3 py-2 text-xs bg-background border border-border rounded-xl focus:ring-2 focus:ring-brand-cyan-500 focus:outline-none"
-            >
-              {groups.map((g) => (
-                <option key={g.id} value={g.id}>
-                  {g.nameAr} | يوم ({DAYS_NAMES[g.scheduleDay]}) من {g.startTime} إلى {g.endTime}
-                </option>
-              ))}
-            </select>
-          </div>
+          {/* Subject Filter Selector */}
+          {studentSubjects.length > 0 && (
+            <div>
+              <label className="block text-xs font-semibold mb-1 text-foreground">تحديد المادة الدراسية</label>
+              <select
+                value={selectedSubjectId}
+                onChange={(e) => handleSubjectChange(e.target.value)}
+                className="w-full px-3 py-2 text-xs bg-background border border-border rounded-xl focus:ring-2 focus:ring-brand-cyan-500 focus:outline-none"
+              >
+                <option value="all">جميع المواد الدراسية</option>
+                {studentSubjects.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.nameAr} {s.code ? `(${s.code})` : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* Group Selector OR Empty State Warning */}
+          {selectedSubjectId !== 'all' && availableGroups.length === 0 ? (
+            <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-500 text-xs flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 shrink-0" />
+              <span className="font-bold">لا توجد مجموعات متاحة لهذه المادة</span>
+            </div>
+          ) : (
+            <div>
+              <label className="block text-xs font-semibold mb-1 text-foreground">اختيار المجموعة الدراسية *</label>
+              <select
+                value={selectedGroupId}
+                onChange={(e) => setSelectedGroupId(e.target.value)}
+                className="w-full px-3 py-2 text-xs bg-background border border-border rounded-xl focus:ring-2 focus:ring-brand-cyan-500 focus:outline-none"
+              >
+                {availableGroups.map((g) => (
+                  <option key={g.id} value={g.id}>
+                    {g.nameAr} | يوم ({DAYS_NAMES[g.scheduleDay]}) من {g.startTime} إلى {g.endTime}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
           {/* Group Metadata Badge */}
           {candidateGroup && (

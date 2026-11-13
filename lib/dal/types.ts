@@ -41,6 +41,62 @@ export interface Tenant {
   updatedAt: string;
 }
 
+export interface EducationalDivision {
+  id: string;
+  nameAr: string;
+}
+
+export interface EducationalGrade {
+  id: string;
+  tenantId: string;
+  stageId: string;
+  nameAr: string;
+  order: number;
+  hasDivisions?: boolean;
+  divisions?: EducationalDivision[];
+  createdAt?: string;
+}
+
+export interface EducationalStage {
+  id: string;
+  tenantId: string;
+  nameAr: string;
+  order: number;
+  grades: EducationalGrade[];
+  createdAt?: string;
+}
+
+export interface EducationalStageInput {
+  id?: string;
+  nameAr: string;
+  order?: number;
+}
+
+export interface EducationalGradeInput {
+  id?: string;
+  stageId: string;
+  nameAr: string;
+  order?: number;
+  hasDivisions?: boolean;
+  divisions?: EducationalDivision[];
+}
+
+export interface SubjectInput {
+  id?: string;
+  nameAr: string;
+  code?: string;
+  stage: string;
+  grade: string;
+}
+
+export interface BranchInput {
+  id?: string;
+  nameAr: string;
+  address?: string;
+  phone?: string;
+  isActive?: boolean;
+}
+
 export interface Branch {
   id: string;
   tenantId: string;
