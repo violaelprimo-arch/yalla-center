@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import {
   GraduationCap,
   Layers,
@@ -16,16 +16,16 @@ import {
   BookOpen,
 } from 'lucide-react';
 import { useTenant } from '@/components/layout/tenant-provider';
+import { MasterDataStatus } from '@/components/layout/master-data-status';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import type { EducationalStage, EducationalGrade } from '@/lib/dal/types';
 
 export default function StagesManagementPage() {
-  const { tenant } = useTenant();
+  const { tenant, masterData } = useTenant();
 
-  const [stages, setStages] = useState<EducationalStage[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { data: { stages }, loading, canEdit, save } = masterData;
   const [searchQuery, setSearchQuery] = useState('');
 
   // Notifications
@@ -66,29 +66,6 @@ export default function StagesManagementPage() {
       setToast((prev) => (prev?.message === message ? null : prev));
     }, 4000);
   }, []);
-
-  const loadMasterData = useCallback(async () => {
-    try {
-      setLoading(true);
-      const res = await fetch(`/api/center/${tenant.slug}/master-data`, {
-        cache: 'no-store',
-      });
-      const data = await res.json();
-      if (data.success && data.data?.stages) {
-        setStages(data.data.stages);
-      } else {
-        showToast('error', data.error || 'تعذر تحميل قائمة المراحل التعليمية');
-      }
-    } catch {
-      showToast('error', 'خطأ في الاتصال بالخادم');
-    } finally {
-      setLoading(false);
-    }
-  }, [tenant.slug, showToast]);
-
-  useEffect(() => {
-    loadMasterData();
-  }, [loadMasterData]);
 
   // Total grades count
   const totalGradesCount = useMemo(() => {
@@ -145,29 +122,18 @@ export default function StagesManagementPage() {
 
     try {
       setIsSavingStage(true);
-      const res = await fetch(`/api/center/${tenant.slug}/master-data`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'saveStage',
-          stage: {
-            id: editingStage?.id,
-            nameAr: stageFormData.nameAr.trim(),
-            order: Number(stageFormData.order) || 1,
-          },
-        }),
+      await save({
+        action: 'saveStage',
+        stage: {
+          id: editingStage?.id,
+          nameAr: stageFormData.nameAr.trim(),
+          order: Number(stageFormData.order) || 1,
+        },
       });
-
-      const result = await res.json();
-      if (result.success) {
-        showToast('success', editingStage ? 'تم تعديل المرحلة التعليمية بنجاح' : 'تم إضافة المرحلة التعليمية بنجاح');
-        setIsStageModalOpen(false);
-        await loadMasterData();
-      } else {
-        setStageFormError(result.error || 'تعذر حفظ المرحلة التعليمية');
-      }
-    } catch {
-      setStageFormError('خطأ أثناء إرسال البيانات إلى الخادم');
+      showToast('success', editingStage ? 'تم تعديل المرحلة التعليمية بنجاح' : 'تم إضافة المرحلة التعليمية بنجاح');
+      setIsStageModalOpen(false);
+    } catch (cause) {
+      setStageFormError(cause instanceof Error ? cause.message : 'تعذّر حفظ المرحلة التعليمية');
     } finally {
       setIsSavingStage(false);
     }
@@ -213,46 +179,31 @@ export default function StagesManagementPage() {
       return;
     }
 
-    let parsedDivisions: Array<{ id: string; nameAr: string }> | undefined;
-    if (gradeFormData.hasDivisions && gradeFormData.divisionsText.trim()) {
-      parsedDivisions = gradeFormData.divisionsText
-        .split(/[,،]/)
-        .map((part) => part.trim())
-        .filter(Boolean)
-        .map((name, idx) => ({
-          id: `div-${idx + 1}-${Date.now()}`,
-          nameAr: name,
-        }));
-    }
+    const parsedDivisions = gradeFormData.hasDivisions
+      ? [...new Set(gradeFormData.divisionsText.split(/[,،]/).map(name => name.trim()).filter(Boolean))]
+        .map(nameAr => ({
+          id: editingGrade?.divisions?.find(division => division.nameAr === nameAr)?.id ?? crypto.randomUUID(),
+          nameAr,
+        }))
+      : [];
 
     try {
       setIsSavingGrade(true);
-      const res = await fetch(`/api/center/${tenant.slug}/master-data`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'saveGrade',
-          grade: {
-            id: editingGrade?.id,
-            stageId: gradeFormData.stageId,
-            nameAr: gradeFormData.nameAr.trim(),
-            order: Number(gradeFormData.order) || 1,
-            hasDivisions: gradeFormData.hasDivisions,
-            divisions: parsedDivisions,
-          },
-        }),
+      await save({
+        action: 'saveGrade',
+        grade: {
+          id: editingGrade?.id,
+          stageId: gradeFormData.stageId,
+          nameAr: gradeFormData.nameAr.trim(),
+          order: Number(gradeFormData.order) || 1,
+          hasDivisions: gradeFormData.hasDivisions,
+          divisions: parsedDivisions,
+        },
       });
-
-      const result = await res.json();
-      if (result.success) {
-        showToast('success', editingGrade ? 'تم تعديل الصف الدراسي بنجاح' : 'تم إضافة الصف الدراسي بنجاح');
-        setIsGradeModalOpen(false);
-        await loadMasterData();
-      } else {
-        setGradeFormError(result.error || 'تعذر حفظ الصف الدراسي');
-      }
-    } catch {
-      setGradeFormError('خطأ أثناء إرسال البيانات إلى الخادم');
+      showToast('success', editingGrade ? 'تم تعديل الصف الدراسي بنجاح' : 'تم إضافة الصف الدراسي بنجاح');
+      setIsGradeModalOpen(false);
+    } catch (cause) {
+      setGradeFormError(cause instanceof Error ? cause.message : 'تعذّر حفظ الصف الدراسي');
     } finally {
       setIsSavingGrade(false);
     }
@@ -266,26 +217,13 @@ export default function StagesManagementPage() {
     try {
       setIsDeleting(true);
       const isStage = deleteTarget.type === 'stage';
-      const res = await fetch(`/api/center/${tenant.slug}/master-data`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(
-          isStage
-            ? { action: 'deleteStage', stageId: deleteTarget.id }
-            : { action: 'deleteGrade', gradeId: deleteTarget.id }
-        ),
-      });
-
-      const result = await res.json();
-      if (result.success) {
-        showToast('success', isStage ? 'تم حذف المرحلة التعليمية بنجاح' : 'تم حذف الصف الدراسي بنجاح');
-        setDeleteTarget(null);
-        await loadMasterData();
-      } else {
-        setDeleteError(result.error || 'تعذر الحذف');
-      }
-    } catch {
-      setDeleteError('خطأ في الاتصال أثناء تنفيذ الحذف');
+      await save(isStage
+        ? { action: 'deleteStage', stageId: deleteTarget.id }
+        : { action: 'deleteGrade', gradeId: deleteTarget.id });
+      showToast('success', isStage ? 'تم حذف المرحلة التعليمية بنجاح' : 'تم حذف الصف الدراسي بنجاح');
+      setDeleteTarget(null);
+    } catch (cause) {
+      setDeleteError(cause instanceof Error ? cause.message : 'تعذّر حذف البيانات');
     } finally {
       setIsDeleting(false);
     }
@@ -293,6 +231,7 @@ export default function StagesManagementPage() {
 
   return (
     <div className="space-y-6 pb-12" dir="rtl">
+      <MasterDataStatus />
       {/* Toast Alert */}
       {toast && (
         <div
@@ -337,6 +276,7 @@ export default function StagesManagementPage() {
         <div className="flex items-center gap-2.5 shrink-0">
           <Button
             variant="outline"
+            disabled={!canEdit}
             onClick={() => handleOpenGradeModal()}
             className="gap-2 border-border text-foreground hover:bg-muted"
           >
@@ -344,6 +284,7 @@ export default function StagesManagementPage() {
             <span>إضافة صف دراسي</span>
           </Button>
           <Button
+            disabled={!canEdit}
             onClick={() => handleOpenStageModal()}
             className="gap-2 bg-brand-cyan-600 hover:bg-brand-cyan-500 text-white font-bold shadow-soft-sm"
           >
@@ -420,6 +361,7 @@ export default function StagesManagementPage() {
               لم يتم العثور على أي مرحلة أو صف دراسي. يمكنك إضافة مرحلة تعليمية جديدة لبدء ربط الطلاب والمعلمين.
             </p>
             <Button
+              disabled={!canEdit}
               onClick={() => handleOpenStageModal()}
               className="mt-4 gap-2 bg-brand-cyan-600 hover:bg-brand-cyan-500 text-white font-bold"
             >
@@ -456,6 +398,7 @@ export default function StagesManagementPage() {
                   <Button
                     variant="ghost"
                     size="sm"
+                    disabled={!canEdit}
                     onClick={() => handleOpenGradeModal(stage.id)}
                     className="h-8 gap-1 text-xs text-brand-cyan-600 dark:text-brand-cyan-400 hover:bg-brand-cyan-500/10"
                   >
@@ -465,6 +408,7 @@ export default function StagesManagementPage() {
                   <Button
                     variant="ghost"
                     size="sm"
+                    disabled={!canEdit}
                     onClick={() => handleOpenStageModal(stage)}
                     className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
                     title="تعديل المرحلة"
@@ -474,6 +418,7 @@ export default function StagesManagementPage() {
                   <Button
                     variant="ghost"
                     size="sm"
+                    disabled={!canEdit}
                     onClick={() =>
                       setDeleteTarget({
                         type: 'stage',
@@ -495,6 +440,7 @@ export default function StagesManagementPage() {
                   <div className="p-6 text-center text-xs text-muted-foreground">
                     لا توجد صفوف دراسية مسجلة في هذه المرحلة بعد.{' '}
                     <button
+                      disabled={!canEdit}
                       onClick={() => handleOpenGradeModal(stage.id)}
                       className="text-brand-cyan-500 hover:underline font-bold mr-1"
                     >
@@ -540,6 +486,7 @@ export default function StagesManagementPage() {
                           <Button
                             variant="ghost"
                             size="sm"
+                            disabled={!canEdit}
                             onClick={() => handleOpenGradeModal(stage.id, grade)}
                             className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
                             title="تعديل الصف"
@@ -549,6 +496,7 @@ export default function StagesManagementPage() {
                           <Button
                             variant="ghost"
                             size="sm"
+                            disabled={!canEdit}
                             onClick={() =>
                               setDeleteTarget({
                                 type: 'grade',
@@ -682,6 +630,7 @@ export default function StagesManagementPage() {
                 </label>
                 <select
                   required
+                  disabled={Boolean(editingGrade)}
                   value={gradeFormData.stageId}
                   onChange={(e) => setGradeFormData({ ...gradeFormData, stageId: e.target.value })}
                   className="w-full px-3 py-2 text-sm rounded-xl bg-background border border-border text-foreground focus:outline-none focus:border-brand-cyan-500"

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import {
   AlertTriangle, Briefcase, CheckCircle2, Edit3, FileText, Phone, Plus, Search, Trash2, Users, X,
@@ -11,8 +11,8 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { getDataProvider } from '@/lib/dal/factory';
 import type { IDataProvider } from '@/lib/dal';
-import type { Group, PricingModel, Subject, TeacherRate, User, UserRole, EducationalStage } from '@/lib/dal/types';
-import { useFirebaseAuthSession } from '@/lib/firebase/client';
+import type { Group, PricingModel, TeacherRate, User, UserRole } from '@/lib/dal/types';
+import { StaffLogin } from '@/components/layout/staff-login';
 import { readDemoTeacherProfiles, teacherApi, writeDemoTeacherProfile } from '@/lib/teachers/client';
 import {
   describeTeacherLevel, teacherInputFrom, teacherProfileUser, TEACHER_MODELS,
@@ -39,17 +39,15 @@ export default function TeachersDirectoryPage() {
 }
 
 function TeachersDirectory() {
-  const { tenant, currentRole } = useTenant();
+  const { tenant, currentRole, masterData } = useTenant();
   const dal = useMemo(getDataProvider, []);
-  const auth = useFirebaseAuthSession();
+  const { auth, data: masterCatalog } = masterData;
   const demo = !auth.configured;
   const mayManageDemo = currentRole === 'PLATFORM_OWNER' || currentRole === 'CENTER_ADMIN';
   const [catalog, setCatalog] = useState<{
     users: User[];
     groups: Group[];
-    subjects: Subject[];
     rates: TeacherRate[];
-    stages: EducationalStage[];
   }>();
   const [directory, setDirectory] = useState<{ token: string | null; data: DirectoryData }>();
   const [editor, setEditor] = useState<EditorState>();
@@ -66,17 +64,13 @@ function TeachersDirectory() {
     Promise.all([
       dal.getUsers(tenant.id, { role: 'TEACHER' }),
       dal.getGroups(tenant.id),
-      dal.getSubjects(tenant.id),
       dal.getTeacherRates(tenant.id),
-      dal.getStages(tenant.id),
-    ]).then(([users, groups, subjects, rates, stages]) => {
+    ]).then(([users, groups, rates]) => {
       if (active) {
         setCatalog({
           users: users.filter(user => user.tenantId === tenant.id),
           groups,
-          subjects,
           rates,
-          stages,
         });
       }
     }).catch(() => { if (active) setError('تعذّر تحميل دليل المعلمين والمواد'); });
@@ -167,7 +161,7 @@ function TeachersDirectory() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Link href={`/teacher/${tenant.slug}`} className="rounded-xl border border-border px-3 py-2 text-sm hover:bg-muted">بوابة دخول المعلمين</Link>
-          {authorized && catalog && <Button onClick={() => { setNotice(''); setEditor({ id: `teacher-${crypto.randomUUID()}` }); }}>
+          {authorized && catalog && masterData.ready && <Button onClick={() => { setNotice(''); setEditor({ id: `teacher-${crypto.randomUUID()}` }); }}>
             <Plus size={17} /> إضافة معلم جديد
           </Button>}
         </div>
@@ -219,7 +213,7 @@ function TeachersDirectory() {
               {visibleTeachers.map(({ teacher, profile }) => {
                 const groups = catalog.groups.filter(group => group.teacherId === teacher.id && group.isActive);
                 const subjectIds = new Set([...(profile?.subjectIds ?? []), ...groups.map(group => group.subjectId)]);
-                const subjects = catalog.subjects.filter(subject => subjectIds.has(subject.id));
+                const subjects = masterCatalog.subjects.filter(subject => subjectIds.has(subject.id));
                 const rate = catalog.rates.find(item => item.teacherId === teacher.id && item.isActive);
                 return <tr key={teacher.id} className="hover:bg-muted/20">
                   <td className="p-4">
@@ -276,7 +270,7 @@ function TeachersDirectory() {
 
         {editor && <TeacherEditor key={editor.id} editing={Boolean(editor.teacher)} demo={demo}
           initial={teacherInputFrom(editor.profile, editor.teacher, catalog.groups)}
-          originalAvatar={catalog.users.find(user => user.id === editor.id)?.avatarUrl} subjects={catalog.subjects} stages={catalog.stages} onClose={() => setEditor(undefined)}
+          originalAvatar={catalog.users.find(user => user.id === editor.id)?.avatarUrl} subjects={masterCatalog.subjects} stages={masterCatalog.stages} onClose={() => setEditor(undefined)}
           onSave={async (input, password) => {
             await persistTeacher(editor.id, editor.profile?.version ?? 0, input, password);
             setEditor(undefined);
@@ -291,28 +285,6 @@ function TeachersDirectory() {
         }} dal={dal} />}
     </div>
   );
-}
-
-function StaffLogin({ signIn, failedLogin }: { signIn: (email: string, password: string) => Promise<void>; failedLogin: boolean }) {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [failed, setFailed] = useState(false);
-  const [busy, setBusy] = useState(false);
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setBusy(true);
-    setFailed(false);
-    try { await signIn(email, password); }
-    catch { setFailed(true); }
-    finally { setBusy(false); }
-  }
-  return <form onSubmit={submit} className="card-elevated max-w-md space-y-3 rounded-2xl border border-border p-4">
-    <h2 className="font-bold">دخول إدارة السنتر</h2>
-    <label className="block text-sm">البريد الإلكتروني<input className={control + ' mt-1 block w-full'} dir="ltr" type="email" autoComplete="username" required value={email} onChange={event => setEmail(event.target.value)} /></label>
-    <label className="block text-sm">كلمة المرور<input className={control + ' mt-1 block w-full'} dir="ltr" type="password" autoComplete="current-password" required value={password} onChange={event => setPassword(event.target.value)} /></label>
-    {(failed || failedLogin) && <p role="alert" className="text-sm text-red-600">تعذّر تسجيل الدخول. راجع البريد وكلمة المرور.</p>}
-    <Button type="submit" disabled={busy}>{busy ? 'جارٍ تسجيل الدخول…' : 'دخول'}</Button>
-  </form>;
 }
 
 function TeacherRateModal({

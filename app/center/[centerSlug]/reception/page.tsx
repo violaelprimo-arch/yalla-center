@@ -14,12 +14,10 @@ import { getReceptionDataProvider as getDataProvider } from '@/lib/dal/factory';
 import {
   Session,
   Group,
-  Branch,
   Classroom,
   User,
   Attendance,
   SessionAttendanceStats,
-  Subject,
 } from '@/lib/dal/types';
 import {
   playSuccessChime,
@@ -50,14 +48,13 @@ import { calculateTeacherSessionPay, countTeacherSessionAttendance } from '@/lib
 const currency = new Intl.NumberFormat('ar-EG', { style: 'currency', currency: 'EGP' });
 
 export default function ReceptionScanPage() {
-  const { tenant, currentRole } = useTenant();
+  const { tenant, currentRole, branches, masterData } = useTenant();
+  const { subjects } = masterData.data;
 
   // Master Data State
-  const [branches, setBranches] = useState<Branch[]>([]);
   const [classrooms, setClassrooms] = useState<Classroom[]>([]);
   const [teachers, setTeachers] = useState<User[]>([]);
   const [allUsers, setAllUsers] = useState<User[]>([]);
-  const [subjects, setSubjects] = useState<Subject[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [enrolledStudents, setEnrolledStudents] = useState<User[]>([]);
@@ -128,22 +125,18 @@ export default function ReceptionScanPage() {
   const loadTenantData = useCallback(async () => {
     const dal = getDataProvider();
     try {
-      const [brs, cls, grps, sess, users, subs] = await Promise.all([
-        dal.getBranches(tenant.id),
+      const [cls, grps, sess, users] = await Promise.all([
         dal.getClassrooms(tenant.id),
         dal.getGroups(tenant.id),
         dal.getSessions(tenant.id),
         dal.getUsers(tenant.id),
-        dal.getSubjects(tenant.id),
       ]);
 
-      setBranches(brs);
       setClassrooms(cls);
       setGroups(grps);
       setSessions(sess);
       setAllUsers(users);
       setTeachers(users.filter((u) => u.role === 'TEACHER'));
-      setSubjects(subs);
 
     } catch {
       // transient load error

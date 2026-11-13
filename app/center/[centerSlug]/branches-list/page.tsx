@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import Link from 'next/link';
 import {
   Building2,
@@ -18,16 +18,16 @@ import {
   Layers,
 } from 'lucide-react';
 import { useTenant } from '@/components/layout/tenant-provider';
+import { MasterDataStatus } from '@/components/layout/master-data-status';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import type { Branch } from '@/lib/dal/types';
 
 export default function BranchesManagementPage() {
-  const { tenant, refreshBranches } = useTenant();
+  const { tenant, masterData } = useTenant();
 
-  const [branches, setBranches] = useState<Branch[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { data: { branches }, loading, canEdit, save } = masterData;
   const [searchQuery, setSearchQuery] = useState('');
 
   // Toast
@@ -56,29 +56,6 @@ export default function BranchesManagementPage() {
       setToast((prev) => (prev?.message === message ? null : prev));
     }, 4000);
   }, []);
-
-  const loadMasterData = useCallback(async () => {
-    try {
-      setLoading(true);
-      const res = await fetch(`/api/center/${tenant.slug}/master-data`, {
-        cache: 'no-store',
-      });
-      const data = await res.json();
-      if (data.success && data.data?.branches) {
-        setBranches(data.data.branches);
-      } else {
-        showToast('error', data.error || 'تعذر تحميل قائمة الفروع');
-      }
-    } catch {
-      showToast('error', 'خطأ في الاتصال بالخادم');
-    } finally {
-      setLoading(false);
-    }
-  }, [tenant.slug, showToast]);
-
-  useEffect(() => {
-    loadMasterData();
-  }, [loadMasterData]);
 
   // Filtered branches
   const filteredBranches = useMemo(() => {
@@ -129,36 +106,20 @@ export default function BranchesManagementPage() {
 
     try {
       setIsSaving(true);
-      const res = await fetch(`/api/center/${tenant.slug}/master-data`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'saveBranch',
-          branch: {
-            id: editingBranch?.id,
-            nameAr: trimmedName,
-            address: formData.address.trim() || undefined,
-            phone: formData.phone.trim() || undefined,
-            isActive: formData.isActive,
-          },
-        }),
+      await save({
+        action: 'saveBranch',
+        branch: {
+          id: editingBranch?.id,
+          nameAr: trimmedName,
+          address: formData.address.trim(),
+          phone: formData.phone.trim(),
+          isActive: formData.isActive,
+        },
       });
-
-      const result = await res.json();
-      if (result.success) {
-        showToast(
-          'success',
-          editingBranch ? 'تم تعديل بيانات الفرع بنجاح' : 'تم إضافة الفرع بنجاح'
-        );
-        setIsModalOpen(false);
-        await loadMasterData();
-        // Update header and global branches selector
-        await refreshBranches();
-      } else {
-        setFormError(result.error || 'تعذر حفظ بيانات الفرع');
-      }
-    } catch {
-      setFormError('خطأ أثناء إرسال البيانات إلى الخادم');
+      showToast('success', editingBranch ? 'تم تعديل بيانات الفرع بنجاح' : 'تم إضافة الفرع بنجاح');
+      setIsModalOpen(false);
+    } catch (cause) {
+      setFormError(cause instanceof Error ? cause.message : 'تعذّر حفظ بيانات الفرع');
     } finally {
       setIsSaving(false);
     }
@@ -171,26 +132,11 @@ export default function BranchesManagementPage() {
 
     try {
       setIsDeleting(true);
-      const res = await fetch(`/api/center/${tenant.slug}/master-data`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'deleteBranch',
-          branchId: deleteTarget.id,
-        }),
-      });
-
-      const result = await res.json();
-      if (result.success) {
-        showToast('success', 'تم حذف الفرع بنجاح');
-        setDeleteTarget(null);
-        await loadMasterData();
-        await refreshBranches();
-      } else {
-        setDeleteError(result.error || 'تعذر حذف الفرع');
-      }
-    } catch {
-      setDeleteError('خطأ أثناء الاتصال بالخادم');
+      await save({ action: 'deleteBranch', branchId: deleteTarget.id });
+      showToast('success', 'تم حذف الفرع بنجاح');
+      setDeleteTarget(null);
+    } catch (cause) {
+      setDeleteError(cause instanceof Error ? cause.message : 'تعذّر حذف الفرع');
     } finally {
       setIsDeleting(false);
     }
@@ -198,6 +144,7 @@ export default function BranchesManagementPage() {
 
   return (
     <div className="space-y-6 pb-12" dir="rtl">
+      <MasterDataStatus />
       {/* Toast Alert */}
       {toast && (
         <div
@@ -244,6 +191,7 @@ export default function BranchesManagementPage() {
             </Button>
           </Link>
           <Button
+            disabled={!canEdit}
             onClick={() => handleOpenModal()}
             className="gap-2 bg-brand-cyan-600 hover:bg-brand-cyan-500 text-white font-bold shadow-soft-sm"
           >
@@ -297,6 +245,7 @@ export default function BranchesManagementPage() {
               لم يتم العثور على أي فرع يطابق معايير البحث. يمكنك إضافة فروع جديدة لربط القاعات والمجموعات.
             </p>
             <Button
+              disabled={!canEdit}
               onClick={() => handleOpenModal()}
               className="mt-4 gap-2 bg-brand-cyan-600 hover:bg-brand-cyan-500 text-white font-bold"
             >
@@ -363,6 +312,7 @@ export default function BranchesManagementPage() {
                     <Button
                       variant="ghost"
                       size="sm"
+                      disabled={!canEdit}
                       onClick={() => handleOpenModal(branch)}
                       className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
                       title="تعديل الفرع"
@@ -372,6 +322,7 @@ export default function BranchesManagementPage() {
                     <Button
                       variant="ghost"
                       size="sm"
+                      disabled={!canEdit}
                       onClick={() => setDeleteTarget(branch)}
                       className="h-8 w-8 p-0 text-rose-500 hover:bg-rose-500/10"
                       title="حذف الفرع"

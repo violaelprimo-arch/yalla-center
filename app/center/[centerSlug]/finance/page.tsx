@@ -60,7 +60,6 @@ import {
   TeacherPayrollExportRecord,
 } from '@/lib/finance/export';
 import { BrandLogo } from '@/components/brand/brand-logo';
-import { useFirebaseAuthSession } from '@/lib/firebase/client';
 import { useTeacherContracts } from '@/lib/teachers/client';
 import { TEACHER_MODELS } from '@/lib/teachers/profile';
 import { cairoClock } from '@/lib/attendance/reception';
@@ -68,13 +67,13 @@ import { cairoClock } from '@/lib/attendance/reception';
 type TabKey = 'shifts' | 'invoices' | 'payments' | 'payroll' | 'expenses';
 
 export default function FinancePage() {
-  const { tenant, branches, currentUser, currentRole } = useTenant();
+  const { tenant, branches, currentUser, currentRole, masterData } = useTenant();
+  const { auth, data: { subjects } } = masterData;
   const dal = useMemo(() => getDataProvider(), []);
 
   // Active Tab
   const [activeTab, setActiveTab] = useState<TabKey>('shifts');
   const [statementTeacherId, setStatementTeacherId] = useState('');
-  const auth = useFirebaseAuthSession();
   const mayReadContracts = ['PLATFORM_OWNER', 'CENTER_ADMIN', 'ACCOUNTANT'].includes(currentRole);
   const { profiles: teacherContracts, ready: contractsReady, error: contractsError } =
     useTeacherContracts(tenant.id, tenant.slug, mayReadContracts, auth.idToken);
@@ -90,7 +89,6 @@ export default function FinancePage() {
   const [students, setStudents] = useState<User[]>([]);
   const [teachers, setTeachers] = useState<User[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
-  const [subjects, setSubjects] = useState<Subject[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -146,7 +144,6 @@ export default function FinancePage() {
         fetchedStudents,
         fetchedTeachers,
         fetchedGroups,
-        fetchedSubjects,
       ] = await Promise.all([
         dal.getInvoices(tenant.id),
         dal.getPayments(tenant.id),
@@ -158,7 +155,6 @@ export default function FinancePage() {
         dal.getUsers(tenant.id, { role: 'STUDENT' }),
         dal.getUsers(tenant.id, { role: 'TEACHER' }),
         dal.getGroups(tenant.id),
-        dal.getSubjects(tenant.id),
       ]);
 
       setInvoices(fetchedInvoices);
@@ -171,7 +167,6 @@ export default function FinancePage() {
       setStudents(fetchedStudents);
       setTeachers(fetchedTeachers);
       setGroups(fetchedGroups);
-      setSubjects(fetchedSubjects);
     } catch (err: any) {
       console.error('Failed to load finance data:', err);
       setActionError(err?.message || 'تعذر تحميل البيانات المالية');

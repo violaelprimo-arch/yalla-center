@@ -2,12 +2,12 @@
 
 import React, { createContext, useContext, useState, useMemo } from 'react';
 import { Tenant, Branch, User, UserRole } from '@/lib/dal/types';
+import { useMasterDataCatalog } from '@/lib/dal/master-data-client';
 
 export interface TenantContextType {
   tenant: Tenant;
   branches: Branch[];
-  setBranches: React.Dispatch<React.SetStateAction<Branch[]>>;
-  refreshBranches: () => Promise<void>;
+  masterData: ReturnType<typeof useMasterDataCatalog>;
   activeBranch: Branch | null;
   activeBranchId: string | null;
   setActiveBranchId: (id: string | null) => void;
@@ -34,28 +34,7 @@ export function TenantProvider({
   branches,
   initialUsers,
 }: TenantProviderProps) {
-  const [currentBranches, setCurrentBranches] = useState<Branch[]>(branches);
-  const [activeBranchId, setActiveBranchId] = useState<string | null>(
-    branches[0]?.id || null
-  );
-
-  React.useEffect(() => {
-    setCurrentBranches(branches);
-  }, [branches]);
-
-  const refreshBranches = async () => {
-    try {
-      const res = await fetch(`/api/center/${tenant.slug}/master-data`, {
-        cache: 'no-store',
-      });
-      const data = await res.json();
-      if (data.success && data.data?.branches) {
-        setCurrentBranches(data.data.branches);
-      }
-    } catch (err) {
-      console.warn('Failed to refresh branches in TenantProvider:', err);
-    }
-  };
+  const [preferredBranchId, setActiveBranchId] = useState<string | null>(null);
 
   const [availableUsers] = useState<User[]>(initialUsers);
 
@@ -79,11 +58,11 @@ export function TenantProvider({
 
   const [currentUser, setCurrentUser] = useState<User>(defaultAdmin);
   const [isOwnerMode, setIsOwnerMode] = useState<boolean>(false);
+  const masterData = useMasterDataCatalog(tenant,
+    currentUser.role === 'CENTER_ADMIN' || currentUser.role === 'PLATFORM_OWNER');
+  const currentBranches = masterData.ready || !masterData.demo ? masterData.data.branches : branches;
 
-  const activeBranch = useMemo(
-    () => currentBranches.find((b) => b.id === activeBranchId) || currentBranches[0] || null,
-    [currentBranches, activeBranchId]
-  );
+  const activeBranch = currentBranches.find(branch => branch.id === preferredBranchId) ?? currentBranches[0] ?? null;
 
   const switchRole = (role: UserRole) => {
     // Helper to sync cookies for seamless client-to-server middleware alignment in demo
@@ -141,10 +120,9 @@ export function TenantProvider({
       value={{
         tenant,
         branches: currentBranches,
-        setBranches: setCurrentBranches,
-        refreshBranches,
+        masterData,
         activeBranch,
-        activeBranchId,
+        activeBranchId: activeBranch?.id ?? null,
         setActiveBranchId,
         currentUser,
         currentRole: currentUser.role,

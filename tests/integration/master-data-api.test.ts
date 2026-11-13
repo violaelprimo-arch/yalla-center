@@ -1,186 +1,117 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import { GET, POST } from '@/app/api/center/[centerSlug]/master-data/route';
-import { getDataProvider } from '@/lib/dal/factory';
+import { MockDataProvider } from '@/lib/dal/mock-data';
+import { createServerFirestoreStore, verifyFirebaseIdToken } from '@/lib/firebase/server';
+import { InMemoryTransactionalFirestoreStore } from '../helpers/in-memory-firestore';
 
-describe('Master Data API Route (/api/center/[centerSlug]/master-data)', () => {
-  const centerSlug = 'al-maher';
+vi.mock('@/lib/dal/factory', () => ({
+  getDataProvider: () => new MockDataProvider(),
+}));
+
+vi.mock('@/lib/firebase/server', async importOriginal => ({
+  ...await importOriginal<typeof import('@/lib/firebase/server')>(),
+  verifyFirebaseIdToken: vi.fn(async (token: string) => ({ uid: token })),
+  createServerFirestoreStore: vi.fn(),
+}));
+
+describe('Master Data API', () => {
+  const tenantId = 'tenant-maher-001';
+  const params = { centerSlug: 'al-maher' };
+  const url = 'http://localhost:3000/api/center/al-maher/master-data';
+  let store: InMemoryTransactionalFirestoreStore;
+
+  const request = (token: string | null, body?: object) => new NextRequest(url, {
+    method: body ? 'POST' : 'GET',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: body ? JSON.stringify(body) : undefined,
+  });
+
+  const write = (body: object) => POST(request('admin', body), { params });
+  const read = () => GET(request('admin'), { params });
 
   beforeEach(() => {
-    // Reset data provider instance if needed
+    store = new InMemoryTransactionalFirestoreStore();
+    store.seed('staff_memberships/admin', { tenantId, role: 'CENTER_ADMIN', isActive: true });
+    store.seed('staff_memberships/staff', { tenantId, role: 'RECEPTIONIST', isActive: true });
+    store.seed('staff_memberships/other-admin', { tenantId: 'tenant-rowad-002', role: 'CENTER_ADMIN', isActive: true });
+    vi.mocked(createServerFirestoreStore).mockResolvedValue(store);
+    vi.mocked(verifyFirebaseIdToken).mockClear();
   });
 
-  it('GET returns stages, subjects, and branches for active center', async () => {
-    const req = new NextRequest(`http://localhost:3000/api/center/${centerSlug}/master-data`);
-    const res = await GET(req, { params: Promise.resolve({ centerSlug }) });
-    expect(res.status).toBe(200);
-
-    const json = await res.json();
-    expect(json.success).toBe(true);
-    expect(json.data).toBeDefined();
-    expect(Array.isArray(json.data.stages)).toBe(true);
-    expect(Array.isArray(json.data.subjects)).toBe(true);
-    expect(Array.isArray(json.data.branches)).toBe(true);
-    expect(json.data.stages.length).toBeGreaterThan(0);
-    expect(json.data.branches.length).toBeGreaterThan(0);
+  it('requires a verified staff account and restricts edits to the correct center administration', async () => {
+    expect((await GET(request(null), { params })).status).toBe(401);
+    const change = { action: 'saveStage', stage: { nameAr: 'مرحلة جديدة' } };
+    expect((await POST(request(null, change), { params })).status).toBe(401);
+    expect((await POST(request('staff', change), { params })).status).toBe(403);
+    expect((await POST(request('other-admin', change), { params })).status).toBe(403);
+    const response = await GET(request('staff'), { params });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ success: true, canEdit: false });
+    expect(verifyFirebaseIdToken).toHaveBeenCalledWith('staff');
+    expect(store.docs.size).toBe(3);
   });
 
-  it('GET returns 404 for unknown center slug', async () => {
-    const req = new NextRequest(`http://localhost:3000/api/center/nonexistent-center/master-data`);
-    const res = await GET(req, { params: Promise.resolve({ centerSlug: 'nonexistent-center' }) });
-    expect(res.status).toBe(404);
-
-    const json = await res.json();
-    expect(json.success).toBe(false);
+  it('returns 404 for an unknown center', async () => {
+    const response = await GET(request('admin'), { params: { centerSlug: 'nonexistent-center' } });
+    expect(response.status).toBe(404);
   });
 
-  it('POST saveStage creates a new stage and returns it', async () => {
-    const uniqueName = `مرحلة تجريبية ${Date.now()}`;
-    const req = new NextRequest(`http://localhost:3000/api/center/${centerSlug}/master-data`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'saveStage',
-        stage: {
-          nameAr: uniqueName,
-          order: 99,
-        },
-      }),
-    });
+  it('adds and edits catalog records across requests with fresh data providers', async () => {
+    const stage = (await (await write({ action: 'saveStage', stage: { nameAr: 'مرحلة جديدة', order: 9 } })).json()).stage;
+    const grade = (await (await write({
+      action: 'saveGrade', grade: { stageId: stage.id, nameAr: 'صف جديد' },
+    })).json()).grade;
+    const subject = (await (await write({
+      action: 'saveSubject', subject: { stage: stage.id, grade: grade.id, nameAr: 'مادة جديدة' },
+    })).json()).subject;
+    const branch = (await (await write({
+      action: 'saveBranch', branch: { nameAr: 'فرع جديد', address: 'عنوان' },
+    })).json()).branch;
 
-    const res = await POST(req, { params: Promise.resolve({ centerSlug }) });
-    expect(res.status).toBe(200);
+    expect((await write({
+      action: 'saveStage', stage: { id: stage.id, nameAr: 'مرحلة معدلة' },
+    })).status).toBe(200);
+    expect((await write({
+      action: 'saveSubject', subject: { ...subject, nameAr: 'مادة معدلة' },
+    })).status).toBe(200);
+    expect((await write({
+      action: 'saveBranch', branch: { id: branch.id, nameAr: 'فرع معدل', address: '' },
+    })).status).toBe(200);
 
-    const json = await res.json();
-    expect(json.success).toBe(true);
-    expect(json.stage.nameAr).toBe(uniqueName);
-    expect(json.stage.id).toBeDefined();
+    const { data } = await (await read()).json();
+    expect(data.stages).toContainEqual(expect.objectContaining({
+      id: stage.id, nameAr: 'مرحلة معدلة', grades: [expect.objectContaining({ id: grade.id })],
+    }));
+    expect(data.subjects).toContainEqual(expect.objectContaining({ id: subject.id, nameAr: 'مادة معدلة' }));
+    expect(data.branches).toContainEqual(expect.objectContaining({ id: branch.id, nameAr: 'فرع معدل', address: '' }));
+
+    expect((await write({ action: 'deleteGrade', gradeId: grade.id })).status).toBe(400);
+    expect((await write({ action: 'deleteSubject', subjectId: subject.id })).status).toBe(200);
+    expect((await write({ action: 'deleteGrade', gradeId: grade.id })).status).toBe(200);
+    expect((await write({ action: 'deleteBranch', branchId: branch.id })).status).toBe(200);
+    const removed = (await (await read()).json()).data;
+    expect(removed.stages.find((item: { id: string }) => item.id === stage.id).grades).toEqual([]);
+    expect(removed.branches).not.toContainEqual(expect.objectContaining({ id: branch.id }));
   });
 
-  it('POST saveGrade creates a new grade under an existing stage', async () => {
-    const uniqueGradeName = `صف تجريبي ${Date.now()}`;
-    const req = new NextRequest(`http://localhost:3000/api/center/${centerSlug}/master-data`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'saveGrade',
-        grade: {
-          stageId: 'primary',
-          nameAr: uniqueGradeName,
-          order: 10,
-        },
-      }),
-    });
-
-    const res = await POST(req, { params: Promise.resolve({ centerSlug }) });
-    expect(res.status).toBe(200);
-
-    const json = await res.json();
-    expect(json.success).toBe(true);
-    expect(json.grade.nameAr).toBe(uniqueGradeName);
-    expect(json.grade.stageId).toBe('primary');
+  it('rejects duplicate names in the same grade and unrelated stage/grade combinations', async () => {
+    const subject = { nameAr: 'اللغة الفرنسية الخاصة', stage: 'secondary', grade: '1_sec' };
+    expect((await write({ action: 'saveSubject', subject })).status).toBe(200);
+    expect((await write({ action: 'saveSubject', subject: { ...subject, grade: '2_sec' } })).status).toBe(200);
+    expect((await write({ action: 'saveSubject', subject })).status).toBe(400);
+    expect((await write({ action: 'saveSubject', subject: { ...subject, stage: 'primary' } })).status).toBe(400);
   });
 
-  it('POST saveSubject allows same subject name in different grades, but rejects duplicate in same grade', async () => {
-    const subjectName = `اللغة الفرنسية الخاصة ${Date.now()}`;
-
-    // 1. Create in 1_sec
-    const req1 = new NextRequest(`http://localhost:3000/api/center/${centerSlug}/master-data`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'saveSubject',
-        subject: {
-          nameAr: subjectName,
-          code: 'FR-1',
-          stage: 'secondary',
-          grade: '1_sec',
-        },
-      }),
-    });
-
-    const res1 = await POST(req1, { params: Promise.resolve({ centerSlug }) });
-    expect(res1.status).toBe(200);
-    const json1 = await res1.json();
-    expect(json1.success).toBe(true);
-
-    // 2. Create same name in 2_sec -> MUST SUCCEED
-    const req2 = new NextRequest(`http://localhost:3000/api/center/${centerSlug}/master-data`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'saveSubject',
-        subject: {
-          nameAr: subjectName,
-          code: 'FR-2',
-          stage: 'secondary',
-          grade: '2_sec',
-        },
-      }),
-    });
-
-    const res2 = await POST(req2, { params: Promise.resolve({ centerSlug }) });
-    expect(res2.status).toBe(200);
-    const json2 = await res2.json();
-    expect(json2.success).toBe(true);
-    expect(json2.subject.id).not.toBe(json1.subject.id);
-
-    // 3. Create same name again in 1_sec -> MUST FAIL with 400
-    const req3 = new NextRequest(`http://localhost:3000/api/center/${centerSlug}/master-data`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'saveSubject',
-        subject: {
-          nameAr: subjectName,
-          stage: 'secondary',
-          grade: '1_sec',
-        },
-      }),
-    });
-
-    const res3 = await POST(req3, { params: Promise.resolve({ centerSlug }) });
-    expect(res3.status).toBe(400);
-    const json3 = await res3.json();
-    expect(json3.success).toBe(false);
-    expect(json3.error).toContain('يوجد مادة بنفس الاسم');
-  });
-
-  it('POST saveBranch and deleteBranch work as expected', async () => {
-    const branchName = `فرع الشروق ${Date.now()}`;
-    const reqCreate = new NextRequest(`http://localhost:3000/api/center/${centerSlug}/master-data`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'saveBranch',
-        branch: {
-          nameAr: branchName,
-          address: 'مدخل الشروق 1',
-          phone: '01055554444',
-          isActive: true,
-        },
-      }),
-    });
-
-    const resCreate = await POST(reqCreate, { params: Promise.resolve({ centerSlug }) });
-    expect(resCreate.status).toBe(200);
-    const jsonCreate = await resCreate.json();
-    expect(jsonCreate.success).toBe(true);
-    const branchId = jsonCreate.branch.id;
-
-    // Delete the new empty branch
-    const reqDelete = new NextRequest(`http://localhost:3000/api/center/${centerSlug}/master-data`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'deleteBranch',
-        branchId,
-      }),
-    });
-
-    const resDelete = await POST(reqDelete, { params: Promise.resolve({ centerSlug }) });
-    expect(resDelete.status).toBe(200);
-    const jsonDelete = await resDelete.json();
-    expect(jsonDelete.success).toBe(true);
+  it('does not acknowledge a write or replace stored data if Firestore is unavailable', async () => {
+    const commit = vi.spyOn(store, 'commit').mockRejectedValueOnce(new Error('connection failed'));
+    const failed = await write({ action: 'saveBranch', branch: { nameAr: 'فرع لم يُحفظ' } });
+    expect(failed.status).toBe(503);
+    expect(await failed.json()).toMatchObject({ success: false });
+    expect(commit).toHaveBeenCalledTimes(1);
+    const { data } = await (await read()).json();
+    expect(data.branches).not.toContainEqual(expect.objectContaining({ nameAr: 'فرع لم يُحفظ' }));
+    vi.spyOn(store, 'queryCollection').mockRejectedValueOnce(new Error('connection failed'));
+    expect((await read()).status).toBe(503);
   });
 });

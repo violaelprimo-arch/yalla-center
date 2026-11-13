@@ -24,6 +24,7 @@ import {
   TrendingUp,
 } from 'lucide-react';
 import { useTenant } from '@/components/layout/tenant-provider';
+import { MasterDataStatus } from '@/components/layout/master-data-status';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -47,56 +48,6 @@ import {
 } from '@/lib/timetable/conflict-detector';
 import { calculateDiscount } from '@/lib/finance/discounts';
 import { BrandLogo } from '@/components/brand/brand-logo';
-
-const EGYPTIAN_STAGES = [
-  {
-    id: 'primary',
-    nameAr: 'المرحلة الابتدائية',
-    grades: [
-      { id: '1_prim', nameAr: 'الصف الأول الابتدائي' },
-      { id: '2_prim', nameAr: 'الصف الثاني الابتدائي' },
-      { id: '3_prim', nameAr: 'الصف الثالث الابتدائي' },
-      { id: '4_prim', nameAr: 'الصف الرابع الابتدائي' },
-      { id: '5_prim', nameAr: 'الصف الخامس الابتدائي' },
-      { id: '6_prim', nameAr: 'الصف السادس الابتدائي' },
-    ],
-  },
-  {
-    id: 'preparatory',
-    nameAr: 'المرحلة الإعدادية',
-    grades: [
-      { id: '1_prep', nameAr: 'الصف الأول الإعدادي' },
-      { id: '2_prep', nameAr: 'الصف الثاني الإعدادي' },
-      { id: '3_prep', nameAr: 'الصف الثالث الإعدادي' },
-    ],
-  },
-  {
-    id: 'secondary',
-    nameAr: 'المرحلة الثانوية',
-    grades: [
-      { id: '1_sec', nameAr: 'الصف الأول الثانوي (عام)' },
-      {
-        id: '2_sec',
-        nameAr: 'الصف الثاني الثانوي',
-        hasDivisions: true,
-        divisions: [
-          { id: 'scientific', nameAr: 'علمي' },
-          { id: 'literary', nameAr: 'أدبي' },
-        ],
-      },
-      {
-        id: '3_sec',
-        nameAr: 'الصف الثالث الثانوي',
-        hasDivisions: true,
-        divisions: [
-          { id: 'scientific_math', nameAr: 'علمي رياضة' },
-          { id: 'scientific_science', nameAr: 'علمي علوم' },
-          { id: 'literary', nameAr: 'أدبي' },
-        ],
-      },
-    ],
-  },
-];
 
 const DAYS_NAMES: Record<number, string> = {
   0: 'الأحد',
@@ -126,7 +77,8 @@ function generateBarcodePattern(text: string) {
 }
 
 export default function StudentsDirectoryPage() {
-  const { tenant } = useTenant();
+  const { tenant, masterData } = useTenant();
+  const { stages: masterStages, subjects: masterSubjects } = masterData.data;
   const dal = useMemo(() => getDataProvider(), []);
 
   // Data states
@@ -149,28 +101,20 @@ export default function StudentsDirectoryPage() {
   const [selectedStudentForEnroll, setSelectedStudentForEnroll] = useState<User | null>(null);
   const [selectedStudentForIdCard, setSelectedStudentForIdCard] = useState<User | null>(null);
 
-  // Master Data from DAL
-  const [masterStages, setMasterStages] = useState<EducationalStage[]>([]);
-  const [masterSubjects, setMasterSubjects] = useState<Subject[]>([]);
-
   // Refresh handler
   const loadData = useCallback(async () => {
     setIsLoading(true);
     try {
-      const [allUsers, allGroups, allEnrollments, allInvoices, allStages, allSubjects] = await Promise.all([
+      const [allUsers, allGroups, allEnrollments, allInvoices] = await Promise.all([
         dal.getUsers(tenant.id, { role: 'STUDENT' }),
         dal.getGroups(tenant.id),
         dal.getEnrollments(tenant.id),
         dal.getInvoices(tenant.id),
-        dal.getStages(tenant.id),
-        dal.getSubjects(tenant.id),
       ]);
       setStudents(allUsers);
       setGroups(allGroups);
       setEnrollments(allEnrollments);
       setInvoices(allInvoices);
-      setMasterStages(allStages);
-      setMasterSubjects(allSubjects);
     } finally {
       setIsLoading(false);
     }
@@ -242,6 +186,7 @@ export default function StudentsDirectoryPage() {
 
   return (
     <div className="space-y-6" dir="rtl">
+      {(!masterData.demo || masterData.error) && <MasterDataStatus />}
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-border">
         <div>
@@ -256,6 +201,7 @@ export default function StudentsDirectoryPage() {
         <div className="flex items-center gap-3">
           <Button
             onClick={() => setIsRegisterModalOpen(true)}
+            disabled={!masterData.ready || Boolean(masterData.error) || !masterStages.some(stage => stage.grades.length > 0)}
             className="bg-brand-cyan-600 hover:bg-brand-cyan-700 text-white font-bold flex items-center gap-2 shadow-lg shadow-brand-cyan-500/20"
           >
             <Plus className="w-4 h-4" />
@@ -705,8 +651,8 @@ function StudentRegistrationModal({
   const [studentCode, setStudentCode] = useState('');
   const [phone, setPhone] = useState('');
   const [nationalId, setNationalId] = useState('');
-  const [stage, setStage] = useState(stages[0]?.id || 'secondary');
-  const [grade, setGrade] = useState(stages[0]?.grades?.[0]?.id || '1_sec');
+  const [stage, setStage] = useState(stages.find(item => item.grades.length)?.id ?? '');
+  const [grade, setGrade] = useState(stages.find(item => item.grades.length)?.grades[0].id ?? '');
   const [division, setDivision] = useState('');
   const [seatNumber, setSeatNumber] = useState('');
   const [guardianName, setGuardianName] = useState('');
@@ -772,6 +718,11 @@ function StudentRegistrationModal({
     }
     if (!guardianPhone.trim()) {
       setErrorMessage('يرجى إدخال رقم هاتف ولي الأمر للطوارئ وإشعارات الواتساب');
+      return;
+    }
+
+    if (!currentGradeObj) {
+      setErrorMessage('اختر المرحلة والصف الدراسي');
       return;
     }
 

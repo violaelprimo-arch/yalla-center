@@ -68,6 +68,7 @@ import { extractGoogleDriveFileId, buildDriveLinks } from '../materials/drive';
 import { countArabicWords, evaluateIndexingStatus, simulateTextExtraction } from '../materials/indexer';
 import { generateGroundedExam } from '../exams/generator';
 import { gradeExamSubmission as gradeExam } from '../exams/grading';
+import type { MasterData } from './master-data';
 
 export function buildDefaultStages(tenantId: string): EducationalStage[] {
   return [
@@ -1069,6 +1070,7 @@ export const INITIAL_SEEDED_DATA = {
 };
 
 export class MockDataProvider implements IDataProvider {
+  private initializedStageTenants: Set<string>;
   public tenants: Tenant[];
   public stages: EducationalStage[];
   public branches: Branch[];
@@ -1096,6 +1098,7 @@ export class MockDataProvider implements IDataProvider {
   constructor() {
     this.tenants = JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.tenants));
     this.stages = JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.stages));
+    this.initializedStageTenants = new Set(this.stages.map(stage => stage.tenantId));
     this.branches = JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.branches));
     this.classrooms = JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.classrooms));
     this.users = JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.users));
@@ -1117,6 +1120,14 @@ export class MockDataProvider implements IDataProvider {
     this.expenses = JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.expenses));
     this.booksInventory = JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.booksInventory));
     this.notifications = JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.notifications));
+  }
+
+  setMasterData(tenantId: string, data: MasterData) {
+    const { stages, subjects, branches } = structuredClone(data);
+    this.stages = [...this.stages.filter(stage => stage.tenantId !== tenantId), ...stages];
+    this.subjects = [...this.subjects.filter(subject => subject.tenantId !== tenantId), ...subjects];
+    this.branches = [...this.branches.filter(branch => branch.tenantId !== tenantId), ...branches];
+    this.initializedStageTenants.add(tenantId);
   }
 
   // 1. Tenants & Branches
@@ -1205,12 +1216,13 @@ export class MockDataProvider implements IDataProvider {
 
   // Stages & Grades (Master Data)
   async getStages(tenantId: string): Promise<EducationalStage[]> {
-    let tenantStages = this.stages.filter((s) => s.tenantId === tenantId);
-    if (tenantStages.length === 0) {
-      const defaults = buildDefaultStages(tenantId);
-      this.stages.push(...defaults);
-      tenantStages = defaults;
+    if (!this.initializedStageTenants.has(tenantId)) {
+      if (!this.stages.some(stage => stage.tenantId === tenantId)) {
+        this.stages.push(...buildDefaultStages(tenantId));
+      }
+      this.initializedStageTenants.add(tenantId);
     }
+    const tenantStages = this.stages.filter((s) => s.tenantId === tenantId);
     return JSON.parse(JSON.stringify(tenantStages.sort((a, b) => (a.order || 0) - (b.order || 0))));
   }
 

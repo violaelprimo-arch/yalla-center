@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import {
   BookOpen,
   Plus,
@@ -16,17 +16,16 @@ import {
   Code2,
 } from 'lucide-react';
 import { useTenant } from '@/components/layout/tenant-provider';
+import { MasterDataStatus } from '@/components/layout/master-data-status';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import type { EducationalStage, Subject } from '@/lib/dal/types';
+import type { Subject } from '@/lib/dal/types';
 
 export default function SubjectsManagementPage() {
-  const { tenant } = useTenant();
+  const { tenant, masterData } = useTenant();
 
-  const [subjects, setSubjects] = useState<Subject[]>([]);
-  const [stages, setStages] = useState<EducationalStage[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { data: { subjects, stages }, loading, canEdit, save } = masterData;
 
   // Filters
   const [selectedStageFilter, setSelectedStageFilter] = useState('');
@@ -59,30 +58,6 @@ export default function SubjectsManagementPage() {
       setToast((prev) => (prev?.message === message ? null : prev));
     }, 4000);
   }, []);
-
-  const loadMasterData = useCallback(async () => {
-    try {
-      setLoading(true);
-      const res = await fetch(`/api/center/${tenant.slug}/master-data`, {
-        cache: 'no-store',
-      });
-      const data = await res.json();
-      if (data.success && data.data) {
-        setSubjects(data.data.subjects || []);
-        setStages(data.data.stages || []);
-      } else {
-        showToast('error', data.error || 'تعذر تحميل المواد الدراسية');
-      }
-    } catch {
-      showToast('error', 'خطأ في الاتصال بالخادم');
-    } finally {
-      setLoading(false);
-    }
-  }, [tenant.slug, showToast]);
-
-  useEffect(() => {
-    loadMasterData();
-  }, [loadMasterData]);
 
   // Lookup maps for stage and grade names
   const stageNameMap = useMemo(() => {
@@ -201,34 +176,20 @@ export default function SubjectsManagementPage() {
 
     try {
       setIsSaving(true);
-      const res = await fetch(`/api/center/${tenant.slug}/master-data`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'saveSubject',
-          subject: {
-            id: editingSubject?.id,
-            nameAr: trimmedName,
-            code: formData.code.trim() || undefined,
-            stage: formData.stage,
-            grade: formData.grade,
-          },
-        }),
+      await save({
+        action: 'saveSubject',
+        subject: {
+          id: editingSubject?.id,
+          nameAr: trimmedName,
+          code: formData.code.trim(),
+          stage: formData.stage,
+          grade: formData.grade,
+        },
       });
-
-      const result = await res.json();
-      if (result.success) {
-        showToast(
-          'success',
-          editingSubject ? 'تم تعديل المادة الدراسية بنجاح' : 'تم إضافة المادة الدراسية بنجاح'
-        );
-        setIsModalOpen(false);
-        await loadMasterData();
-      } else {
-        setFormError(result.error || 'تعذر حفظ المادة الدراسية');
-      }
-    } catch {
-      setFormError('خطأ أثناء إرسال البيانات إلى الخادم');
+      showToast('success', editingSubject ? 'تم تعديل المادة الدراسية بنجاح' : 'تم إضافة المادة الدراسية بنجاح');
+      setIsModalOpen(false);
+    } catch (cause) {
+      setFormError(cause instanceof Error ? cause.message : 'تعذّر حفظ المادة الدراسية');
     } finally {
       setIsSaving(false);
     }
@@ -241,25 +202,11 @@ export default function SubjectsManagementPage() {
 
     try {
       setIsDeleting(true);
-      const res = await fetch(`/api/center/${tenant.slug}/master-data`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'deleteSubject',
-          subjectId: deleteTarget.id,
-        }),
-      });
-
-      const result = await res.json();
-      if (result.success) {
-        showToast('success', 'تم حذف المادة الدراسية بنجاح');
-        setDeleteTarget(null);
-        await loadMasterData();
-      } else {
-        setDeleteError(result.error || 'تعذر حذف المادة الدراسية');
-      }
-    } catch {
-      setDeleteError('خطأ أثناء الاتصال بالخادم');
+      await save({ action: 'deleteSubject', subjectId: deleteTarget.id });
+      showToast('success', 'تم حذف المادة الدراسية بنجاح');
+      setDeleteTarget(null);
+    } catch (cause) {
+      setDeleteError(cause instanceof Error ? cause.message : 'تعذّر حذف المادة الدراسية');
     } finally {
       setIsDeleting(false);
     }
@@ -267,6 +214,7 @@ export default function SubjectsManagementPage() {
 
   return (
     <div className="space-y-6 pb-12" dir="rtl">
+      <MasterDataStatus />
       {/* Toast Alert */}
       {toast && (
         <div
@@ -306,6 +254,7 @@ export default function SubjectsManagementPage() {
         </div>
 
         <Button
+          disabled={!canEdit}
           onClick={() => handleOpenModal()}
           className="gap-2 bg-brand-cyan-600 hover:bg-brand-cyan-500 text-white font-bold shrink-0 shadow-soft-sm"
         >
@@ -394,6 +343,7 @@ export default function SubjectsManagementPage() {
               لم نجد أي مادة دراسية تطابق معايير البحث. يمكنك إضافة مواد دراسية جديدة للمرحلة والصف المطلوبين.
             </p>
             <Button
+              disabled={!canEdit}
               onClick={() => handleOpenModal()}
               className="mt-4 gap-2 bg-brand-cyan-600 hover:bg-brand-cyan-500 text-white font-bold"
             >
@@ -446,6 +396,7 @@ export default function SubjectsManagementPage() {
                           <Button
                             variant="ghost"
                             size="sm"
+                            disabled={!canEdit}
                             onClick={() => handleOpenModal(subject)}
                             className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
                             title="تعديل المادة"
@@ -455,6 +406,7 @@ export default function SubjectsManagementPage() {
                           <Button
                             variant="ghost"
                             size="sm"
+                            disabled={!canEdit}
                             onClick={() => setDeleteTarget(subject)}
                             className="h-8 w-8 p-0 text-rose-500 hover:bg-rose-500/10"
                             title="حذف المادة"

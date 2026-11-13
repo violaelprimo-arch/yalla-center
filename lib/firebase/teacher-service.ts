@@ -10,6 +10,7 @@ import {
   type TeacherProfile,
 } from '@/lib/teachers/profile';
 import type { FirestoreWriteOperation } from './firestore-rest';
+import { listMasterData } from './master-data-service';
 import {
   FirebaseAuthError,
   getFirebaseProjectId,
@@ -147,7 +148,8 @@ export async function saveTeacherProfile(
   const { path, previous, precondition } = await expectTeacher(context, id, version);
   if (previous && !previous.active) throw new TeacherServiceError(409, 'حساب المعلم مؤرشف');
 
-  const subjects = new Set((await dal.getSubjects(tenant.id)).map(subject => subject.id));
+  const masterData = await listMasterData(context);
+  const subjects = new Set(masterData.subjects.map(subject => subject.id));
   if (input.subjectIds.some(subjectId => !subjects.has(subjectId))) {
     throw new TeacherServiceError(400, 'اختر المواد من قائمة هذا السنتر');
   }

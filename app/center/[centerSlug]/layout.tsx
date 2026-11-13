@@ -50,7 +50,7 @@ export default async function CenterDynamicLayout({
   ]);
 
   return (
-    <TenantProvider tenant={tenant} branches={branches} initialUsers={users}>
+    <TenantProvider key={tenant.id} tenant={tenant} branches={branches} initialUsers={users}>
       <TenantLayout>{children}</TenantLayout>
     </TenantProvider>
   );
