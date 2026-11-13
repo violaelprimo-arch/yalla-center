@@ -5,10 +5,14 @@ import { attachDemoOperations } from './demo-operations';
 
 let instance: MockDataProvider | null = null;
 
+export function createCenterDataProvider() {
+  return new MockDataProvider({ archiveMaherGroups: process.env.NODE_ENV !== 'test' });
+}
+
 export function getDataProvider(): MockDataProvider {
   if (instance) return instance;
 
-  instance = new MockDataProvider();
+  instance = createCenterDataProvider();
   if (typeof window !== 'undefined' && process.env.NODE_ENV !== 'test' &&
     !(process.env.NEXT_PUBLIC_FIREBASE_API_KEY && process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN &&
       process.env.NEXT_PUBLIC_FIREBASE_APP_ID)) {
@@ -26,7 +30,9 @@ export function getDataProvider(): MockDataProvider {
 export function getReceptionDataProvider(clock = cairoClock()): IDataProvider {
   const provider = getDataProvider();
   const template = provider.sessions.find(session => session.id === 'sess-live-today');
-  if (!template) return provider;
+  if (!template || !provider.groups.some(group => group.id === template.groupId && group.tenantId === template.tenantId && group.isActive)) {
+    return provider;
+  }
 
   // Keep the sample center usable regardless of when the demo is opened.
   // Date-specific IDs keep each day's saved marks independent.

@@ -5,7 +5,8 @@ import { MockDataProvider } from '@/lib/dal/mock-data';
 import { createServerFirestoreStore, verifyFirebaseIdToken } from '@/lib/firebase/server';
 import { InMemoryTransactionalFirestoreStore } from '../helpers/in-memory-firestore';
 
-vi.mock('@/lib/dal/factory', () => ({
+vi.mock('@/lib/dal/factory', async importOriginal => ({
+  ...await importOriginal<typeof import('@/lib/dal/factory')>(),
   getDataProvider: () => new MockDataProvider(),
 }));
 

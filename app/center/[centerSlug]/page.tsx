@@ -31,6 +31,7 @@ export default function CenterDashboardPage() {
   const clock = cairoClock();
   const today = clock.slice(0, 10);
   const ownGroups = groups.filter(group => group.teacherId === currentUser.id && group.isActive);
+  const scheduledToday = todaySessions.filter(session => groups.some(group => group.id === session.groupId && group.isActive));
   const ownModels = [...new Set(ownGroups.map(group => GROUP_PRICING_LABELS[group.pricingModel]))];
 
   useEffect(() => {
@@ -74,10 +75,10 @@ export default function CenterDashboardPage() {
               <span>تسجيل حضور سريع</span>
             </Button>
           </Link>
-          <Link href={`/center/${tenant.slug}/branches`}>
+          <Link href={`/center/${tenant.slug}/branches-list`}>
             <Button size="sm" variant="outline" className="gap-1.5">
               <Building2 className="w-4 h-4 text-brand-cyan-600" />
-              <span>الفروع والقاعات</span>
+              <span>قائمة الفروع</span>
             </Button>
           </Link>
           <Link href={`/center/${tenant.slug}/profile`}>
@@ -222,7 +223,7 @@ export default function CenterDashboardPage() {
           </div>
 
           <div className="space-y-2">
-            {todaySessions.length ? todaySessions.map(session => {
+            {scheduledToday.length ? scheduledToday.map(session => {
               const group = groups.find(item => item.id === session.groupId);
               const room = classrooms.find(item => item.id === session.classroomId);
               const branch = branches.find(item => item.id === (session.branchId ?? group?.branchId));
@@ -262,7 +263,7 @@ export default function CenterDashboardPage() {
                 <div className="pt-2 border-t border-border flex items-center justify-between text-xs text-muted-foreground">
                   <span>هاتف: <span className="font-mono">{b.phone || '01001234567'}</span></span>
                   <Link
-                    href={`/center/${tenant.slug}/branches`}
+                    href={`/center/${tenant.slug}/branches-list#${b.id}`}
                     className="text-brand-cyan-600 dark:text-brand-cyan-400 font-bold hover:underline"
                   >
                     إدارة القاعات ←

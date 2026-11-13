@@ -54,13 +54,6 @@ export const CENTER_NAV_ITEMS: CenterNavItem[] = [
     ],
   },
   {
-    id: 'branches',
-    titleAr: 'الفروع والقاعات',
-    href: (slug) => `/center/${slug}/branches`,
-    icon: Building2,
-    roles: ['PLATFORM_OWNER', 'CENTER_ADMIN', 'BRANCH_MANAGER'],
-  },
-  {
     id: 'students',
     titleAr: 'شؤون الطلاب',
     href: (slug) => `/center/${slug}/students`,

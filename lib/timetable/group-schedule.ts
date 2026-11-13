@@ -37,14 +37,18 @@ export const groupInputSchema = z.object({
   id, version: z.number().int().min(0),
   nameAr: z.string().trim().min(1, 'اسم المجموعة مطلوب').max(120),
   branchId: id, stageId: id, gradeId: id, subjectId: id, teacherId: id,
+  maxStudents: z.number().int().min(1, 'سعة المجموعة لازم تكون أكبر من صفر').max(1000).optional(),
   weeklySlots: z.array(slotSchema).min(1, 'أضف موعدًا واحدًا على الأقل').max(28),
   pricing: pricingSchema,
 });
 
 export const classroomInputSchema = z.object({
-  branchId: id, nameAr: z.string().trim().min(1, 'اسم القاعة مطلوب').max(80),
+  id: id.optional(), branchId: id, nameAr: z.string().trim().min(1, 'اسم القاعة مطلوب').max(80),
   capacity: z.number().int().min(1, 'سعة القاعة مطلوبة').max(1000),
 });
+
+export const groupDeletionSchema = z.object({ id, version: z.number().int().min(0) });
+export const classroomDeletionSchema = z.object({ id, branchId: id });
 
 export type GroupPricing = z.infer<typeof pricingSchema>;
 export type WeeklySlot = z.infer<typeof slotSchema>;
@@ -99,24 +103,41 @@ export function clockLabel(time: string) {
   return `${hours % 12 || 12}:${minutes} ${hours < 12 ? 'ص' : 'م'}`;
 }
 
-export function mergeManagedGroups(base: Group[], records: Group[]) {
-  const managed = new Map(records.map(group => [group.id, group]));
-  return [...base.filter(group => !managed.has(group.id)), ...managed.values()];
+export function mergeManagedRecords<T extends { id: string }>(base: T[], records: T[]) {
+  const merged = new Map(base.map(record => [record.id, record]));
+  for (const record of records) merged.set(record.id, record);
+  return [...merged.values()];
 }
 
 export function buildClassroom(tenantId: string, input: ClassroomInput, branches: Branch[], classrooms: Classroom[]): Classroom {
-  if (!branches.some(branch => branch.tenantId === tenantId && branch.id === input.branchId && branch.isActive)) {
-    throw new GroupScheduleError(400, 'اختر فرعًا نشطًا من هذا السنتر');
+  if (!branches.some(branch => branch.tenantId === tenantId && branch.id === input.branchId)) {
+    throw new GroupScheduleError(400, 'اختر فرعًا من هذا السنتر');
   }
-  if (classrooms.some(room => room.tenantId === tenantId && room.branchId === input.branchId &&
+  const rooms = classrooms.filter(room => room.tenantId === tenantId && room.branchId === input.branchId && !room.archivedAt);
+  const current = rooms.find(room => room.id === input.id);
+  if (input.id && !current) throw new GroupScheduleError(404, 'القاعة غير موجودة في هذا الفرع');
+  if (rooms.some(room => room.id !== input.id &&
     room.nameAr.toLocaleLowerCase('ar') === input.nameAr.toLocaleLowerCase('ar'))) {
     throw new GroupScheduleError(409, 'يوجد قاعة بنفس الاسم في هذا الفرع');
   }
+  if (current) return { ...current, nameAr: input.nameAr, capacity: input.capacity };
   return {
-    id: `room-${crypto.randomUUID()}`, tenantId, ...input,
+    ...input, id: `room-${crypto.randomUUID()}`, tenantId,
     equipment: { projector: false, airConditioning: false, smartBoard: false },
     createdAt: new Date().toISOString(),
   };
+}
+
+export function archiveClassroom(room: Classroom, groups: Group[]): Classroom {
+  const occupied = groups.some(group => group.tenantId === room.tenantId && group.isActive &&
+    (group.classroomId === room.id || weeklySlots(group).some(slot => slot.classroomId === room.id)));
+  if (occupied) throw new GroupScheduleError(409, 'القاعة مرتبطة بموعد مجموعة نشطة. غيّر قاعة الموعد من «الحصص والمجموعات» أولًا.');
+  return { ...room, archivedAt: new Date().toISOString() };
+}
+
+export function archiveGroup(group: Group, archivedAt = `${cairoClock()}:00`): Group {
+  // A slot starting in the current minute may already have attendance to retain.
+  return group.archivedAt ? group : { ...group, isActive: false, archivedAt, version: (group.version ?? 0) + 1 };
 }
 
 function periodFrom(group: Group): Omit<GroupPeriod, 'endsAt'> | undefined {
@@ -150,7 +171,7 @@ interface ScheduleReferences {
 export function buildGroup(tenantId: string, input: GroupInput, refs: ScheduleReferences, now = new Date()): Group {
   const { nameAr, branchId, stageId, gradeId, subjectId, teacherId } = input;
   const current = refs.groups.find(group => group.tenantId === tenantId && group.id === input.id);
-  if ((current?.version ?? 0) !== input.version) throw new GroupScheduleError(409, groupConflictMessage);
+  if (current?.archivedAt || (current?.version ?? 0) !== input.version) throw new GroupScheduleError(409, groupConflictMessage);
   if (!refs.branches.some(branch => branch.tenantId === tenantId && branch.id === branchId && branch.isActive)) {
     throw new GroupScheduleError(400, 'اختر فرعًا نشطًا من هذا السنتر');
   }
@@ -172,7 +193,7 @@ export function buildGroup(tenantId: string, input: GroupInput, refs: ScheduleRe
     throw new GroupScheduleError(400, 'كل موعد يحتاج معرّفًا مختلفًا');
   }
 
-  const rooms = new Map(refs.classrooms.filter(room => room.tenantId === tenantId && room.branchId === branchId)
+  const rooms = new Map(refs.classrooms.filter(room => room.tenantId === tenantId && room.branchId === branchId && !room.archivedAt)
     .map(room => [room.id, room]));
   const teachers = new Map(refs.teachers.map(teacher => [teacher.id, teacher]));
   const occupied = refs.groups.filter(group => group.id !== input.id || group.tenantId !== tenantId)
@@ -191,6 +212,9 @@ export function buildGroup(tenantId: string, input: GroupInput, refs: ScheduleRe
     if (!conflict.canSchedule) throw new GroupScheduleError(409, conflict.errors[0].messageAr);
     occupied.push({ ...slot, tenantId, branchId, teacherId, nameAr, isActive: true });
     capacity = Math.min(capacity, room.capacity);
+  }
+  if (input.maxStudents && input.maxStudents > capacity) {
+    throw new GroupScheduleError(400, `أقصى عدد للمجموعة حسب القاعات المختارة ${capacity} طالب`);
   }
 
   const pricing = normalizedPricing(input.pricing);
@@ -211,7 +235,8 @@ export function buildGroup(tenantId: string, input: GroupInput, refs: ScheduleRe
     pricingModel: pricing.model, pricing, weeklySlots: slots, effectiveFrom, scheduleHistory,
     monthlyFee: pricing.model === 'per_session' ? 0 : pricing.monthlyFee,
     sessionFee: pricing.model === 'per_session' ? moneyAmount(pricing.teacherFee + pricing.centerFee) : 0,
-    maxStudents: capacity, isActive: current?.isActive ?? true, academicYear: current?.academicYear ?? `${academicYear}/${academicYear + 1}`,
+    maxStudents: input.maxStudents ?? capacity, isActive: current?.isActive ?? true,
+    academicYear: current?.academicYear ?? `${academicYear}/${academicYear + 1}`,
     createdAt: current?.createdAt ?? now.toISOString(), version: input.version + 1,
     ...(current?.legacyBilling ? { legacyBilling: current.legacyBilling } : current && !current.pricing
       ? { legacyBilling: { model: current.pricingModel, monthlyFee: current.monthlyFee,
@@ -228,8 +253,8 @@ export function recurringSessions(groups: Group[], from: string, through: string
   for (let date = from; date <= through; date = shiftDate(date, 1)) dates.push(date);
   return groups.flatMap(group => {
     const current = periodFrom(group);
-    if (!current || !group.isActive) return [];
-    const periods = [...(group.scheduleHistory ?? []), { ...current, endsAt: undefined }];
+    if (!current || (!group.isActive && !group.archivedAt)) return [];
+    const periods = [...(group.scheduleHistory ?? []), { ...current, endsAt: group.archivedAt }];
     const emitted = new Set<string>();
     return periods.flatMap(period => dates.flatMap(sessionDate => {
       if (sessionDate < period.startsAt.slice(0, 10) || (period.endsAt && sessionDate > period.endsAt.slice(0, 10))) return [];

@@ -9,7 +9,8 @@ import {
   verifyFirebaseIdToken,
 } from '@/lib/firebase/server';
 import { authorizeMasterData, listMasterData, saveMasterData } from '@/lib/firebase/master-data-service';
-import { loadGroupProvider } from '@/lib/firebase/group-service';
+import { groupRevisionWrite, loadGroupProvider } from '@/lib/firebase/group-service';
+import { GroupScheduleError } from '@/lib/timetable/group-schedule';
 
 export const dynamic = 'force-dynamic';
 
@@ -37,7 +38,7 @@ async function resolveContext(req: NextRequest, centerSlug: string, requireAdmin
 }
 
 function errorResponse(error: unknown) {
-  if (error instanceof MasterDataError || error instanceof FirebaseAuthError) {
+  if (error instanceof MasterDataError || error instanceof FirebaseAuthError || error instanceof GroupScheduleError) {
     return reply({ success: false, error: error.message }, error.status);
   }
   if (error instanceof FirestoreHttpError &&
@@ -65,9 +66,11 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
     if (!parsed.success) {
       return reply({ success: false, error: parsed.error.issues[0]?.message || 'بيانات الطلب غير صالحة' }, 400);
     }
-    const dal = parsed.data.action.startsWith('delete')
+    const scheduleWrite = parsed.data.action.startsWith('delete')
+      ? await groupRevisionWrite(context.store, context.tenant.id) : undefined;
+    const dal = scheduleWrite
       ? await loadGroupProvider(context.store, context.tenant) : context.dal;
-    const { data, result } = await saveMasterData({ ...context, dal }, parsed.data);
+    const { data, result } = await saveMasterData({ ...context, dal }, parsed.data, scheduleWrite);
     return reply({ success: true, data, ...result });
   } catch (error) {
     return errorResponse(error);

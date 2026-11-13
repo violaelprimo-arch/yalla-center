@@ -122,6 +122,7 @@ export interface Classroom {
     computers?: boolean;
   };
   createdAt: string;
+  archivedAt?: string;
 }
 
 export interface User {
@@ -182,6 +183,7 @@ export interface Group {
   effectiveFrom?: string;
   scheduleHistory?: GroupPeriod[];
   version?: number;
+  archivedAt?: string;
   legacyBilling?: {
     model: PricingModel;
     monthlyFee: number;

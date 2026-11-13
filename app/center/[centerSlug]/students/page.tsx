@@ -416,7 +416,7 @@ export default function StudentsDirectoryPage() {
               ) : (
                 filteredStudents.map((student) => {
                   const studentActiveEnrollments = enrollments.filter(
-                    (e) => e.studentId === student.id && e.isActive
+                    (e) => e.studentId === student.id && e.isActive && groups.some(group => group.id === e.groupId && group.isActive)
                   );
 
                   return (
@@ -992,7 +992,7 @@ function GroupEnrollmentModal({
   const studentActiveGroups = useMemo(() => {
     const activeEnrs = enrollments.filter((e) => e.studentId === student.id && e.isActive);
     return activeEnrs
-      .map((e) => groups.find((g) => g.id === e.groupId))
+      .map((e) => groups.find((g) => g.id === e.groupId && g.isActive))
       .filter((g): g is Group => Boolean(g));
   }, [enrollments, groups, student.id]);
 

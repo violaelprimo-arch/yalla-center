@@ -1,7 +1,7 @@
 import { matchTeacherContract, type TeacherProfile } from '@/lib/teachers/profile';
 import { calculateTeacherSessionPay, countTeacherSessionAttendance } from '@/lib/teachers/session-compensation';
 import { cairoClock } from '@/lib/attendance/reception';
-import { mergeManagedGroups, moneyAmount, recurringSessions, sessionDateFromId, shiftDate, studentGroupFee } from '@/lib/timetable/group-schedule';
+import { archiveGroup, mergeManagedRecords, moneyAmount, recurringSessions, sessionDateFromId, shiftDate, studentGroupFee } from '@/lib/timetable/group-schedule';
 import { calculateFixedSessionSplit, splitPrivateFee } from '@/lib/finance/group-pricing';
 import {
   Tenant,
@@ -1074,7 +1074,9 @@ export const INITIAL_SEEDED_DATA = {
 
 export class MockDataProvider implements IDataProvider {
   private initializedStageTenants: Set<string>;
+  private readonly baseGroups: Group[];
   private managedGroupIds = new Map<string, Set<string>>();
+  private managedClassroomIds = new Map<string, Set<string>>();
   private saveDemoOperations?: () => void;
   public tenants: Tenant[];
   public stages: EducationalStage[];
@@ -1100,7 +1102,7 @@ export class MockDataProvider implements IDataProvider {
   public booksInventory: BookInventoryItem[];
   public notifications: NotificationRecord[];
 
-  constructor() {
+  constructor({ archiveMaherGroups = false } = {}) {
     this.tenants = JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.tenants));
     this.stages = JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.stages));
     this.initializedStageTenants = new Set(this.stages.map(stage => stage.tenantId));
@@ -1108,7 +1110,9 @@ export class MockDataProvider implements IDataProvider {
     this.classrooms = JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.classrooms));
     this.users = JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.users));
     this.subjects = JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.subjects));
-    this.groups = JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.groups));
+    this.baseGroups = INITIAL_SEEDED_DATA.groups.map(group =>
+      archiveMaherGroups && group.tenantId === 'tenant-maher-001' ? archiveGroup(group) : { ...group });
+    this.groups = structuredClone(this.baseGroups);
     this.sessions = JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.sessions));
     this.enrollments = JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.enrollments));
     this.attendance = JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.attendance));
@@ -1137,15 +1141,18 @@ export class MockDataProvider implements IDataProvider {
 
   setManagedGroups(tenantId: string, records: Group[]) {
     const managedIds = this.managedGroupIds.get(tenantId);
-    const seeds = INITIAL_SEEDED_DATA.groups.filter(group => group.tenantId === tenantId && managedIds?.has(group.id));
+    const seeds = this.baseGroups.filter(group => group.tenantId === tenantId && managedIds?.has(group.id));
     const base = this.groups.filter(group => group.tenantId !== tenantId || !managedIds?.has(group.id));
-    this.groups = mergeManagedGroups([...base, ...seeds], records);
+    this.groups = mergeManagedRecords([...base, ...structuredClone(seeds)], records);
     this.managedGroupIds.set(tenantId, new Set(records.map(group => group.id)));
   }
 
   setManagedClassrooms(tenantId: string, rooms: Classroom[]) {
-    const baseIds = new Set(INITIAL_SEEDED_DATA.classrooms.map(room => room.id));
-    this.classrooms = [...this.classrooms.filter(room => room.tenantId !== tenantId || baseIds.has(room.id)), ...rooms];
+    const managedIds = this.managedClassroomIds.get(tenantId);
+    const seeds = INITIAL_SEEDED_DATA.classrooms.filter(room => room.tenantId === tenantId && managedIds?.has(room.id));
+    const base = this.classrooms.filter(room => room.tenantId !== tenantId || !managedIds?.has(room.id));
+    this.classrooms = mergeManagedRecords([...base, ...structuredClone(seeds)], rooms);
+    this.managedClassroomIds.set(tenantId, new Set(rooms.map(room => room.id)));
   }
 
   attachDemoOperations(save: () => void) {
@@ -1164,9 +1171,16 @@ export class MockDataProvider implements IDataProvider {
     const generated = recurringSessions(this.groups.filter(group => group.tenantId === tenantId), from, through)
       .filter(session => !ids.has(session.id));
     const conducted = new Set(this.attendance.filter(record => record.tenantId === tenantId).map(record => record.sessionId));
-    return [...saved, ...generated].map(session => session.pricing &&
-      (session.status === 'scheduled' || session.status === 'in_progress') && conducted.has(session.id) &&
-      `${session.sessionDate}T${session.endTime}` <= today ? { ...session, status: 'completed' as const } : session);
+    const archives = new Map(this.groups.filter(group => group.tenantId === tenantId && group.archivedAt)
+      .map(group => [group.id, group.archivedAt!]));
+    return [...saved, ...generated].flatMap(session => {
+      const archivedAt = archives.get(session.groupId);
+      if (session.status !== 'scheduled' && session.status !== 'in_progress') return [session];
+      if (conducted.has(session.id) && (archivedAt || (session.pricing && `${session.sessionDate}T${session.endTime}` <= today))) {
+        return [{ ...session, status: 'completed' as const }];
+      }
+      return archivedAt && `${session.sessionDate}T${session.startTime}` >= archivedAt ? [] : [session];
+    });
   }
 
   // 1. Tenants & Branches
@@ -1230,14 +1244,14 @@ export class MockDataProvider implements IDataProvider {
     }
 
     const hasClassrooms = this.classrooms.some(
-      (c) => c.tenantId === tenantId && c.branchId === branchId
+      (c) => c.tenantId === tenantId && c.branchId === branchId && !c.archivedAt
     );
     if (hasClassrooms) {
-      return { success: false, error: 'لا يمكن حذف الفرع لوجود قاعات مرتبطة به' };
+      return { success: false, error: 'لا يمكن حذف الفرع لوجود قاعات مرتبطة به. احذف القاعات من بطاقة الفرع أولًا.' };
     }
 
     const hasGroups = this.groups.some(
-      (g) => g.tenantId === tenantId && g.branchId === branchId
+      (g) => g.tenantId === tenantId && g.branchId === branchId && g.isActive
     );
     if (hasGroups) {
       return { success: false, error: 'لا يمكن حذف الفرع لوجود مجموعات مرتبطة به' };
@@ -1249,7 +1263,7 @@ export class MockDataProvider implements IDataProvider {
 
   async getClassrooms(tenantId: string, branchId?: string): Promise<Classroom[]> {
     return this.classrooms.filter(
-      (c) => c.tenantId === tenantId && (!branchId || c.branchId === branchId)
+      (c) => c.tenantId === tenantId && !c.archivedAt && (!branchId || c.branchId === branchId)
     );
   }
 
@@ -1631,11 +1645,16 @@ export class MockDataProvider implements IDataProvider {
     const saved = filter?.date ? [] : this.sessions.filter(session => session.tenantId === tenantId &&
       (session.sessionDate < from || session.sessionDate > through));
     const sessions = [...saved, ...this.sessionsInRange(tenantId, filter?.date ?? from, filter?.date ?? through)];
+    const archives = new Map(this.groups.filter(group => group.tenantId === tenantId && group.archivedAt)
+      .map(group => [group.id, group.archivedAt!]));
     return sessions.filter((s) => {
       if (s.tenantId !== tenantId) return false;
       if (filter?.groupId && s.groupId !== filter.groupId) return false;
       if (filter?.date && s.sessionDate !== filter.date) return false;
       if (filter?.teacherId && s.teacherId !== filter.teacherId) return false;
+      const archivedAt = archives.get(s.groupId);
+      if (archivedAt && (s.status === 'scheduled' || s.status === 'in_progress') &&
+        `${s.sessionDate}T${s.startTime}` >= archivedAt) return false;
       return true;
     });
   }
@@ -1799,20 +1818,21 @@ export class MockDataProvider implements IDataProvider {
     const userEnrollments = this.enrollments.filter(
       (e) => e.tenantId === tenantId && e.studentId === studentId && e.isActive
     );
-    return userEnrollments.map((e) => {
-      const group = this.groups.find((g) => g.id === e.groupId)!;
-      const subject = group ? this.subjects.find((s) => s.id === group.subjectId) : undefined;
-      const teacher = group ? this.users.find((u) => u.id === group.teacherId) : undefined;
-      const classroom = group ? this.classrooms.find((c) => c.id === group.classroomId) : undefined;
-      const branch = group ? this.branches.find((b) => b.id === group.branchId) : undefined;
-      return {
+    return userEnrollments.flatMap((e) => {
+      const group = this.groups.find((g) => g.tenantId === tenantId && g.id === e.groupId);
+      if (!group?.isActive) return [];
+      const subject = this.subjects.find((s) => s.id === group.subjectId);
+      const teacher = this.users.find((u) => u.id === group.teacherId);
+      const classroom = this.classrooms.find((c) => c.id === group.classroomId);
+      const branch = this.branches.find((b) => b.id === group.branchId);
+      return [{
         ...e,
         group,
         subject,
         teacher,
         classroom,
         branch,
-      };
+      }];
     });
   }
 
@@ -1850,6 +1870,9 @@ export class MockDataProvider implements IDataProvider {
     const session = await this.getSessionById(tenantId, sessionId);
     if (!session) {
       throw new Error('الحصة غير موجودة في هذا السنتر');
+    }
+    if (this.groups.some(group => group.tenantId === tenantId && group.id === session.groupId && group.archivedAt)) {
+      throw new Error('تم حذف المجموعة، والحصة مغلقة لتسجيل الحضور');
     }
 
     const student = this.users.find(
@@ -2646,6 +2669,7 @@ export class MockDataProvider implements IDataProvider {
     dueDate: string;
   }): Promise<Invoice> {
     const group = params.groupId && this.groups.find(item => item.id === params.groupId && item.tenantId === params.tenantId);
+    if (group && group.archivedAt) throw new Error('تم حذف المجموعة');
     if (group && group.pricing?.model === 'per_session') {
       throw new Error('فاتورة الدفع بالحصة تُنشأ عند تسجيل حضور الطالب في الحصة');
     }

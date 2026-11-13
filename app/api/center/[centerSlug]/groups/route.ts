@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
 import { getDataProvider } from '@/lib/dal/factory';
-import { classroomInputSchema, groupConflictMessage, GroupScheduleError, groupInputSchema } from '@/lib/timetable/group-schedule';
-import { groupStaff, listManagedClassrooms, listManagedGroups, saveManagedClassroom, saveManagedGroup } from '@/lib/firebase/group-service';
+import { classroomDeletionSchema, classroomInputSchema, groupConflictMessage, GroupScheduleError, groupDeletionSchema, groupInputSchema } from '@/lib/timetable/group-schedule';
+import {
+  archiveManagedClassroom, archiveManagedGroups, groupStaff, listManagedClassrooms, listManagedGroups,
+  saveManagedClassroom, saveManagedGroup,
+} from '@/lib/firebase/group-service';
 import {
   createServerFirestoreStore, extractBearerToken, FirebaseAuthError, FirestoreHttpError, verifyFirebaseIdToken,
 } from '@/lib/firebase/server';
@@ -61,13 +65,25 @@ export async function POST(req: NextRequest, { params }: Params) {
   try {
     const actor = await context(req, params.centerSlug);
     if (actor.staff.role !== 'CENTER_ADMIN' && actor.staff.role !== 'PLATFORM_OWNER') {
-      throw new GroupScheduleError(403, 'إضافة وتعديل المجموعات متاحان لإدارة السنتر');
+      throw new GroupScheduleError(403, 'صلاحية مدير السنتر مطلوبة لإدارة المجموعات والقاعات');
     }
     const body = await req.json().catch(() => null);
     if (body?.action === 'saveClassroom') {
       const room = classroomInputSchema.safeParse(body.room);
       if (!room.success) return reply({ error: room.error.issues[0].message }, 400);
       return reply({ room: await saveManagedClassroom(actor, room.data) });
+    }
+    if (body?.action === 'deleteClassroom') {
+      const room = classroomDeletionSchema.safeParse(body.room);
+      if (!room.success) return reply({ error: room.error.issues[0].message }, 400);
+      return reply({ room: await archiveManagedClassroom(actor, room.data) });
+    }
+    if (body?.action === 'deleteGroups') {
+      const selected = z.array(groupDeletionSchema).min(1).max(400).safeParse(body.groups);
+      if (!selected.success || new Set(selected.data.map(group => group.id)).size !== selected.data.length) {
+        return reply({ error: 'حدّد مجموعات صالحة للحذف' }, 400);
+      }
+      return reply({ groups: await archiveManagedGroups(actor, selected.data) });
     }
     const input = groupInputSchema.safeParse(body);
     if (!input.success) return reply({ error: input.error.issues[0].message }, 400);

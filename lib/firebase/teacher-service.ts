@@ -261,7 +261,8 @@ export async function readTeacherPortal(context: TeacherServiceContext, teacher:
       permissions: teacher.permissions,
       tabs: teacher.tabs,
     },
-    schedule: schedule.filter(session => session.status !== 'canceled' && session.status !== 'postponed' &&
+    schedule: schedule.filter(session => groups.some(group => group.id === session.groupId && group.isActive) &&
+      session.status !== 'canceled' && session.status !== 'postponed' &&
       (session.sessionDate > today || session.sessionDate === today && session.endTime >= cairoClock().slice(11))).map(session => ({
       id: session.id, date: session.sessionDate, start: session.startTime, end: session.endTime,
       groupName: groups.find(group => group.id === session.groupId)?.nameAr ?? 'حصة',

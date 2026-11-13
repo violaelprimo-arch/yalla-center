@@ -5,7 +5,7 @@ import { readMasterData } from '@/lib/dal/master-data';
 import { buildGroup, type GroupInput, type GroupPricing } from '@/lib/timetable/group-schedule';
 import { weeklyScheduleRows } from '@/lib/timetable/schedule-view';
 import { scheduleExportRows } from '@/lib/timetable/export';
-import { saveManagedGroup } from '@/lib/firebase/group-service';
+import { archiveManagedClassroom, archiveManagedGroups, loadGroupProvider, saveManagedClassroom, saveManagedGroup } from '@/lib/firebase/group-service';
 import { InMemoryTransactionalFirestoreStore } from '../helpers/in-memory-firestore';
 
 const tenantId = 'tenant-maher-001';
@@ -140,5 +140,48 @@ describe('weekly groups and their financial rules', () => {
       ...sample, id: first!.id, version: 1, nameAr: 'اسم جديد',
     });
     expect(next).toMatchObject({ nameAr: 'اسم جديد', version: 2 });
+  });
+
+  it('keeps the original attendance and invoice after removing a group and stops generating new sessions', async () => {
+    const dal = new MockDataProvider();
+    const tenant = (await dal.getTenantById(tenantId))!;
+    const store = new InMemoryTransactionalFirestoreStore();
+    vi.setSystemTime(new Date('2026-11-01T08:00:00Z'));
+    const group = await saveManagedGroup({ dal, tenant, store }, sample);
+    dal.setManagedGroups(tenantId, [group]);
+    const result = await dal.enrollStudent({
+      tenantId, studentId, groupId: group.id, pricingModel: 'center', discountType: 'none', discountValue: 0,
+    });
+    const [session] = await dal.getSessions(tenantId, { groupId: group.id, date: '2026-11-02' });
+    await dal.recordAttendanceScan(tenantId, session.id, studentId);
+    vi.setSystemTime(new Date('2026-11-09T14:00:00Z'));
+    const archived = await archiveManagedGroups({ dal, tenant, store }, [{ id: group.id, version: group.version! }]);
+    dal.setManagedGroups(tenantId, archived);
+
+    expect(archived[0]).toMatchObject({ isActive: false, version: 2 });
+    expect(await dal.getSessions(tenantId, { groupId: group.id, date: '2026-11-09' })).toEqual([]);
+    expect(await dal.getStudentAttendanceHistory(tenantId, studentId)).toContainEqual(expect.objectContaining({ sessionId: session.id }));
+    expect(await dal.getInvoices(tenantId)).toContainEqual(result.invoice);
+    expect(await dal.getStudentEnrollmentDetails(tenantId, studentId)).not.toContainEqual(expect.objectContaining({ groupId: group.id }));
+    expect((await loadGroupProvider(store, tenant)).groups.find(item => item.id === group.id)?.isActive).toBe(false);
+  });
+
+  it('edits a seeded room in place and permits its removal after the dependent groups are removed', async () => {
+    const dal = new MockDataProvider();
+    const tenant = (await dal.getTenantById(tenantId))!;
+    const store = new InMemoryTransactionalFirestoreStore();
+    const context = { dal, tenant, store };
+    const room = { id: 'room-102', branchId: 'branch-nasr-city', nameAr: 'قاعة معدلة', capacity: 40 };
+    await saveManagedClassroom(context, room);
+    const readRooms = async () => (await loadGroupProvider(store, tenant)).getClassrooms(tenantId, room.branchId);
+    expect((await readRooms()).filter(item => item.id === room.id)).toEqual([expect.objectContaining(room)]);
+    const group = await saveManagedGroup(context, sample);
+    await expect(archiveManagedClassroom(context, room)).rejects.toThrow('مرتبطة بموعد مجموعة نشطة');
+    await archiveManagedGroups(context, [
+      { id: group.id, version: group.version! }, { id: 'grp-phys-sun', version: 0 },
+    ]);
+    await archiveManagedClassroom(context, room);
+    expect(await readRooms()).not.toContainEqual(expect.objectContaining({ id: room.id }));
+    await expect(saveManagedGroup(context, { ...sample, id: 'group-new' })).rejects.toThrow('اختر قاعة');
   });
 });

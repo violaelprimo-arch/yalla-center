@@ -68,7 +68,7 @@ export default function ReceptionScanPage() {
   const visibleSessions = useMemo(() => sessions.flatMap(session => {
     const state = receptionSessionState(session, clock);
     const group = groups.find(item => item.id === session.groupId);
-    if (!state || !group || (selectedBranchId !== 'ALL' && (session.branchId ?? group.branchId) !== selectedBranchId)) return [];
+    if (!state || !group?.isActive || (selectedBranchId !== 'ALL' && (session.branchId ?? group.branchId) !== selectedBranchId)) return [];
     return [{ session, state }];
   }).sort((a, b) => Number(b.state === 'current') - Number(a.state === 'current') ||
     Number(a.session.id.startsWith('reception-demo-')) - Number(b.session.id.startsWith('reception-demo-')) ||

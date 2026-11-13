@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useFirebaseAuthSession } from '@/lib/firebase/client';
+import { readDemoSchedule } from '@/lib/timetable/group-client';
 import { getDataProvider } from './factory';
 import {
   changeMasterData,
@@ -35,9 +36,11 @@ export async function saveDemoMasterData(tenantId: string, input: MasterDataActi
   const key = masterDataStorageKey(tenantId);
   const storage = window.localStorage;
   const raw = storage.getItem(key);
+  const schedule = input.action.startsWith('delete') ? readDemoSchedule(tenantId) : undefined;
   const catalog = await readDemoData(tenantId, raw);
   const { data } = await changeMasterData(getDataProvider(), tenantId, catalog, input);
   if (storage.getItem(key) !== raw) throw new Error(masterDataConflict);
+  schedule?.verifyCurrent();
   try {
     storage.setItem(key, JSON.stringify(data));
   } catch {

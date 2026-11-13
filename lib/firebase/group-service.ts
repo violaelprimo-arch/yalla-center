@@ -1,7 +1,11 @@
 import type { IDataProvider } from '@/lib/dal';
-import { MockDataProvider } from '@/lib/dal/mock-data';
+import { createCenterDataProvider } from '@/lib/dal/factory';
 import type { Classroom, Group, Tenant } from '@/lib/dal/types';
-import { buildClassroom, buildGroup, GroupScheduleError, mergeManagedGroups, type ClassroomInput, type GroupInput } from '@/lib/timetable/group-schedule';
+import {
+  archiveClassroom, archiveGroup, buildClassroom, buildGroup, groupConflictMessage, GroupScheduleError,
+  mergeManagedRecords, type ClassroomInput, type GroupInput,
+} from '@/lib/timetable/group-schedule';
+import type { FirestoreWriteOperation } from './firestore-rest';
 import { listMasterData } from './master-data-service';
 import type { ILessonScoreStore, StaffMembershipRecord } from './server';
 
@@ -21,8 +25,22 @@ export async function listManagedGroups(store: ILessonScoreStore, tenantId: stri
 }
 
 export async function listManagedClassrooms(store: ILessonScoreStore, tenantId: string): Promise<Classroom[]> {
-  const rows = await store.queryCollection<Classroom>(roomCollection, [{ fieldPath: 'tenantId', op: 'EQUAL', value: tenantId }]);
+  const rows = await classroomDocuments(store, tenantId);
   return rows.map(row => row.data);
+}
+
+function classroomDocuments(store: ILessonScoreStore, tenantId: string) {
+  return store.queryCollection<Classroom>(roomCollection, [{ fieldPath: 'tenantId', op: 'EQUAL', value: tenantId }]);
+}
+
+export async function groupRevisionWrite(store: ILessonScoreStore, tenantId: string): Promise<FirestoreWriteOperation> {
+  const documentPath = `${revisionCollection}/${tenantId}`;
+  const revision = await store.getDocument(documentPath);
+  if (revision.exists && !revision.updateTime) throw new GroupScheduleError(503, 'تعذّر التحقق من إصدار الجدول');
+  return {
+    type: 'set', documentPath, data: { tenantId, updatedAt: new Date().toISOString() },
+    currentDocument: revision.exists ? { updateTime: revision.updateTime } : { exists: false },
+  };
 }
 
 export async function groupStaff(store: ILessonScoreStore, tenant: Tenant, uid: string) {
@@ -36,9 +54,7 @@ export async function groupStaff(store: ILessonScoreStore, tenant: Tenant, uid: 
 export async function saveManagedGroup(context: GroupContext, input: GroupInput) {
   const { tenant, store, dal } = context;
   const tenantId = tenant.id;
-  const revisionPath = `${revisionCollection}/${tenantId}`;
-  const revision = await store.getDocument(revisionPath);
-  if (revision.exists && !revision.updateTime) throw new GroupScheduleError(503, 'تعذّر التحقق من إصدار الجدول');
+  const revision = await groupRevisionWrite(store, tenantId);
 
   const [managed, base, catalog, classrooms, rooms, users, profiles] = await Promise.all([
     listManagedGroups(store, tenantId),
@@ -56,13 +72,11 @@ export async function saveManagedGroup(context: GroupContext, input: GroupInput)
     id: profile.id, fullName: profile.fullName, isActive: profile.active,
   });
   const group = buildGroup(tenantId, input, {
-    groups: mergeManagedGroups(base, managed), ...catalog, classrooms: [...classrooms, ...rooms], teachers: [...teacherRefs.values()],
+    groups: mergeManagedRecords(base, managed), ...catalog, classrooms: mergeManagedRecords(classrooms, rooms),
+    teachers: [...teacherRefs.values()],
   });
   await store.commit([
-    {
-      type: 'set', documentPath: revisionPath, data: { tenantId, updatedAt: new Date().toISOString() },
-      currentDocument: revision.exists ? { updateTime: revision.updateTime } : { exists: false },
-    },
+    revision,
     {
       type: 'set', documentPath: `${collection}/${tenantId}~${group.id}`, data: { ...group },
       currentDocument: { exists: managed.some(item => item.id === group.id) },
@@ -71,23 +85,62 @@ export async function saveManagedGroup(context: GroupContext, input: GroupInput)
   return group;
 }
 
+export async function archiveManagedGroups(context: GroupContext, selection: { id: string; version: number }[]) {
+  const { tenant, store, dal } = context;
+  const revision = await groupRevisionWrite(store, tenant.id);
+  const [base, managed] = await Promise.all([dal.getGroups(tenant.id), listManagedGroups(store, tenant.id)]);
+  const all = new Map(mergeManagedRecords(base, managed).map(group => [group.id, group]));
+  const managedIds = new Set(managed.map(group => group.id));
+  const archived = selection.map(({ id, version }) => {
+    const group = all.get(id);
+    if (group?.archivedAt) return group;
+    if (!group?.isActive || (group.version ?? 0) !== version) throw new GroupScheduleError(409, groupConflictMessage);
+    return archiveGroup(group);
+  });
+  await store.commit([revision, ...archived.map((group): FirestoreWriteOperation => ({
+    type: 'set', documentPath: `${collection}/${tenant.id}~${group.id}`, data: { ...group },
+    currentDocument: { exists: managedIds.has(group.id) },
+  }))]);
+  return archived;
+}
+
 export async function saveManagedClassroom(context: GroupContext, input: ClassroomInput) {
   const { tenant, store, dal } = context;
-  const [catalog, rooms, seeded] = await Promise.all([
-    listMasterData(context), listManagedClassrooms(store, tenant.id), dal.getClassrooms(tenant.id),
+  const revision = await groupRevisionWrite(store, tenant.id);
+  const [catalog, documents, seeded] = await Promise.all([
+    listMasterData(context), classroomDocuments(store, tenant.id), dal.getClassrooms(tenant.id),
   ]);
-  const room = buildClassroom(tenant.id, input, catalog.branches, [...seeded, ...rooms]);
-  const nameKey = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`${room.branchId}:${room.nameAr.toLocaleLowerCase('ar')}`));
-  const stableId = Array.from(new Uint8Array(nameKey), byte => byte.toString(16).padStart(2, '0')).join('');
-  await store.commit([{
-    type: 'set', documentPath: `${roomCollection}/${tenant.id}~${stableId}`, data: { ...room },
-    currentDocument: { exists: false },
-  }]);
+  const room = buildClassroom(tenant.id, input, catalog.branches, mergeManagedRecords(seeded, documents.map(row => row.data)));
+  const existing = documents.find(row => row.data.id === room.id);
+  await store.commit([revision, classroomWrite(room, existing?.id)]);
   return room;
 }
 
+function classroomWrite(room: Classroom, existingPathId?: string): FirestoreWriteOperation {
+  return {
+    type: 'set', documentPath: `${roomCollection}/${existingPathId ?? `${room.tenantId}~${room.id}`}`,
+    data: { ...room }, currentDocument: { exists: Boolean(existingPathId) },
+  };
+}
+
+export async function archiveManagedClassroom(context: GroupContext, input: { id: string; branchId: string }) {
+  const { tenant, store, dal } = context;
+  const revision = await groupRevisionWrite(store, tenant.id);
+  const [documents, seeded, groups, managed] = await Promise.all([
+    classroomDocuments(store, tenant.id), dal.getClassrooms(tenant.id, input.branchId),
+    dal.getGroups(tenant.id), listManagedGroups(store, tenant.id),
+  ]);
+  const existing = documents.find(row => row.data.id === input.id);
+  const room = existing?.data ?? seeded.find(item => item.id === input.id);
+  if (!room || room.branchId !== input.branchId) throw new GroupScheduleError(404, 'القاعة غير موجودة في هذا الفرع');
+  if (room.archivedAt) return room;
+  const archived = archiveClassroom(room, mergeManagedRecords(groups, managed));
+  await store.commit([revision, classroomWrite(archived, existing?.id)]);
+  return archived;
+}
+
 export async function loadGroupProvider(store: ILessonScoreStore, tenant: Tenant) {
-  const dal = new MockDataProvider();
+  const dal = createCenterDataProvider();
   const [groups, catalog, rooms] = await Promise.all([
     listManagedGroups(store, tenant.id), listMasterData({ store, dal, tenant }), listManagedClassrooms(store, tenant.id),
   ]);

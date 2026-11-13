@@ -173,6 +173,9 @@ export async function assertSessionAndBranchAccess(params: {
   if (!group || group.tenantId !== params.actor.tenant.id) {
     throw new LessonScoreServiceError(404, 'GROUP_NOT_FOUND', 'المجموعة المرتبطة بالحصة غير موجودة');
   }
+  if (group.archivedAt && !params.allowClosedHistoricalSession) {
+    throw new LessonScoreServiceError(409, 'SESSION_CLOSED', 'تم حذف المجموعة، والحصة مغلقة للرصد');
+  }
 
   const { staff } = params.actor;
   const branchRestrictedRoles: UserRole[] = ['BRANCH_MANAGER', 'RECEPTIONIST'];

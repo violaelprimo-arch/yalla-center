@@ -49,6 +49,7 @@ export function GroupEditor({ group, classrooms, teachers, onClose, onSaved }: {
   const [subjectId, setSubject] = useState(group?.subjectId ?? '');
   const [teacherId, setTeacher] = useState(group?.teacherId ?? '');
   const [branchId, setBranch] = useState(group?.branchId ?? activeBranchId ?? '');
+  const [maxStudents, setMaxStudents] = useState(group ? String(group.maxStudents) : '');
   const [slots, setSlots] = useState<WeeklySlot[]>(() => group
     ? weeklySlots(group).map(slot => ({ ...slot, classroomId: slot.classroomId || group.classroomId }))
     : [{ id: crypto.randomUUID(), scheduleDay: 6, startTime: '14:00', endTime: '15:00', classroomId: '' }]);
@@ -97,7 +98,7 @@ export function GroupEditor({ group, classrooms, teachers, onClose, onSaved }: {
     }
     const result = groupInputSchema.safeParse({
       id, version: group?.version ?? 0, nameAr, branchId, stageId, gradeId, subjectId, teacherId,
-      weeklySlots: slots, pricing,
+      weeklySlots: slots, pricing, maxStudents: maxStudents === '' ? undefined : Number(maxStudents),
     });
     if (!result.success) {
       setError(result.error.issues[0].message);
@@ -152,6 +153,8 @@ export function GroupEditor({ group, classrooms, teachers, onClose, onSaved }: {
           <option value="">اختر الفرع</option>
           {activeBranches.map(branch => <option key={branch.id} value={branch.id}>{branch.nameAr}</option>)}
         </select></Field>
+        <Field title="سعة المجموعة (اختياري)"><input type="number" className={control} min={1} max={1000}
+          placeholder="حسب سعة القاعات" value={maxStudents} onChange={event => setMaxStudents(event.target.value)} /></Field>
       </div>
 
       <section className="space-y-2 border-t border-border pt-4">
@@ -164,7 +167,7 @@ export function GroupEditor({ group, classrooms, teachers, onClose, onSaved }: {
             }]);
           }}><Plus size={16} /> إضافة موعد</Button>
         </div>
-        {branchId && !rooms.length && <p className="text-sm text-amber-700 dark:text-amber-300">أضف قاعة للفرع من تبويب الفروع والقاعات.</p>}
+        {branchId && !rooms.length && <p className="text-sm text-amber-700 dark:text-amber-300">أضف قاعة للفرع من «البيانات الأساسية ← قائمة الفروع».</p>}
         {slots.map(slot => <div key={slot.id} className="grid grid-cols-2 gap-2 rounded-lg border border-border p-2 sm:grid-cols-[1fr_1fr_1fr_1.45fr_auto] sm:items-end">
           <Field title="اليوم"><select className={control} value={slot.scheduleDay}
             onChange={event => updateSlot(slot.id, { scheduleDay: Number(event.target.value) })}>

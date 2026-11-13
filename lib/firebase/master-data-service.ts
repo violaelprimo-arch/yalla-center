@@ -90,7 +90,7 @@ function catalogWrites<T extends { id: string }>(
   return writes;
 }
 
-export async function saveMasterData(context: MasterDataContext, input: MasterDataAction) {
+export async function saveMasterData(context: MasterDataContext, input: MasterDataAction, scheduleWrite?: FirestoreWriteOperation) {
   const { tenant, dal, store } = context;
   const { data, stored, revision, revisionPath } = await readCatalog(context);
   const change = await changeMasterData(dal, tenant.id, data, input);
@@ -104,6 +104,7 @@ export async function saveMasterData(context: MasterDataContext, input: MasterDa
     throw new MasterDataError(503, 'تعذّر التحقق من إصدار البيانات الأساسية');
   }
   await store.commit([
+    ...(scheduleWrite ? [scheduleWrite] : []),
     {
       type: 'set',
       documentPath: revisionPath,
