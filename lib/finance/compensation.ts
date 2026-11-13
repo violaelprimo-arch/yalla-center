@@ -139,3 +139,46 @@ export function calculatePrivateLessonsSplit(
     centerShare,
   };
 }
+
+export interface PerSessionFixedResult {
+  sessionFee: number;
+  attendanceCount: number;
+  grossRevenue: number;
+  teacherSessionAmount: number;
+  centerSessionAmount: number;
+  totalTeacherDue: number;
+  totalCenterNet: number;
+}
+
+/**
+ * Calculates per-session fixed amounts compensation (نظام الدفع بالحصة)
+ * Fixed amounts agreed between teacher and center administration.
+ * Teacher receives fixed amount and Center receives fixed amount.
+ * Invariant: totalTeacherDue + totalCenterNet === grossRevenue (Zero rounding leakage).
+ */
+export function calculatePerSessionFixedSplit(
+  attendanceCount: number,
+  teacherSessionAmount: number,
+  centerSessionAmount: number
+): PerSessionFixedResult {
+  if (teacherSessionAmount < 0 || centerSessionAmount < 0) {
+    throw new Error('Session amounts cannot be negative');
+  }
+  const count = Math.max(0, attendanceCount);
+  const teacherAmt = Math.round(teacherSessionAmount * 100) / 100;
+  const centerAmt = Math.round(centerSessionAmount * 100) / 100;
+  const sessionFee = Math.round((teacherAmt + centerAmt) * 100) / 100;
+  const grossRevenue = Math.round(count * sessionFee * 100) / 100;
+  const totalTeacherDue = Math.round(count * teacherAmt * 100) / 100;
+  const totalCenterNet = Math.round((grossRevenue - totalTeacherDue) * 100) / 100;
+
+  return {
+    sessionFee,
+    attendanceCount: count,
+    grossRevenue,
+    teacherSessionAmount: teacherAmt,
+    centerSessionAmount: centerAmt,
+    totalTeacherDue,
+    totalCenterNet,
+  };
+}

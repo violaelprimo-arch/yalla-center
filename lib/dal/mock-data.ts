@@ -49,6 +49,8 @@ import {
   EducationalGradeInput,
   SubjectInput,
   BranchInput,
+  GroupInput,
+  WeeklyScheduleSlot,
 } from './types';
 import {
   IDataProvider,
@@ -410,12 +412,33 @@ export const INITIAL_SEEDED_DATA = {
       classroomId: 'room-101',
       subjectId: 'sub-math-3sec',
       teacherId: 'user-teacher-math',
-      nameAr: 'مجموعة العباقرة - رياضيات 3 ثانوي (السبت)',
+      nameAr: 'مجموعة العباقرة - رياضيات 3 ثانوي (السبت والثلاثاء)',
       academicYear: '2026/2027',
+      stage: 'secondary',
+      grade: '3_sec',
       scheduleDay: 6,
       startTime: '14:00',
       endTime: '16:00',
+      weeklySchedules: [
+        {
+          id: 'slot-math-1',
+          dayOfWeek: 6,
+          startTime: '14:00',
+          endTime: '16:00',
+          classroomId: 'room-101',
+          branchId: 'branch-nasr-city',
+        },
+        {
+          id: 'slot-math-2',
+          dayOfWeek: 2,
+          startTime: '16:00',
+          endTime: '18:00',
+          classroomId: 'room-101',
+          branchId: 'branch-nasr-city',
+        },
+      ],
       pricingModel: 'center' as const,
+      teacherRatePerStudent: 20,
       monthlyFee: 300,
       sessionFee: 80,
       maxStudents: 50,
@@ -431,10 +454,24 @@ export const INITIAL_SEEDED_DATA = {
       teacherId: 'user-teacher-phys',
       nameAr: 'مجموعة النخبة الخاصة - فيزياء 3 ثانوي (الأحد)',
       academicYear: '2026/2027',
+      stage: 'secondary',
+      grade: '3_sec',
       scheduleDay: 0,
       startTime: '16:00',
       endTime: '18:00',
+      weeklySchedules: [
+        {
+          id: 'slot-phys-1',
+          dayOfWeek: 0,
+          startTime: '16:00',
+          endTime: '18:00',
+          classroomId: 'room-102',
+          branchId: 'branch-nasr-city',
+        },
+      ],
       pricingModel: 'private' as const,
+      teacherPercentage: 70,
+      centerPercentage: 30,
       monthlyFee: 400,
       sessionFee: 100,
       maxStudents: 15,
@@ -1569,6 +1606,171 @@ export class MockDataProvider implements IDataProvider {
     return this.groups.find((g) => g.tenantId === tenantId && g.id === groupId) || null;
   }
 
+  async saveGroup(tenantId: string, input: GroupInput): Promise<Group> {
+    const trimmedName = input.nameAr.trim();
+    if (!trimmedName) {
+      throw new Error('اسم المجموعة مطلوب');
+    }
+    if (!input.stage) {
+      throw new Error('المرحلة التعليمية مطلوبة');
+    }
+    if (!input.grade) {
+      throw new Error('الصف الدراسي مطلوب');
+    }
+    if (!input.subjectId) {
+      throw new Error('المادة الدراسية مطلوبة');
+    }
+    if (!input.teacherId) {
+      throw new Error('المعلم مطلوب');
+    }
+    if (!input.branchId) {
+      throw new Error('الفرع مطلوب');
+    }
+    if (!input.weeklySchedules || input.weeklySchedules.length === 0) {
+      throw new Error('يجب تحديد موعد حصة واحدة على الأقل في الأسبوع');
+    }
+
+    const firstSlot = input.weeklySchedules[0];
+    const primaryClassroomId = input.classroomId || firstSlot.classroomId || '';
+    const primaryScheduleDay = firstSlot.dayOfWeek;
+    const primaryStartTime = firstSlot.startTime;
+    const primaryEndTime = firstSlot.endTime;
+
+    // Harmonize pricing values based on model
+    let monthlyFee = input.monthlyFee ?? 0;
+    let sessionFee = input.sessionFee ?? 0;
+    let teacherRatePerStudent = input.teacherRatePerStudent;
+    let teacherPercentage = input.teacherPercentage;
+    let centerPercentage = input.centerPercentage;
+    let teacherSessionAmount = input.teacherSessionAmount;
+    let centerSessionAmount = input.centerSessionAmount;
+
+    if (input.pricingModel === 'average_monthly' || input.pricingModel === 'center' || input.pricingModel === 'per_attendee') {
+      teacherRatePerStudent = teacherRatePerStudent ?? 20;
+    } else if (input.pricingModel === 'private' || input.pricingModel === 'private_percentage') {
+      teacherPercentage = teacherPercentage ?? 70;
+      centerPercentage = 100 - teacherPercentage;
+    } else if (input.pricingModel === 'per_session_fixed' || input.pricingModel === 'fixed_session') {
+      teacherSessionAmount = teacherSessionAmount ?? 40;
+      centerSessionAmount = centerSessionAmount ?? 20;
+      sessionFee = teacherSessionAmount + centerSessionAmount;
+    }
+
+    const weeklySchedulesWithIds = input.weeklySchedules.map((slot, idx) => ({
+      ...slot,
+      id: slot.id || `slot-${Date.now()}-${idx}`,
+      branchId: slot.branchId || input.branchId,
+    }));
+
+    if (input.id) {
+      const idx = this.groups.findIndex((g) => g.tenantId === tenantId && g.id === input.id);
+      if (idx === -1) {
+        throw new Error('المجموعة غير موجودة');
+      }
+      const existing = this.groups[idx];
+      const updated: Group = {
+        ...existing,
+        nameAr: trimmedName,
+        stage: input.stage,
+        grade: input.grade,
+        subjectId: input.subjectId,
+        teacherId: input.teacherId,
+        branchId: input.branchId,
+        classroomId: primaryClassroomId,
+        academicYear: input.academicYear || existing.academicYear || '2026/2027',
+        scheduleDay: primaryScheduleDay,
+        startTime: primaryStartTime,
+        endTime: primaryEndTime,
+        weeklySchedules: weeklySchedulesWithIds,
+        pricingModel: input.pricingModel,
+        monthlyFee,
+        sessionFee,
+        teacherRatePerStudent,
+        teacherPercentage,
+        centerPercentage,
+        teacherSessionAmount,
+        centerSessionAmount,
+        maxStudents: input.maxStudents ?? existing.maxStudents ?? 40,
+        isActive: input.isActive ?? existing.isActive ?? true,
+      };
+      this.groups[idx] = updated;
+      return updated;
+    }
+
+    const newGroup: Group = {
+      id: `grp-${Date.now()}`,
+      tenantId,
+      branchId: input.branchId,
+      classroomId: primaryClassroomId,
+      subjectId: input.subjectId,
+      teacherId: input.teacherId,
+      nameAr: trimmedName,
+      stage: input.stage,
+      grade: input.grade,
+      academicYear: input.academicYear || '2026/2027',
+      scheduleDay: primaryScheduleDay,
+      startTime: primaryStartTime,
+      endTime: primaryEndTime,
+      weeklySchedules: weeklySchedulesWithIds,
+      pricingModel: input.pricingModel,
+      monthlyFee,
+      sessionFee,
+      teacherRatePerStudent,
+      teacherPercentage,
+      centerPercentage,
+      teacherSessionAmount,
+      centerSessionAmount,
+      maxStudents: input.maxStudents ?? 40,
+      isActive: true,
+      createdAt: new Date().toISOString(),
+    };
+
+    this.groups.push(newGroup);
+
+    // Generate upcoming sessions for the next 4 weeks matching the weekly schedules
+    const today = new Date();
+    for (let weekOffset = 0; weekOffset < 4; weekOffset++) {
+      for (const slot of weeklySchedulesWithIds) {
+        const targetDate = new Date(today);
+        targetDate.setDate(today.getDate() + weekOffset * 7 + ((slot.dayOfWeek - today.getDay() + 7) % 7));
+        const dateStr = targetDate.toISOString().split('T')[0];
+        
+        const existingSession = this.sessions.find(
+          (s) => s.tenantId === tenantId && s.groupId === newGroup.id && s.sessionDate === dateStr && s.startTime === slot.startTime
+        );
+        if (!existingSession) {
+          this.sessions.push({
+            id: `sess-${newGroup.id}-${dateStr}-${slot.startTime.replace(':', '')}`,
+            tenantId,
+            groupId: newGroup.id,
+            classroomId: slot.classroomId,
+            teacherId: newGroup.teacherId,
+            sessionDate: dateStr,
+            startTime: slot.startTime,
+            endTime: slot.endTime,
+            status: 'scheduled',
+            notes: `حصة مجدولة - ${newGroup.nameAr}`,
+            createdAt: new Date().toISOString(),
+          });
+        }
+      }
+    }
+
+    return newGroup;
+  }
+
+  async deleteGroup(tenantId: string, groupId: string): Promise<{ success: boolean; error?: string }> {
+    const existingIndex = this.groups.findIndex((g) => g.tenantId === tenantId && g.id === groupId);
+    if (existingIndex === -1) {
+      return { success: false, error: 'المجموعة غير موجودة' };
+    }
+    this.sessions = this.sessions.filter(
+      (s) => !(s.tenantId === tenantId && s.groupId === groupId && s.status === 'scheduled')
+    );
+    this.groups.splice(existingIndex, 1);
+    return { success: true };
+  }
+
   // 4. Sessions
   async getSessions(
     tenantId: string,
@@ -2171,17 +2373,39 @@ export class MockDataProvider implements IDataProvider {
     const lessonRows: NonNullable<TeacherMonthlyStatement['lessonCompensation']>['sessions'] = [];
     for (const group of teacherGroups) {
       const contract = contractsByGroup.get(group.id);
-      if (!contract || contract.model === 'private') continue;
+      const isPerSession = (contract && (contract.model === 'fixed_session' || (contract.model as string) === 'per_session_fixed' || contract.model === 'per_attendee')) ||
+        group.pricingModel === 'per_session_fixed' || group.pricingModel === 'fixed_session';
+      if (!isPerSession) continue;
       const sessions = this.sessions.filter(session => session.tenantId === params.tenantId &&
         session.groupId === group.id && session.teacherId === params.teacherId &&
         session.status === 'completed' && session.sessionDate.startsWith(monthKey + '-'));
       for (const session of sessions) {
         const attendanceCount = countTeacherSessionAttendance(this.attendance, session);
-        const revenue = Math.round(attendanceCount * group.sessionFee * 100) / 100;
+        const sessionFee = group.sessionFee || ((group.teacherSessionAmount ?? 40) + (group.centerSessionAmount ?? 20));
+        const revenue = Math.round(attendanceCount * sessionFee * 100) / 100;
+        let teacherDue = 0;
+        let centerNet = 0;
+        if (group.teacherSessionAmount !== undefined) {
+          teacherDue = Math.round(attendanceCount * group.teacherSessionAmount * 100) / 100;
+          centerNet = Math.round((revenue - teacherDue) * 100) / 100;
+        } else if (contract) {
+          const pay = calculateTeacherSessionPay(contract, session, attendanceCount, revenue);
+          teacherDue = pay.teacherDue;
+          centerNet = pay.centerNet;
+        } else {
+          teacherDue = Math.round(attendanceCount * 40 * 100) / 100;
+          centerNet = Math.round((revenue - teacherDue) * 100) / 100;
+        }
         lessonRows.push({
-          sessionId: session.id, sessionDate: session.sessionDate, groupName: group.nameAr,
-          attendanceCount, revenue, model: contract.model, rate: contract.value,
-          ...calculateTeacherSessionPay(contract, session, attendanceCount, revenue),
+          sessionId: session.id,
+          sessionDate: session.sessionDate,
+          groupName: group.nameAr,
+          attendanceCount,
+          revenue,
+          model: 'fixed_session',
+          rate: group.teacherSessionAmount ?? (contract?.value ?? 40),
+          teacherDue,
+          centerNet,
         });
       }
     }
@@ -2192,11 +2416,14 @@ export class MockDataProvider implements IDataProvider {
     } : undefined;
 
     // Legacy contracts retain their calculation until replaced for that grade.
-    const centerGroups = teacherGroups.filter(g => !contractsByGroup.get(g.id) && g.pricingModel === 'center');
+    const centerGroups = teacherGroups.filter(g =>
+      !contractsByGroup.get(g.id) &&
+      (g.pricingModel === 'center' || g.pricingModel === 'average_monthly' || (!g.pricingModel && g.pricingModel !== 'private' && g.pricingModel !== 'private_percentage' && g.pricingModel !== 'per_session_fixed' && g.pricingModel !== 'fixed_session'))
+    );
     let totalCenterCompensation = 0;
     const centerGroupStatements = centerGroups.map((group) => {
       const rateObj = this.teacherRates.find((r) => r.teacherId === params.teacherId && r.model === 'center');
-      const rate = rateObj?.fixedRatePerStudent ?? 20.0;
+      const rate = group.teacherRatePerStudent ?? rateObj?.fixedRatePerStudent ?? 20.0;
 
       const groupSessions = this.sessions.filter(
         (s) => s.groupId === group.id && s.tenantId === params.tenantId
@@ -2241,7 +2468,7 @@ export class MockDataProvider implements IDataProvider {
     // Private Lessons Groups
     const privateGroups = teacherGroups.filter(group => {
       const contract = contractsByGroup.get(group.id);
-      return contract ? contract.model === 'private' : group.pricingModel === 'private';
+      return contract ? contract.model === 'private' : (group.pricingModel === 'private' || group.pricingModel === 'private_percentage');
     });
     let totalInvoicedTeacherShare = 0;
     let totalCollectedTeacherShare = 0;
@@ -2251,8 +2478,8 @@ export class MockDataProvider implements IDataProvider {
     const privateGroupStatements = privateGroups.map((group) => {
       const rateObj = this.teacherRates.find((r) => r.teacherId === params.teacherId && r.model === 'private');
       const configuredContract = contractsByGroup.get(group.id);
-      const teacherPct = configuredContract?.value ?? rateObj?.teacherPercentage ?? 70.0;
-      const centerPct = 100 - teacherPct;
+      const teacherPct = group.teacherPercentage ?? configuredContract?.value ?? rateObj?.teacherPercentage ?? 70.0;
+      const centerPct = group.centerPercentage ?? (100 - teacherPct);
 
       const enrollments = this.enrollments.filter((e) => e.groupId === group.id && e.isActive);
       const items = enrollments.map((e) => {

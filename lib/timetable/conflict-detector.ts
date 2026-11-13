@@ -24,6 +24,12 @@ export interface ScheduleCandidate {
   startTime: string;       // "14:00"
   endTime: string;         // "16:00"
   maxStudents?: number;
+  weeklySchedules?: Array<{
+    dayOfWeek: number;
+    startTime: string;
+    endTime: string;
+    classroomId: string;
+  }>;
 }
 
 export type ConflictSeverity = 'error' | 'warning';
@@ -112,6 +118,12 @@ export function checkGroupScheduleConflicts(
     startTime: string;
     endTime: string;
     isActive: boolean;
+    weeklySchedules?: Array<{
+      dayOfWeek: number;
+      startTime: string;
+      endTime: string;
+      classroomId: string;
+    }>;
   }>,
   classroomsMap: Map<string, { nameAr: string; capacity: number }>,
   teachersMap: Map<string, { fullName: string }>
@@ -119,77 +131,101 @@ export function checkGroupScheduleConflicts(
   const errors: ScheduleConflict[] = [];
   const warnings: ScheduleConflict[] = [];
 
-  const candStart = timeToMinutes(candidate.startTime);
-  const candEnd = timeToMinutes(candidate.endTime);
+  const candidateSlots = (candidate.weeklySchedules && candidate.weeklySchedules.length > 0)
+    ? candidate.weeklySchedules
+    : [{
+        dayOfWeek: candidate.dayOfWeek ?? 6,
+        startTime: candidate.startTime,
+        endTime: candidate.endTime,
+        classroomId: candidate.classroomId,
+      }];
 
   // 1. Time range validity check
-  if (candEnd <= candStart) {
-    errors.push({
-      code: 'INVALID_TIME_RANGE',
-      severity: 'error',
-      messageAr: 'خطأ في التوقيت: وقت نهاية الحصة يجب أن يكون بعد وقت البداية.',
-    });
-    return { hasConflict: true, canSchedule: false, errors, warnings };
+  for (const candSlot of candidateSlots) {
+    const candStart = timeToMinutes(candSlot.startTime);
+    const candEnd = timeToMinutes(candSlot.endTime);
+    if (candEnd <= candStart) {
+      errors.push({
+        code: 'INVALID_TIME_RANGE',
+        severity: 'error',
+        messageAr: 'خطأ في التوقيت: وقت نهاية الحصة يجب أن يكون بعد وقت البداية.',
+      });
+      return { hasConflict: true, canSchedule: false, errors, warnings };
+    }
+
+    // 2. Classroom capacity check (warning)
+    const targetRoom = classroomsMap.get(candSlot.classroomId);
+    if (targetRoom && candidate.maxStudents && candidate.maxStudents > targetRoom.capacity) {
+      warnings.push({
+        code: 'CAPACITY_OVERFLOW',
+        severity: 'warning',
+        classroomName: targetRoom.nameAr,
+        messageAr: `تنبيه السعة: الحد الأقصى للطلاب بالمجموعة (${candidate.maxStudents}) يتجاوز سعة القاعة (${targetRoom.capacity} مقعد).`,
+      });
+    }
   }
 
-  // 2. Classroom capacity check (warning)
-  const targetRoom = classroomsMap.get(candidate.classroomId);
-  if (targetRoom && candidate.maxStudents && candidate.maxStudents > targetRoom.capacity) {
-    warnings.push({
-      code: 'CAPACITY_OVERFLOW',
-      severity: 'warning',
-      classroomName: targetRoom.nameAr,
-      messageAr: `تنبيه السعة: الحد الأقصى للطلاب بالمجموعة (${candidate.maxStudents}) يتجاوز سعة القاعة (${targetRoom.capacity} مقعد).`,
-    });
-  }
-
-  const candSlot: TimeSlot = {
-    startTime: candidate.startTime,
-    endTime: candidate.endTime,
-  };
-
-  for (const group of existingGroups) {
-    // Exclude inactive groups or self-record on edit
-    if (!group.isActive) continue;
-    if (candidate.id && group.id === candidate.id) continue;
-    if (group.tenantId !== candidate.tenantId) continue;
-    if (candidate.dayOfWeek !== undefined && group.scheduleDay !== candidate.dayOfWeek) continue;
-
-    const groupSlot: TimeSlot = {
-      startTime: group.startTime,
-      endTime: group.endTime,
+  for (const candSlot of candidateSlots) {
+    const cSlot: TimeSlot = {
+      startTime: candSlot.startTime,
+      endTime: candSlot.endTime,
     };
 
-    if (!isTimeOverlapping(candSlot, groupSlot)) {
-      continue;
-    }
+    for (const group of existingGroups) {
+      // Exclude inactive groups or self-record on edit
+      if (!group.isActive) continue;
+      if (candidate.id && group.id === candidate.id) continue;
+      if (group.tenantId !== candidate.tenantId) continue;
 
-    // A. Classroom collision (Error - Block)
-    if (group.classroomId === candidate.classroomId) {
-      const roomName = classroomsMap.get(group.classroomId)?.nameAr || 'القاعة';
-      errors.push({
-        code: 'CLASSROOM_DOUBLE_BOOKING',
-        severity: 'error',
-        conflictingEntityId: group.id,
-        conflictingEntityName: group.nameAr,
-        classroomName: roomName,
-        timeSlot: groupSlot,
-        messageAr: `تعارض في القاعة: قاعة [${roomName}] محجوزة بالفعل لمجموعة "${group.nameAr}" في نفس التوقيت (${group.startTime} - ${group.endTime}).`,
-      });
-    }
+      const groupSlots = (group.weeklySchedules && group.weeklySchedules.length > 0)
+        ? group.weeklySchedules
+        : [{
+            dayOfWeek: group.scheduleDay,
+            startTime: group.startTime,
+            endTime: group.endTime,
+            classroomId: group.classroomId,
+          }];
 
-    // B. Teacher collision across any classroom or branch (Error - Block)
-    if (group.teacherId === candidate.teacherId) {
-      const teacherName = teachersMap.get(group.teacherId)?.fullName || 'المعلم';
-      errors.push({
-        code: 'TEACHER_DOUBLE_BOOKING',
-        severity: 'error',
-        conflictingEntityId: group.id,
-        conflictingEntityName: group.nameAr,
-        teacherName: teacherName,
-        timeSlot: groupSlot,
-        messageAr: `تعارض في جدول المعلم: المعلم [${teacherName}] مرتبط بمجموعة "${group.nameAr}" في نفس التوقيت (${group.startTime} - ${group.endTime}).`,
-      });
+      for (const gSlot of groupSlots) {
+        if (candSlot.dayOfWeek !== undefined && gSlot.dayOfWeek !== candSlot.dayOfWeek) continue;
+
+        const groupSlot: TimeSlot = {
+          startTime: gSlot.startTime,
+          endTime: gSlot.endTime,
+        };
+
+        if (!isTimeOverlapping(cSlot, groupSlot)) {
+          continue;
+        }
+
+        // A. Classroom collision (Error - Block)
+        if (gSlot.classroomId === candSlot.classroomId) {
+          const roomName = classroomsMap.get(gSlot.classroomId)?.nameAr || 'القاعة';
+          errors.push({
+            code: 'CLASSROOM_DOUBLE_BOOKING',
+            severity: 'error',
+            conflictingEntityId: group.id,
+            conflictingEntityName: group.nameAr,
+            classroomName: roomName,
+            timeSlot: groupSlot,
+            messageAr: `تعارض في القاعة: قاعة [${roomName}] محجوزة بالفعل لمجموعة "${group.nameAr}" في نفس التوقيت (${gSlot.startTime} - ${gSlot.endTime}).`,
+          });
+        }
+
+        // B. Teacher collision across any classroom or branch (Error - Block)
+        if (group.teacherId === candidate.teacherId) {
+          const teacherName = teachersMap.get(group.teacherId)?.fullName || 'المعلم';
+          errors.push({
+            code: 'TEACHER_DOUBLE_BOOKING',
+            severity: 'error',
+            conflictingEntityId: group.id,
+            conflictingEntityName: group.nameAr,
+            teacherName: teacherName,
+            timeSlot: groupSlot,
+            messageAr: `تعارض في جدول المعلم: المعلم [${teacherName}] مرتبط بمجموعة "${group.nameAr}" في نفس التوقيت (${gSlot.startTime} - ${gSlot.endTime}).`,
+          });
+        }
+      }
     }
   }
 

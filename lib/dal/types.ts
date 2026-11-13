@@ -8,7 +8,14 @@ export type UserRole =
   | 'PARENT'
   | 'STUDENT';
 
-export type PricingModel = 'center' | 'private';
+export type PricingModel =
+  | 'center'
+  | 'private'
+  | 'average_monthly'
+  | 'private_percentage'
+  | 'per_session_fixed'
+  | 'fixed_session'
+  | 'per_attendee';
 export type DiscountType = 'none' | 'percentage' | 'fixed' | 'free_100';
 export type SessionStatus = 'scheduled' | 'in_progress' | 'completed' | 'canceled' | 'postponed';
 export type AttendanceStatus = 'present' | 'absent' | 'late' | 'excused';
@@ -154,6 +161,15 @@ export interface Subject {
   createdAt: string;
 }
 
+export interface WeeklyScheduleSlot {
+  id?: string;
+  dayOfWeek: number; // 0=Sunday..6=Saturday (0=الأحد, 1=الإثنين, 2=الثلاثاء, 3=الأربعاء, 4=الخميس, 5=الجمعة, 6=السبت)
+  startTime: string; // "14:00"
+  endTime: string;   // "16:00"
+  classroomId: string;
+  branchId?: string;
+}
+
 export interface Group {
   id: string;
   tenantId: string;
@@ -163,15 +179,47 @@ export interface Group {
   teacherId: string;
   nameAr: string;
   academicYear: string;
-  scheduleDay: number; // 0=Sunday..6=Saturday
+  stage?: string;
+  grade?: string;
+  scheduleDay: number; // 0=Sunday..6=Saturday (primary/first slot)
   startTime: string; // "14:00"
   endTime: string;   // "16:00"
+  weeklySchedules?: WeeklyScheduleSlot[];
   pricingModel: PricingModel;
   monthlyFee: number;
   sessionFee: number;
+  // Specific financial model fields
+  teacherRatePerStudent?: number; // نظام المتوسط (سعر الطالب في الشهر للمدرس)
+  teacherPercentage?: number;     // نظام البرايفت (نسبة المدرس %)
+  centerPercentage?: number;      // نظام البرايفت (نسبة السنتر %)
+  teacherSessionAmount?: number;  // نظام الدفع بالحصة (مبلغ المدرس الثابت للحصة)
+  centerSessionAmount?: number;   // نظام الدفع بالحصة (مبلغ السنتر الثابت للحصة)
   maxStudents: number;
   isActive: boolean;
   createdAt: string;
+}
+
+export interface GroupInput {
+  id?: string;
+  nameAr: string;
+  stage: string;
+  grade: string;
+  subjectId: string;
+  teacherId: string;
+  branchId: string;
+  classroomId?: string;
+  academicYear?: string;
+  pricingModel: PricingModel;
+  monthlyFee?: number;
+  sessionFee?: number;
+  teacherRatePerStudent?: number;
+  teacherPercentage?: number;
+  centerPercentage?: number;
+  teacherSessionAmount?: number;
+  centerSessionAmount?: number;
+  maxStudents?: number;
+  weeklySchedules: WeeklyScheduleSlot[];
+  isActive?: boolean;
 }
 
 export interface Session {

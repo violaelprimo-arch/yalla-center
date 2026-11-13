@@ -25,13 +25,15 @@ export const teacherPermissions = Object.keys(TEACHER_PERMISSIONS) as TeacherPer
 export const teacherTabs = Object.keys(TEACHER_TABS) as TeacherTab[];
 
 export const TEACHER_MODELS = {
-  fixed_session: 'نظام السنتر · أجر ثابت للحصة',
+  average_monthly: 'نظام المتوسط · سعر الطالب في الشهر',
   private: 'نظام البرايفت · نسبة مئوية',
-  per_attendee: 'مبلغ ثابت لكل طالب حاضر',
+  per_session_fixed: 'نظام الدفع بالحصة · مبلغ ثابت للحصة',
+  per_attendee: 'نظام المتوسط · مبلغ لكل طالب',
+  fixed_session: 'نظام السنتر · أجر ثابت للحصة',
 } as const;
 
 export type TeacherCompensationModel = keyof typeof TEACHER_MODELS;
-export const teacherModels = Object.keys(TEACHER_MODELS) as TeacherCompensationModel[];
+export const teacherModels = ['average_monthly', 'private', 'per_session_fixed', 'per_attendee', 'fixed_session'] as TeacherCompensationModel[];
 
 const levels = new Set(EGYPTIAN_STAGES.flatMap(stage => [stage.code, ...stage.grades.map(grade => grade.code)]));
 const usernamePattern = /^[a-z0-9][a-z0-9._-]{2,31}$/;
@@ -48,7 +50,7 @@ const phone = z.string().transform(value => normalizeDigits(value).replace(/[\s(
 
 const contractSchema = z.object({
   level: z.string().refine(value => levels.has(value), 'اختر مرحلة أو صفًا'),
-  model: z.enum(['fixed_session', 'private', 'per_attendee']),
+  model: z.enum(['fixed_session', 'private', 'per_attendee', 'average_monthly', 'per_session_fixed']),
   value: z.number().finite().min(0, 'القيمة لازم تكون صفر أو أكثر').max(1000000)
     .refine(value => Math.abs(value * 100 - Math.round(value * 100)) < 0.000001, 'استخدم رقمًا بمنزلتين عشريتين كحد أقصى'),
 }).refine(contract => contract.model !== 'private' || contract.value <= 100, 'نسبة المعلم من صفر إلى 100');

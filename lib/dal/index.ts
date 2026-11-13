@@ -12,6 +12,8 @@ import {
   EducationalGrade,
   EducationalGradeInput,
   Group,
+  GroupInput,
+  WeeklyScheduleSlot,
   Session,
   Enrollment,
   Attendance,
@@ -149,6 +151,8 @@ export interface IDataProvider {
   deleteSubject(tenantId: string, subjectId: string): Promise<{ success: boolean; error?: string }>;
   getGroups(tenantId: string, filter?: { branchId?: string; teacherId?: string }): Promise<Group[]>;
   getGroupById(tenantId: string, groupId: string): Promise<Group | null>;
+  saveGroup(tenantId: string, group: GroupInput): Promise<Group>;
+  deleteGroup(tenantId: string, groupId: string): Promise<{ success: boolean; error?: string }>;
 
   // 4. Sessions
   getSessions(tenantId: string, filter?: { groupId?: string; date?: string; teacherId?: string }): Promise<Session[]>;
