@@ -8,6 +8,7 @@ import {
   ShieldCheck,
   ChevronDown,
   UserCheck,
+  Menu,
 } from 'lucide-react';
 import { UserRole } from '@/lib/dal/types';
 import { useTenant } from './tenant-provider';
@@ -25,7 +26,7 @@ const ALL_ROLES: Array<{ role: UserRole; labelAr: string }> = [
   { role: 'PARENT', labelAr: 'ولي أمر' },
 ];
 
-export function Header() {
+export function Header({ onMenuToggle, menuOpen }: { onMenuToggle?: () => void; menuOpen?: boolean }) {
   const {
     tenant,
     branches,
@@ -40,11 +41,13 @@ export function Header() {
 
   return (
     <header
-      className="sticky top-0 z-20 h-16 bg-background/95 backdrop-blur border-b border-border px-4 sm:px-6 flex items-center justify-between gap-4"
+      className="sticky top-0 z-20 h-16 bg-background/95 backdrop-blur border-b border-border px-2 sm:px-6 flex items-center justify-between gap-2 sm:gap-4"
       dir="rtl"
     >
       {/* Right Section: Tenant Title & Branch Selector */}
-      <div className="flex items-center gap-3 sm:gap-6 min-w-0">
+      <div className="flex items-center gap-1.5 sm:gap-6 min-w-0">
+        {onMenuToggle && <button type="button" className="rounded-lg p-2 hover:bg-muted lg:hidden"
+          aria-label="القائمة الرئيسية" aria-expanded={menuOpen} onClick={onMenuToggle}><Menu size={21} /></button>}
         <div className="hidden md:flex flex-col">
           <span className="text-xs text-muted-foreground font-medium">المركز التعليمي</span>
           <span className="text-sm font-bold text-foreground truncate max-w-[180px]">
@@ -60,7 +63,7 @@ export function Header() {
               aria-label="تحديد الفرع النشط"
               value={activeBranch?.id || ''}
               onChange={(e) => setActiveBranchId(e.target.value)}
-              className="bg-transparent text-xs font-semibold text-foreground focus:outline-none cursor-pointer pr-1"
+              className="max-w-24 sm:max-w-none bg-transparent text-xs font-semibold text-foreground focus:outline-none cursor-pointer pr-1"
             >
               {branches.map((b) => (
                 <option key={b.id} value={b.id} className="bg-card text-foreground">
@@ -84,7 +87,7 @@ export function Header() {
             aria-label="تبديل الدور التجريبي"
             value={currentRole}
             onChange={(e) => switchRole(e.target.value as UserRole)}
-            className="bg-transparent text-xs font-bold text-foreground focus:outline-none cursor-pointer"
+            className="max-w-20 sm:max-w-none bg-transparent text-xs font-bold text-foreground focus:outline-none cursor-pointer"
           >
             {ALL_ROLES.map(({ role, labelAr }) => (
               <option key={role} value={role} className="bg-card text-foreground">

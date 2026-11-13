@@ -346,6 +346,7 @@ export function checkStudentEnrollmentConflict(
     nameAr: string;
     branchId?: string;
     scheduleDay: number;
+    weeklySlots?: Array<TimeSlot & { scheduleDay: number }>;
     startTime: string;
     endTime: string;
     maxStudents: number;
@@ -356,6 +357,7 @@ export function checkStudentEnrollmentConflict(
     nameAr: string;
     branchId?: string;
     scheduleDay: number;
+    weeklySlots?: Array<TimeSlot & { scheduleDay: number }>;
     startTime: string;
     endTime: string;
   }>,
@@ -413,42 +415,38 @@ export function checkStudentEnrollmentConflict(
     });
   }
 
-  // 4. Timetable Collision Check against student's existing groups
-  const candSlot: TimeSlot = {
-    startTime: candidateGroup.startTime,
-    endTime: candidateGroup.endTime,
-  };
-
+  // Compare every weekly meeting, including the legacy single-slot groups.
+  const candidateSlots = candidateGroup.weeklySlots ?? [candidateGroup];
   for (const existing of studentActiveGroups) {
-    if (existing.id === candidateGroup.id) continue;
-    if (existing.scheduleDay !== candidateGroup.scheduleDay) continue;
-
-    const existingSlot: TimeSlot = {
-      startTime: existing.startTime,
-      endTime: existing.endTime,
-    };
-
-    if (isTimeOverlapping(candSlot, existingSlot)) {
-      errors.push({
-        code: 'STUDENT_SCHEDULE_COLLISION',
-        severity: 'error',
-        conflictingGroupId: existing.id,
-        conflictingGroupName: existing.nameAr,
-        timeSlot: existingSlot,
-        dayNameAr,
-        messageAr: `تعارض زمني في جدول الطالب: الطالب مسجل بالفعل في مجموعة "${existing.nameAr}" ${dayNameAr ? `يوم (${dayNameAr})` : ''} في نفس التوقيت (${existing.startTime} - ${existing.endTime}).`,
-      });
-    } else if (existing.branchId && candidateGroup.branchId && existing.branchId !== candidateGroup.branchId) {
-      // Transit check: If different branches and less than 30 minutes between classes
-      const diff1 = timeToMinutes(candidateGroup.startTime) - timeToMinutes(existing.endTime);
-      const diff2 = timeToMinutes(existing.startTime) - timeToMinutes(candidateGroup.endTime);
-      const gap = Math.min(Math.abs(diff1), Math.abs(diff2));
-      if (gap < 30) {
-        warnings.push({
-          code: 'CROSS_BRANCH_TRANSIT_TIGHT',
-          severity: 'warning',
-          messageAr: `تنبيه انتقال: الفاصل الزمني (${gap} دقيقة) ضيق جداً للانتقال بين فرعين مختلفين.`,
-        });
+    if (existing.id === candidateGroup.id || (existing.tenantId && candidateGroup.tenantId &&
+      existing.tenantId !== candidateGroup.tenantId)) continue;
+    const existingSlots = existing.weeklySlots ?? [existing];
+    for (const candidate of candidateSlots) {
+      for (const other of existingSlots) {
+        if (other.scheduleDay !== candidate.scheduleDay) continue;
+        if (isTimeOverlapping(candidate, other)) {
+          errors.push({
+            code: 'STUDENT_SCHEDULE_COLLISION',
+            severity: 'error',
+            conflictingGroupId: existing.id,
+            conflictingGroupName: existing.nameAr,
+            timeSlot: other,
+            dayNameAr: candidateGroup.weeklySlots ? undefined : dayNameAr,
+            messageAr: `تعارض زمني في جدول الطالب: الطالب مسجل بالفعل في مجموعة "${existing.nameAr}" في نفس التوقيت (${other.startTime} - ${other.endTime}).`,
+          });
+        } else if (existing.branchId && candidateGroup.branchId && existing.branchId !== candidateGroup.branchId) {
+          const gap = Math.min(
+            Math.abs(timeToMinutes(candidate.startTime) - timeToMinutes(other.endTime)),
+            Math.abs(timeToMinutes(other.startTime) - timeToMinutes(candidate.endTime)),
+          );
+          if (gap < 30) {
+            warnings.push({
+              code: 'CROSS_BRANCH_TRANSIT_TIGHT',
+              severity: 'warning',
+              messageAr: `تنبيه انتقال: الفاصل الزمني (${gap} دقيقة) ضيق جداً للانتقال بين فرعين مختلفين.`,
+            });
+          }
+        }
       }
     }
   }

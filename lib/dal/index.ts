@@ -278,6 +278,15 @@ export interface IDataProvider {
     shiftId?: string;
     notes?: string;
   }): Promise<{ payment: Payment; updatedInvoice: Invoice; updatedStudent?: User }>;
+  collectStudentPayment(params: {
+    tenantId: string;
+    studentId: string;
+    sessionId?: string;
+    amountPaid: number;
+    paymentMethod: PaymentMethod;
+    cashierUserId: string;
+    notes?: string;
+  }): Promise<User>;
   getCashierShifts(tenantId: string, filter?: { cashierUserId?: string; status?: 'open' | 'closed' }): Promise<CashierShift[]>;
   getExpenses(tenantId: string): Promise<Expense[]>;
   getBooksInventory(tenantId: string): Promise<BookInventoryItem[]>;

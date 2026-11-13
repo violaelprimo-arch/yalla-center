@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import {
   Users,
@@ -19,9 +19,28 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { RTLIcon } from '@/components/ui/rtl-icon';
+import { cairoClock, receptionSessionState } from '@/lib/attendance/reception';
+import { getDataProvider } from '@/lib/dal/factory';
+import type { Session } from '@/lib/dal/types';
+import { clockLabel, GROUP_PRICING_LABELS } from '@/lib/timetable/group-schedule';
 
 export default function CenterDashboardPage() {
-  const { tenant, branches, currentRole, currentUser } = useTenant();
+  const { tenant, branches, currentRole, currentUser, groupData } = useTenant();
+  const { groups, classrooms, ready } = groupData;
+  const [todaySessions, setTodaySessions] = useState<Session[]>([]);
+  const clock = cairoClock();
+  const today = clock.slice(0, 10);
+  const ownGroups = groups.filter(group => group.teacherId === currentUser.id && group.isActive);
+  const ownModels = [...new Set(ownGroups.map(group => GROUP_PRICING_LABELS[group.pricingModel]))];
+
+  useEffect(() => {
+    if (!ready) return;
+    let active = true;
+    getDataProvider().getSessions(tenant.id, { date: today }).then(sessions => {
+      if (active) setTodaySessions(sessions.sort((a, b) => a.startTime.localeCompare(b.startTime)));
+    });
+    return () => { active = false; };
+  }, [ready, groups, tenant.id, today]);
 
   return (
     <div className="space-y-6" dir="rtl">
@@ -101,7 +120,7 @@ export default function CenterDashboardPage() {
             <div>
               <span className="text-xs text-teal-400 font-semibold block">بوابة المعلم المعتمد:</span>
               <p className="text-sm font-bold text-foreground">
-                المجموعات المخصصة: 2 مجموعة نشطة | نظام المحاسبة: متوسط حضور السنتر المعتمد
+                {ownGroups.length} مجموعة نشطة{ownModels.length ? ` · ${ownModels.join("، ")}` : ""}
               </p>
             </div>
           </div>
@@ -194,7 +213,7 @@ export default function CenterDashboardPage() {
               <span>جدول الحصص الميدانية المقررة اليوم</span>
             </h2>
             <Link
-              href={`/center/${tenant.slug}/branches`}
+              href={`/center/${tenant.slug}/sessions#weekly`}
               className="text-xs font-bold text-brand-cyan-600 dark:text-brand-cyan-400 hover:underline flex items-center gap-1"
             >
               عرض الجدول الأسبوعي
@@ -202,58 +221,23 @@ export default function CenterDashboardPage() {
             </Link>
           </div>
 
-          <div className="space-y-3">
-            {/* Session 1 */}
-            <div className="card-elevated p-4 rounded-xl border border-border flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:border-brand-cyan-500/40 transition-colors">
-              <div className="flex items-start gap-3">
-                <div className="w-12 h-12 rounded-xl bg-brand-cyan-500/10 border border-brand-cyan-500/20 text-brand-cyan-600 flex flex-col items-center justify-center shrink-0">
-                  <span className="text-xs font-bold font-mono">14:00</span>
-                  <span className="text-[9px] text-muted-foreground">2 ساعة</span>
-                </div>
+          <div className="space-y-2">
+            {todaySessions.length ? todaySessions.map(session => {
+              const group = groups.find(item => item.id === session.groupId);
+              const room = classrooms.find(item => item.id === session.classroomId);
+              const branch = branches.find(item => item.id === (session.branchId ?? group?.branchId));
+              const state = receptionSessionState(session, clock);
+              return <div key={session.id} className="card-elevated flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border p-3">
                 <div>
-                  <h3 className="text-sm font-bold text-foreground">
-                    مجموعة العباقرة — رياضيات 3 ثانوي
-                  </h3>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    المعلم: أ. أحمد محمد الشناوي | قاعة د. زويل (1) — فرع مدينة نصر
-                  </p>
+                  <h3 className="text-sm font-bold">{group?.nameAr ?? 'حصة دراسية'}</h3>
+                  <p className="text-xs text-muted-foreground">{[group?.teacherName, room?.nameAr, branch?.nameAr].filter(Boolean).join(' · ')}</p>
                 </div>
-              </div>
-              <div className="flex items-center gap-2 sm:self-center">
-                <Badge variant="cyan">جارية الآن</Badge>
-                <Link href={`/center/${tenant.slug}/reception`}>
-                  <Button size="sm" variant="outline" className="text-xs h-8">
-                    مسح الحضور
-                  </Button>
-                </Link>
-              </div>
-            </div>
-
-            {/* Session 2 */}
-            <div className="card-elevated p-4 rounded-xl border border-border flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:border-brand-cyan-500/40 transition-colors">
-              <div className="flex items-start gap-3">
-                <div className="w-12 h-12 rounded-xl bg-muted border border-border text-foreground flex flex-col items-center justify-center shrink-0">
-                  <span className="text-xs font-bold font-mono">16:30</span>
-                  <span className="text-[9px] text-muted-foreground">1.5 ساعة</span>
+                <div className="flex flex-wrap items-center gap-2 text-xs">
+                  <time dir="ltr">{clockLabel(session.startTime)} – {clockLabel(session.endTime)}</time>
+                  {state && <Badge variant={state === 'current' ? 'cyan' : 'outline'}>{state === 'current' ? 'جارية' : 'قادمة'}</Badge>}
                 </div>
-                <div>
-                  <h3 className="text-sm font-bold text-foreground">
-                    مجموعة النخبة — فيزياء كهربية 3 ثانوي
-                  </h3>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    المعلم: د. هاني نبيل | قاعة العقاد (2) — فرع مدينة نصر
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2 sm:self-center">
-                <Badge variant="outline">مجدولة لاحقاً</Badge>
-                <Link href={`/center/${tenant.slug}/sessions`}>
-                  <Button size="sm" variant="ghost" className="text-xs h-8">
-                    التفاصيل
-                  </Button>
-                </Link>
-              </div>
-            </div>
+              </div>;
+            }) : <p className="rounded-xl border border-border p-3 text-sm text-muted-foreground">مفيش حصص مجدولة النهارده.</p>}
           </div>
         </div>
 

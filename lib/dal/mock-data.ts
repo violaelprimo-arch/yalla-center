@@ -1,5 +1,8 @@
 import { matchTeacherContract, type TeacherProfile } from '@/lib/teachers/profile';
 import { calculateTeacherSessionPay, countTeacherSessionAttendance } from '@/lib/teachers/session-compensation';
+import { cairoClock } from '@/lib/attendance/reception';
+import { mergeManagedGroups, moneyAmount, recurringSessions, sessionDateFromId, shiftDate, studentGroupFee } from '@/lib/timetable/group-schedule';
+import { calculateFixedSessionSplit, splitPrivateFee } from '@/lib/finance/group-pricing';
 import {
   Tenant,
   Branch,
@@ -1071,6 +1074,8 @@ export const INITIAL_SEEDED_DATA = {
 
 export class MockDataProvider implements IDataProvider {
   private initializedStageTenants: Set<string>;
+  private managedGroupIds = new Map<string, Set<string>>();
+  private saveDemoOperations?: () => void;
   public tenants: Tenant[];
   public stages: EducationalStage[];
   public branches: Branch[];
@@ -1128,6 +1133,40 @@ export class MockDataProvider implements IDataProvider {
     this.subjects = [...this.subjects.filter(subject => subject.tenantId !== tenantId), ...subjects];
     this.branches = [...this.branches.filter(branch => branch.tenantId !== tenantId), ...branches];
     this.initializedStageTenants.add(tenantId);
+  }
+
+  setManagedGroups(tenantId: string, records: Group[]) {
+    const managedIds = this.managedGroupIds.get(tenantId);
+    const seeds = INITIAL_SEEDED_DATA.groups.filter(group => group.tenantId === tenantId && managedIds?.has(group.id));
+    const base = this.groups.filter(group => group.tenantId !== tenantId || !managedIds?.has(group.id));
+    this.groups = mergeManagedGroups([...base, ...seeds], records);
+    this.managedGroupIds.set(tenantId, new Set(records.map(group => group.id)));
+  }
+
+  setManagedClassrooms(tenantId: string, rooms: Classroom[]) {
+    const baseIds = new Set(INITIAL_SEEDED_DATA.classrooms.map(room => room.id));
+    this.classrooms = [...this.classrooms.filter(room => room.tenantId !== tenantId || baseIds.has(room.id)), ...rooms];
+  }
+
+  attachDemoOperations(save: () => void) {
+    this.saveDemoOperations = save;
+  }
+
+  private commitDemoOperations() {
+    this.saveDemoOperations?.();
+  }
+
+  private sessionsInRange(tenantId: string, from: string, through: string) {
+    const saved = this.sessions.filter(session => session.tenantId === tenantId &&
+      session.sessionDate >= from && session.sessionDate <= through);
+    const ids = new Set(saved.map(session => session.id));
+    const today = cairoClock();
+    const generated = recurringSessions(this.groups.filter(group => group.tenantId === tenantId), from, through)
+      .filter(session => !ids.has(session.id));
+    const conducted = new Set(this.attendance.filter(record => record.tenantId === tenantId).map(record => record.sessionId));
+    return [...saved, ...generated].map(session => session.pricing &&
+      (session.status === 'scheduled' || session.status === 'in_progress') && conducted.has(session.id) &&
+      `${session.sessionDate}T${session.endTime}` <= today ? { ...session, status: 'completed' as const } : session);
   }
 
   // 1. Tenants & Branches
@@ -1586,7 +1625,13 @@ export class MockDataProvider implements IDataProvider {
     tenantId: string,
     filter?: { groupId?: string; date?: string; teacherId?: string }
   ): Promise<Session[]> {
-    return this.sessions.filter((s) => {
+    const today = cairoClock().slice(0, 10);
+    const from = shiftDate(today, -31);
+    const through = shiftDate(today, 7);
+    const saved = filter?.date ? [] : this.sessions.filter(session => session.tenantId === tenantId &&
+      (session.sessionDate < from || session.sessionDate > through));
+    const sessions = [...saved, ...this.sessionsInRange(tenantId, filter?.date ?? from, filter?.date ?? through)];
+    return sessions.filter((s) => {
       if (s.tenantId !== tenantId) return false;
       if (filter?.groupId && s.groupId !== filter.groupId) return false;
       if (filter?.date && s.sessionDate !== filter.date) return false;
@@ -1596,7 +1641,9 @@ export class MockDataProvider implements IDataProvider {
   }
 
   async getSessionById(tenantId: string, sessionId: string): Promise<Session | null> {
-    return this.sessions.find((s) => s.tenantId === tenantId && s.id === sessionId) || null;
+    const date = sessionDateFromId(sessionId);
+    return (date ? this.sessionsInRange(tenantId, date, date) : this.sessions)
+      .find(session => session.tenantId === tenantId && session.id === sessionId) ?? null;
   }
 
   async updateSessionStatus(
@@ -1604,10 +1651,16 @@ export class MockDataProvider implements IDataProvider {
     status: SessionStatus,
     cancellationReason?: string
   ): Promise<Session> {
-    const session = this.sessions.find((s) => s.id === sessionId);
+    const generatedDate = sessionDateFromId(sessionId);
+    const group = generatedDate && this.groups.find(group => group.id === sessionId.split(':')[1]);
+    const existing = this.sessions.find(s => s.id === sessionId);
+    const session = existing ?? (group && this.sessionsInRange(group.tenantId, generatedDate, generatedDate)
+      .find(item => item.id === sessionId));
     if (!session) throw new Error('الحصة غير موجودة');
+    if (!existing) this.sessions.push(session);
     session.status = status;
     if (cancellationReason) session.cancellationReason = cancellationReason;
+    this.commitDemoOperations();
     return session;
   }
 
@@ -1657,6 +1710,7 @@ export class MockDataProvider implements IDataProvider {
     };
 
     this.users.push(newStudent);
+    this.commitDemoOperations();
     return newStudent;
   }
 
@@ -1665,7 +1719,11 @@ export class MockDataProvider implements IDataProvider {
     if (!student) return { success: false, error: 'الطالب غير موجود' };
 
     const group = this.groups.find((g) => g.id === input.groupId && g.tenantId === input.tenantId);
-    if (!group) return { success: false, error: 'المجموعة الدراسية غير موجودة' };
+    if (!group?.isActive) return { success: false, error: 'المجموعة الدراسية غير موجودة' };
+    if (group.gradeId && ((student.grade && student.grade !== group.gradeId) ||
+      (student.stage && student.stage !== group.stageId))) {
+      return { success: false, error: 'المجموعة تابعة لمرحلة أو صف مختلف' };
+    }
 
     const existing = this.enrollments.find(
       (e) => e.tenantId === input.tenantId && e.studentId === input.studentId && e.groupId === input.groupId && e.isActive
@@ -1700,7 +1758,7 @@ export class MockDataProvider implements IDataProvider {
       tenantId: input.tenantId,
       studentId: input.studentId,
       groupId: input.groupId,
-      pricingModel: input.pricingModel,
+      pricingModel: group.pricing?.model ?? input.pricingModel,
       discountType: input.discountType,
       discountValue: input.discountValue,
       isActive: true,
@@ -1710,38 +1768,22 @@ export class MockDataProvider implements IDataProvider {
     this.enrollments.push(enrollment);
 
     let invoice: Invoice | undefined;
-    const baseFee = group.monthlyFee || group.sessionFee || 0;
-    if (baseFee > 0) {
-      const discount = calculateDiscount({
-        basePrice: baseFee,
-        discountType: input.discountType,
-        discountValue: input.discountValue,
+    const baseFee = studentGroupFee(group);
+    if ((baseFee > 0 || group.pricing?.model === 'private') && group.pricing?.model !== 'per_session') {
+      const date = cairoClock().slice(0, 10);
+      const billingMonth = Number(date.slice(5, 7));
+      const billingYear = Number(date.slice(0, 4));
+      invoice = (group.pricing && this.invoices.find(item => item.tenantId === input.tenantId &&
+        item.studentId === student.id && item.groupId === group.id && !item.sessionId &&
+        item.billingMonth === billingMonth && item.billingYear === billingYear && item.status !== 'void')) ?? this.addInvoice({
+        tenantId: input.tenantId, studentId: student.id, groupId: group.id,
+        totalAmount: baseFee, discountType: input.discountType, discountValue: input.discountValue,
+        billingMonth, billingYear,
+        dueDate: shiftDate(date, 10), pricing: group.pricing, teacherId: group.teacherId,
       });
-
-      const invoiceNumber = `INV-${new Date().getFullYear()}-${String(this.invoices.length + 1).padStart(4, '0')}`;
-      invoice = {
-        id: `inv-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-        tenantId: input.tenantId,
-        studentId: input.studentId,
-        groupId: input.groupId,
-        invoiceNumber,
-        billingMonth: new Date().getMonth() + 1,
-        billingYear: new Date().getFullYear(),
-        totalAmount: discount.basePrice,
-        discountAmount: discount.discountAmount,
-        netAmount: discount.netPrice,
-        paidAmount: 0.0,
-        status: discount.netPrice === 0 ? 'paid' : 'pending',
-        dueDate: new Date(Date.now() + 10 * 86400000).toISOString().split('T')[0],
-        createdAt: new Date().toISOString(),
-      };
-      this.invoices.push(invoice);
-
-      if (discount.netPrice > 0) {
-        student.balanceDue = Math.round((student.balanceDue + discount.netPrice) * 100) / 100;
-      }
     }
 
+    this.commitDemoOperations();
     return { success: true, enrollment, invoice };
   }
 
@@ -1749,6 +1791,7 @@ export class MockDataProvider implements IDataProvider {
     const enrollment = this.enrollments.find((e) => e.id === enrollmentId && e.tenantId === tenantId);
     if (!enrollment) return { success: false, error: 'الاشتراك غير موجود' };
     enrollment.isActive = false;
+    this.commitDemoOperations();
     return { success: true };
   }
 
@@ -1778,18 +1821,21 @@ export class MockDataProvider implements IDataProvider {
       .filter((a) => a.tenantId === tenantId && a.studentId === studentId)
       .sort((a, b) => new Date(b.scannedAt).getTime() - new Date(a.scannedAt).getTime());
 
-    return records.map((a) => {
-      const session = this.sessions.find((s) => s.id === a.sessionId)!;
+    const sessions = new Map((await Promise.all(records.map(record => this.getSessionById(tenantId, record.sessionId))))
+      .flatMap(session => session ? [[session.id, session] as const] : []));
+    return records.flatMap((a) => {
+      const session = sessions.get(a.sessionId);
+      if (!session) return [];
       const group = session ? this.groups.find((g) => g.id === session.groupId) : undefined;
       const subject = group ? this.subjects.find((s) => s.id === group.subjectId) : undefined;
       const teacher = group ? this.users.find((u) => u.id === group.teacherId) : undefined;
-      return {
+      return [{
         ...a,
         session,
         group,
         subject,
         teacher,
-      };
+      }];
     });
   }
 
@@ -1801,7 +1847,7 @@ export class MockDataProvider implements IDataProvider {
     recordedByUserId?: string,
     verificationMethod: VerificationMethod = 'barcode'
   ): Promise<AttendanceScanResponse> {
-    const session = this.sessions.find((s) => s.id === sessionId && s.tenantId === tenantId);
+    const session = await this.getSessionById(tenantId, sessionId);
     if (!session) {
       throw new Error('الحصة غير موجودة في هذا السنتر');
     }
@@ -1816,10 +1862,29 @@ export class MockDataProvider implements IDataProvider {
       throw new Error('لم يتم العثور على طالب مطابق لكود المسح المحدد');
     }
 
+    const enrollment = this.enrollments.find(row => row.tenantId === tenantId && row.isActive &&
+      row.groupId === session.groupId && row.studentId === student.id);
+    if (session.pricing && (!enrollment || !['scheduled', 'in_progress'].includes(session.status))) {
+      throw new Error(enrollment ? 'الحصة مغلقة لتسجيل الحضور' : 'الطالب غير مقيد في هذه المجموعة');
+    }
+
     // Invariant: Compound Unique (session_id, student_id)
     const existing = this.attendance.find(
-      (a) => a.sessionId === sessionId && a.studentId === student.id
+      (a) => a.tenantId === tenantId && a.sessionId === sessionId && a.studentId === student.id
     );
+
+    if (!existing && session.pricing?.model === 'per_session' &&
+      !this.invoices.some(invoice => invoice.tenantId === tenantId && invoice.sessionId === sessionId && invoice.studentId === student.id && invoice.status !== 'void')) {
+      const pricing = session.pricing;
+      this.addInvoice({
+        tenantId, studentId: student.id, groupId: session.groupId, sessionId,
+        teacherId: session.teacherId, pricing,
+        totalAmount: moneyAmount(pricing.teacherFee + pricing.centerFee),
+        discountType: enrollment?.discountType, discountValue: enrollment?.discountValue,
+        billingMonth: Number(session.sessionDate.slice(5, 7)), billingYear: Number(session.sessionDate.slice(0, 4)),
+        dueDate: session.sessionDate,
+      });
+    }
 
     const balanceAlert: BalanceAlert = {
       hasBalance: student.balanceDue > 0,
@@ -1866,6 +1931,7 @@ export class MockDataProvider implements IDataProvider {
 
     // Synchronous insertion before any async operations to eliminate event-loop race conditions
     this.attendance.push(newAttendance);
+    this.commitDemoOperations();
 
     if (student.guardianPhone) {
       await this.enqueueNotification({
@@ -1938,14 +2004,18 @@ export class MockDataProvider implements IDataProvider {
     tenantId: string,
     sessionId: string
   ): Promise<SessionAttendanceStats> {
-    const session = this.sessions.find((s) => s.id === sessionId && s.tenantId === tenantId);
+    const session = await this.getSessionById(tenantId, sessionId);
     if (!session) {
       throw new Error('الحصة غير موجودة');
     }
 
     const group = this.groups.find((g) => g.id === session.groupId);
     const groupName = group ? group.nameAr : 'مجموعة غير محددة';
-    const sessionFee = group ? (group.sessionFee || group.monthlyFee || 0) : 0;
+    const pricing = session.pricing;
+    const sessionFee = group?.sessionFee || group?.monthlyFee || 0;
+    const fixedSessionSplit = pricing?.model === 'per_session' ? calculateFixedSessionSplit(pricing,
+      this.invoices.filter(invoice => invoice.tenantId === tenantId && invoice.sessionId === sessionId && invoice.status !== 'void'))
+      : undefined;
 
     const enrollments = this.enrollments.filter(
       (e) => e.groupId === session.groupId && e.isActive
@@ -2003,7 +2073,8 @@ export class MockDataProvider implements IDataProvider {
       lateCount,
       excusedCount,
       attendanceRatePercentage,
-      totalSessionFeeCollected: attendedTotal * sessionFee,
+      totalSessionFeeCollected: fixedSessionSplit?.collected ?? (pricing ? 0 : attendedTotal * sessionFee),
+      ...(fixedSessionSplit ? { fixedSessionSplit } : {}),
       studentsWithBalanceDueCount,
       lastScannedAt,
       records: enrichedRecords,
@@ -2164,95 +2235,108 @@ export class MockDataProvider implements IDataProvider {
     const teacherName = profile?.fullName ?? teacher?.fullName ?? 'معلم';
     const teacherPhone = profile?.phone ?? teacher?.phone;
 
-    const teacherGroups = this.groups.filter(
-      (g) => g.teacherId === params.teacherId && g.tenantId === params.tenantId
-    );
-    const subjectNames = Array.from(
-      new Set(
-        teacherGroups
-          .map((g) => this.subjects.find((s) => s.id === g.subjectId)?.nameAr)
-          .filter((name): name is string => Boolean(name))
-      )
-    );
-
-    const contractsByGroup = new Map(teacherGroups.map(group => [
-      group.id, matchTeacherContract(profile?.contracts ?? [], this.subjects.find(subject =>
-        subject.id === group.subjectId && subject.tenantId === params.tenantId)),
-    ]));
     const monthKey = `${params.year}-${String(params.month).padStart(2, '0')}`;
+    const monthStart = monthKey + '-01';
+    const monthEnd = new Date(Date.UTC(params.year, params.month, 0)).toISOString().slice(0, 10);
+    const monthSessions = this.sessionsInRange(params.tenantId, monthStart, monthEnd)
+      .filter(session => session.teacherId === params.teacherId);
+    const monthlyInvoices = this.invoices.filter(invoice => invoice.tenantId === params.tenantId &&
+      invoice.billingMonth === params.month && invoice.billingYear === params.year && invoice.status !== 'void');
+    const historicalGroups = new Set([
+      ...monthSessions.map(session => session.groupId),
+      ...monthlyInvoices.filter(invoice => invoice.teacherId === params.teacherId).map(invoice => invoice.groupId),
+      ...this.groups.filter(group => group.tenantId === params.tenantId &&
+        group.legacyBilling?.teacherId === params.teacherId && monthlyInvoices.some(invoice => invoice.groupId === group.id))
+        .map(group => group.id),
+    ]);
+    const teacherGroups = this.groups.filter(group => group.tenantId === params.tenantId &&
+      (group.teacherId === params.teacherId || historicalGroups.has(group.id)));
+    const subjectNames = [...new Set(teacherGroups.map(group => this.subjects.find(subject =>
+      subject.id === group.subjectId && subject.tenantId === params.tenantId)?.nameAr)
+      .filter((name): name is string => Boolean(name)))];
+    const contractsByGroup = new Map(teacherGroups.map(group => [
+      group.id, group.pricing && !group.legacyBilling ? undefined : matchTeacherContract(profile?.contracts ?? [],
+        this.subjects.find(subject => subject.id === (group.legacyBilling?.subjectId ?? group.subjectId) && subject.tenantId === params.tenantId)),
+    ]));
+
     const lessonRows: NonNullable<TeacherMonthlyStatement['lessonCompensation']>['sessions'] = [];
+    const centerGroupStatements: TeacherMonthlyStatement['centerSubscription']['groups'] = [];
     for (const group of teacherGroups) {
       const contract = contractsByGroup.get(group.id);
-      if (!contract || contract.model === 'private') continue;
-      const sessions = this.sessions.filter(session => session.tenantId === params.tenantId &&
-        session.groupId === group.id && session.teacherId === params.teacherId &&
-        session.status === 'completed' && session.sessionDate.startsWith(monthKey + '-'));
+      const sessions = monthSessions.filter(session => session.groupId === group.id);
+      const legacyModel = group.legacyBilling?.model ?? (!group.pricing ? group.pricingModel : undefined);
+      const averageSessions = new Map<number, typeof sessions>();
       for (const session of sessions) {
+        const pricing = session.pricing;
         const attendanceCount = countTeacherSessionAttendance(this.attendance, session);
-        const revenue = Math.round(attendanceCount * group.sessionFee * 100) / 100;
-        lessonRows.push({
-          sessionId: session.id, sessionDate: session.sessionDate, groupName: group.nameAr,
-          attendanceCount, revenue, model: contract.model, rate: contract.value,
-          ...calculateTeacherSessionPay(contract, session, attendanceCount, revenue),
+        if (pricing?.model === 'center') {
+          const entries = averageSessions.get(pricing.teacherRate) ?? [];
+          entries.push(session);
+          averageSessions.set(pricing.teacherRate, entries);
+        } else if (pricing?.model === 'per_session' && session.status === 'completed') {
+          const tickets = monthlyInvoices.filter(invoice => invoice.sessionId === session.id);
+          lessonRows.push({
+            sessionId: session.id, sessionDate: session.sessionDate, groupName: group.nameAr,
+            attendanceCount, model: 'per_session', rate: pricing.teacherFee,
+            ...calculateFixedSessionSplit(pricing, tickets),
+          });
+        } else if (!pricing && legacyModel && contract && contract.model !== 'private' && session.status === 'completed') {
+          const revenue = moneyAmount(attendanceCount * (group.legacyBilling?.sessionFee ?? group.sessionFee));
+          lessonRows.push({
+            sessionId: session.id, sessionDate: session.sessionDate, groupName: group.nameAr,
+            attendanceCount, revenue, model: contract.model, rate: contract.value,
+            ...calculateTeacherSessionPay(contract, session, attendanceCount, revenue),
+          });
+        }
+      }
+      if (!contract && legacyModel === 'center') {
+        const rate = this.teacherRates.find(item => item.tenantId === params.tenantId &&
+          item.teacherId === params.teacherId && item.model === 'center' && item.isActive);
+        const fixedRate = rate?.fixedRatePerStudent ?? 20;
+        const legacySessions = sessions.filter(session => !session.pricing);
+        if (legacySessions.length || !group.pricing) averageSessions.set(fixedRate,
+          [...(averageSessions.get(fixedRate) ?? []), ...legacySessions]);
+      }
+      if (group.teacherId === params.teacherId && group.pricing?.model === 'center' && !averageSessions.size) {
+        averageSessions.set(group.pricing.teacherRate, []);
+      }
+
+      const totalCompleted = [...averageSessions.values()].flat().filter(session => session.status === 'completed').length;
+      let rawCompensation = 0;
+      let roundedCompensation = 0;
+      for (const [ratePerStudent, groupSessions] of averageSessions) {
+        const sessionRecords = groupSessions.map(session => ({
+          sessionId: session.id, sessionDate: session.sessionDate, status: session.status,
+          validAttendanceCount: countTeacherSessionAttendance(this.attendance, session),
+        }));
+        const comp = calcCenterComp(sessionRecords.filter(session => session.status === 'completed'), ratePerStudent);
+        const totalValidAttendance = comp.totalValidAttendance ?? 0;
+        rawCompensation += totalCompleted ? totalValidAttendance * ratePerStudent / totalCompleted : 0;
+        const compensationAmount = moneyAmount(moneyAmount(rawCompensation) - roundedCompensation);
+        roundedCompensation = moneyAmount(rawCompensation);
+        centerGroupStatements.push({
+          groupId: group.id, groupName: group.nameAr, ratePerStudent,
+          conductedSessionsCount: comp.conductedSessions, excludedSessionsCount: sessionRecords.length - comp.conductedSessions,
+          totalValidAttendance, averageAttendance: comp.averageAttendance, compensationAmount, sessions: sessionRecords,
         });
       }
     }
-    const totalLessonCompensation = lessonRows.reduce((sum, session) => sum + Math.round(session.teacherDue * 100), 0) / 100;
+    const totalCenterCompensation = centerGroupStatements.reduce((sum, group) => sum + group.compensationAmount, 0);
+    const totalLessonCompensation = moneyAmount(lessonRows.reduce((sum, session) => sum + session.teacherDue, 0));
+    const totalCollectedLessonCompensation = moneyAmount(lessonRows.reduce((sum, session) =>
+      sum + (session.teacherCollected ?? session.teacherDue), 0));
     const lessonCompensation = lessonRows.length ? {
       sessions: lessonRows.sort((a, b) => a.sessionDate.localeCompare(b.sessionDate)),
       totalCompensation: totalLessonCompensation,
     } : undefined;
 
-    // Legacy contracts retain their calculation until replaced for that grade.
-    const centerGroups = teacherGroups.filter(g => !contractsByGroup.get(g.id) && g.pricingModel === 'center');
-    let totalCenterCompensation = 0;
-    const centerGroupStatements = centerGroups.map((group) => {
-      const rateObj = this.teacherRates.find((r) => r.teacherId === params.teacherId && r.model === 'center');
-      const rate = rateObj?.fixedRatePerStudent ?? 20.0;
-
-      const groupSessions = this.sessions.filter(
-        (s) => s.groupId === group.id && s.tenantId === params.tenantId
-      );
-
-      const sessionRecords = groupSessions.map((s) => {
-        const attCount = this.attendance.filter((a) => a.sessionId === s.id && a.status === 'present').length;
-        const validCount = attCount > 0 ? attCount : (s.status === 'completed' ? 13 : 0);
-        return {
-          id: s.id,
-          sessionId: s.id,
-          sessionDate: s.sessionDate,
-          status: s.status,
-          attendanceCount: validCount,
-          validAttendanceCount: validCount,
-          isCanceled: s.status === 'canceled',
-          sessionStatus: s.status,
-        };
-      });
-
-      const comp = calcCenterComp(sessionRecords, rate);
-      totalCenterCompensation += comp.totalCompensation;
-
-      return {
-        groupId: group.id,
-        groupName: group.nameAr,
-        ratePerStudent: rate,
-        conductedSessionsCount: comp.conductedSessions,
-        excludedSessionsCount: comp.excludedSessionsCount ?? 0,
-        totalValidAttendance: comp.totalValidAttendance ?? 0,
-        averageAttendance: comp.averageAttendance,
-        compensationAmount: comp.totalCompensation,
-        sessions: sessionRecords.map((sr) => ({
-          sessionId: sr.sessionId,
-          sessionDate: sr.sessionDate,
-          status: sr.status,
-          validAttendanceCount: sr.validAttendanceCount,
-        })),
-      };
-    });
-
     // Private Lessons Groups
     const privateGroups = teacherGroups.filter(group => {
       const contract = contractsByGroup.get(group.id);
+      if (group.pricing) return group.pricing.model === 'private' || monthlyInvoices.some(invoice =>
+        invoice.groupId === group.id && (invoice.teacherId === params.teacherId && invoice.pricing?.model === 'private' ||
+          !invoice.pricing && !invoice.sessionId && group.legacyBilling?.teacherId === params.teacherId &&
+          (contract ? contract.model === 'private' : group.legacyBilling.model === 'private')));
       return contract ? contract.model === 'private' : group.pricingModel === 'private';
     });
     let totalInvoicedTeacherShare = 0;
@@ -2260,85 +2344,92 @@ export class MockDataProvider implements IDataProvider {
     let totalCenterShare = 0;
     let totalRoundingLeakage = 0;
 
-    const privateGroupStatements = privateGroups.map((group) => {
-      const rateObj = this.teacherRates.find((r) => r.teacherId === params.teacherId && r.model === 'private');
+    const privateGroupStatements = privateGroups.flatMap((group) => {
+      const rateObj = this.teacherRates.find(rate => rate.tenantId === params.tenantId &&
+        rate.teacherId === params.teacherId && rate.model === 'private' && rate.isActive);
       const configuredContract = contractsByGroup.get(group.id);
-      const teacherPct = configuredContract?.value ?? rateObj?.teacherPercentage ?? 70.0;
-      const centerPct = 100 - teacherPct;
+      const teacherPct = group.pricing?.model === 'private'
+        ? group.pricing.teacherPercentage : configuredContract?.value ?? rateObj?.teacherPercentage ?? 70;
+      const invoices = monthlyInvoices.filter(invoice => invoice.groupId === group.id && !invoice.sessionId);
+      const enrollments = this.enrollments.filter(row => row.tenantId === params.tenantId && row.groupId === group.id);
+      const buildItem = (studentId: string, enrollment?: Enrollment, invoice?: Invoice) => {
+        const student = this.users.find(user => user.tenantId === params.tenantId && user.id === studentId);
+        const basePrice = invoice?.totalAmount ?? studentGroupFee(group);
+        const discountType = enrollment?.discountType ?? 'none';
+        const discountValue = enrollment?.discountValue ?? 0;
+        const netRevenue = invoice?.netAmount ?? calculateDiscount({ basePrice, discountType, discountValue }).netPrice;
+        const percentage = invoice?.pricing?.model === 'private' ? invoice.pricing.teacherPercentage
+          : configuredContract?.value ?? rateObj?.teacherPercentage ?? teacherPct;
+        const shares = splitPrivateFee(netRevenue, percentage);
+        const collectedAmount = Math.min(netRevenue, invoice?.paidAmount ?? 0);
+        return {
+          enrollmentId: enrollment?.id ?? invoice?.id ?? studentId, studentId, studentName: student?.fullName ?? 'طالب',
+          basePrice, discountType, discountValue, netRevenue, teacherShare: shares.teacher, centerShare: shares.center,
+          collectedAmount, collectedTeacher: splitPrivateFee(collectedAmount, percentage).teacher, percentage,
+        };
+      };
+      const items = group.pricing
+        ? invoices.filter(invoice => invoice.teacherId === params.teacherId && invoice.pricing?.model === 'private' ||
+          !invoice.pricing && group.legacyBilling?.teacherId === params.teacherId &&
+          (configuredContract ? configuredContract.model === 'private' : group.legacyBilling.model === 'private'))
+          .map(invoice => buildItem(invoice.studentId, enrollments.find(row => row.studentId === invoice.studentId), invoice))
+        : enrollments.filter(row => row.isActive && row.enrolledAt.slice(0, 10) <= monthEnd)
+          .map(row => buildItem(row.studentId, row, invoices.find(invoice => invoice.studentId === row.studentId)));
+      const byPercentage = new Map<number, typeof items>();
+      if (group.teacherId === params.teacherId && (group.pricing?.model === 'private' || !group.pricing)) {
+        byPercentage.set(teacherPct, []);
+      }
+      for (const item of items) {
+        const rows = byPercentage.get(item.percentage) ?? [];
+        rows.push(item);
+        byPercentage.set(item.percentage, rows);
+      }
+      return [...byPercentage.entries()].map(([teacherPct, items]) => {
+        const centerPct = moneyAmount(100 - teacherPct);
+        const totalGrossInvoiced = items.reduce((acc, it) => acc + it.basePrice, 0);
+        const totalDiscountAmount = items.reduce((acc, it) => acc + (it.basePrice - it.netRevenue), 0);
+        const totalNetRevenue = items.reduce((acc, it) => acc + it.netRevenue, 0);
+        const groupTeacherShare = items.reduce((acc, it) => acc + it.teacherShare, 0);
+        const groupCenterShare = items.reduce((acc, it) => acc + it.centerShare, 0);
+        const groupCollected = items.reduce((acc, it) => acc + it.collectedAmount, 0);
+        const groupCollectedTeacherShare = moneyAmount(items.reduce((sum, item) => sum + item.collectedTeacher, 0));
+        const uncollectedTeacherBalance = Math.max(0, Math.round((groupTeacherShare - groupCollectedTeacherShare) * 100) / 100);
+        const leakage = Math.abs(Math.round((totalNetRevenue - (groupTeacherShare + groupCenterShare)) * 100) / 100);
 
-      const enrollments = this.enrollments.filter((e) => e.groupId === group.id && e.isActive);
-      const items = enrollments.map((e) => {
-        const student = this.users.find((u) => u.id === e.studentId);
-        const basePrice = group.monthlyFee || group.sessionFee || 100.0;
-        const discount = calculateDiscount({
-          basePrice,
-          discountType: e.discountType,
-          discountValue: e.discountValue,
-        });
-
-        const teacherShare = Math.round(discount.netPrice * (teacherPct / 100) * 100) / 100;
-        const centerShare = Math.round((discount.netPrice - teacherShare) * 100) / 100;
-
-        const invoice = this.invoices.find(inv => inv.studentId === e.studentId && inv.groupId === group.id &&
-          (!configuredContract || (inv.billingMonth === params.month && inv.billingYear === params.year && inv.status !== 'void')));
-        const collectedAmount = invoice ? invoice.paidAmount : 0.0;
+        totalInvoicedTeacherShare += groupTeacherShare;
+        totalCollectedTeacherShare += groupCollectedTeacherShare;
+        totalCenterShare += groupCenterShare;
+        totalRoundingLeakage += leakage;
 
         return {
-          enrollmentId: e.id,
-          studentId: e.studentId,
-          studentName: student?.fullName || 'طالب',
-          basePrice,
-          discountType: e.discountType,
-          discountValue: e.discountValue,
-          netRevenue: discount.netPrice,
-          teacherShare,
-          centerShare,
-          collectedAmount,
+          groupId: group.id,
+          groupName: group.nameAr,
+          teacherPercentage: teacherPct,
+          centerPercentage: centerPct,
+          enrolledCount: new Set(items.map(item => item.studentId)).size,
+          totalGrossInvoiced: Math.round(totalGrossInvoiced * 100) / 100,
+          totalDiscountAmount: Math.round(totalDiscountAmount * 100) / 100,
+          totalNetRevenue: Math.round(totalNetRevenue * 100) / 100,
+          totalTeacherShare: Math.round(groupTeacherShare * 100) / 100,
+          totalCenterShare: Math.round(groupCenterShare * 100) / 100,
+          totalCollected: Math.round(groupCollected * 100) / 100,
+          totalCollectedTeacherShare: Math.round(groupCollectedTeacherShare * 100) / 100,
+          uncollectedTeacherBalance,
+          roundingLeakage: leakage,
+          items,
         };
       });
-
-      const totalGrossInvoiced = items.reduce((acc, it) => acc + it.basePrice, 0);
-      const totalDiscountAmount = items.reduce((acc, it) => acc + (it.basePrice - it.netRevenue), 0);
-      const totalNetRevenue = items.reduce((acc, it) => acc + it.netRevenue, 0);
-      const groupTeacherShare = items.reduce((acc, it) => acc + it.teacherShare, 0);
-      const groupCenterShare = items.reduce((acc, it) => acc + it.centerShare, 0);
-      const groupCollected = items.reduce((acc, it) => acc + it.collectedAmount, 0);
-      const groupCollectedTeacherShare = Math.round(groupCollected * (teacherPct / 100) * 100) / 100;
-      const uncollectedTeacherBalance = Math.max(0, Math.round((groupTeacherShare - groupCollectedTeacherShare) * 100) / 100);
-      const leakage = Math.abs(Math.round((totalNetRevenue - (groupTeacherShare + groupCenterShare)) * 100) / 100);
-
-      totalInvoicedTeacherShare += groupTeacherShare;
-      totalCollectedTeacherShare += groupCollectedTeacherShare;
-      totalCenterShare += groupCenterShare;
-      totalRoundingLeakage += leakage;
-
-      return {
-        groupId: group.id,
-        groupName: group.nameAr,
-        teacherPercentage: teacherPct,
-        centerPercentage: centerPct,
-        enrolledCount: enrollments.length,
-        totalGrossInvoiced: Math.round(totalGrossInvoiced * 100) / 100,
-        totalDiscountAmount: Math.round(totalDiscountAmount * 100) / 100,
-        totalNetRevenue: Math.round(totalNetRevenue * 100) / 100,
-        totalTeacherShare: Math.round(groupTeacherShare * 100) / 100,
-        totalCenterShare: Math.round(groupCenterShare * 100) / 100,
-        totalCollected: Math.round(groupCollected * 100) / 100,
-        totalCollectedTeacherShare: Math.round(groupCollectedTeacherShare * 100) / 100,
-        uncollectedTeacherBalance,
-        roundingLeakage: leakage,
-        items,
-      };
     });
 
     // Advances & Adjustments
-    const advances = this.teacherAdvances.filter(
-      (a) => a.tenantId === params.tenantId && a.teacherId === params.teacherId
-    );
+    const advances = this.teacherAdvances.filter(advance => advance.tenantId === params.tenantId &&
+      advance.teacherId === params.teacherId && cairoClock(new Date(advance.paidAt)).startsWith(monthKey) &&
+      (advance.status === 'pending' || this.teacherPayroll.some(payroll => payroll.id === advance.payrollId &&
+        payroll.payrollYear === params.year && payroll.payrollMonth === params.month)));
     const totalAdvances = advances.reduce((acc, a) => acc + a.amount, 0);
 
     const grossCompensation = Math.round((totalCenterCompensation + totalLessonCompensation + totalInvoicedTeacherShare) * 100) / 100;
-    const grossCollectedCompensation = Math.round((totalCenterCompensation + totalLessonCompensation + totalCollectedTeacherShare) * 100) / 100;
+    const grossCollectedCompensation = Math.round((totalCenterCompensation + totalCollectedLessonCompensation + totalCollectedTeacherShare) * 100) / 100;
     const netPayrollInvoiced = Math.max(0, Math.round((grossCompensation - totalAdvances) * 100) / 100);
     const netPayrollCollected = Math.max(0, Math.round((grossCollectedCompensation - totalAdvances) * 100) / 100);
 
@@ -2369,7 +2460,8 @@ export class MockDataProvider implements IDataProvider {
         createdAt: new Date().toISOString(),
       };
       this.teacherPayroll.push(payrollRecord);
-    } else if (payrollRecord && (payrollRecord.status === 'draft' || payrollRecord.status === 'reviewed') && profile && params.persistDraft !== false) {
+      this.commitDemoOperations();
+    } else if (payrollRecord && (payrollRecord.status === 'draft' || payrollRecord.status === 'reviewed') && params.persistDraft !== false) {
       Object.assign(payrollRecord, {
         conductedSessions, totalAttendance, averageAttendance,
         calculatedCompensation: grossCompensation,
@@ -2377,8 +2469,9 @@ export class MockDataProvider implements IDataProvider {
         netPayroll: Math.round((netPayrollInvoiced + payrollRecord.bonuses) * 100) / 100,
         lessonCompensation,
       });
+      this.commitDemoOperations();
     }
-    const locked = profile && payrollRecord && (payrollRecord.status === 'approved' || payrollRecord.status === 'paid')
+    const locked = payrollRecord && (payrollRecord.status === 'approved' || payrollRecord.status === 'paid')
       ? payrollRecord : undefined;
 
     return {
@@ -2443,6 +2536,7 @@ export class MockDataProvider implements IDataProvider {
     payroll.status = 'approved';
     payroll.approvedByUserId = actorId;
     payroll.approvedAt = new Date().toISOString();
+    this.commitDemoOperations();
 
     return { success: true, data: payroll, status: 200 };
   }
@@ -2469,11 +2563,13 @@ export class MockDataProvider implements IDataProvider {
     payroll.status = 'paid';
 
     this.teacherAdvances
-      .filter((a) => a.teacherId === payroll.teacherId && a.tenantId === payroll.tenantId)
+      .filter(a => a.teacherId === payroll.teacherId && a.tenantId === payroll.tenantId && a.status === 'pending' &&
+        cairoClock(new Date(a.paidAt)).startsWith(`${payroll.payrollYear}-${String(payroll.payrollMonth).padStart(2, '0')}`))
       .forEach((a) => {
         a.status = 'settled';
         a.payrollId = payroll.id;
       });
+    this.commitDemoOperations();
 
     return { success: true, data: payroll, status: 200 };
   }
@@ -2517,6 +2613,7 @@ export class MockDataProvider implements IDataProvider {
       shift.expectedCash = Math.round((shift.openingCash + shift.cashCollected - shift.cashDisbursed) * 100) / 100;
     }
 
+    this.commitDemoOperations();
     return advance;
   }
 
@@ -2548,6 +2645,37 @@ export class MockDataProvider implements IDataProvider {
     billingYear: number;
     dueDate: string;
   }): Promise<Invoice> {
+    const group = params.groupId && this.groups.find(item => item.id === params.groupId && item.tenantId === params.tenantId);
+    if (group && group.pricing?.model === 'per_session') {
+      throw new Error('فاتورة الدفع بالحصة تُنشأ عند تسجيل حضور الطالب في الحصة');
+    }
+    if (group && group.pricing && this.invoices.some(invoice => invoice.tenantId === params.tenantId &&
+      invoice.studentId === params.studentId && invoice.groupId === group.id && !invoice.sessionId &&
+      invoice.billingYear === params.billingYear && invoice.billingMonth === params.billingMonth && invoice.status !== 'void')) {
+      throw new Error('تم إصدار فاتورة لهذا الطالب والمجموعة عن الشهر المحدد');
+    }
+    const invoice = this.addInvoice({
+      ...params,
+      ...(group && group.pricing ? { totalAmount: studentGroupFee(group), pricing: group.pricing, teacherId: group.teacherId } : {}),
+    });
+    this.commitDemoOperations();
+    return invoice;
+  }
+
+  private addInvoice(params: {
+    tenantId: string;
+    studentId: string;
+    groupId?: string;
+    sessionId?: string;
+    totalAmount: number;
+    discountType?: string;
+    discountValue?: number;
+    billingMonth: number;
+    billingYear: number;
+    dueDate: string;
+    pricing?: Group['pricing'];
+    teacherId?: string;
+  }): Invoice {
     const discount = calculateDiscount({
       basePrice: params.totalAmount,
       discountType: (params.discountType as any) || 'none',
@@ -2556,7 +2684,7 @@ export class MockDataProvider implements IDataProvider {
 
     const invoiceNumber = `INV-${params.billingYear}-${String(this.invoices.length + 1).padStart(4, '0')}`;
     const invoice: Invoice = {
-      id: `inv-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      id: `inv-${crypto.randomUUID()}`,
       tenantId: params.tenantId,
       studentId: params.studentId,
       groupId: params.groupId,
@@ -2570,11 +2698,13 @@ export class MockDataProvider implements IDataProvider {
       status: discount.netPrice === 0 ? 'paid' : 'pending',
       dueDate: params.dueDate,
       createdAt: new Date().toISOString(),
+      ...(params.sessionId ? { sessionId: params.sessionId } : {}),
+      ...(params.pricing ? { pricing: params.pricing, teacherId: params.teacherId } : {}),
     };
 
     this.invoices.push(invoice);
 
-    const student = this.users.find((u) => u.id === params.studentId);
+    const student = this.users.find((u) => u.id === params.studentId && u.tenantId === params.tenantId);
     if (student && discount.netPrice > 0) {
       student.balanceDue = Math.round((student.balanceDue + discount.netPrice) * 100) / 100;
     }
@@ -2604,20 +2734,64 @@ export class MockDataProvider implements IDataProvider {
     shiftId?: string;
     notes?: string;
   }): Promise<{ payment: Payment; updatedInvoice: Invoice; updatedStudent?: User }> {
+    const result = this.addPayment(params);
+    this.commitDemoOperations();
+    return result;
+  }
+
+  async collectStudentPayment(params: {
+    tenantId: string;
+    studentId: string;
+    sessionId?: string;
+    amountPaid: number;
+    paymentMethod: PaymentMethod;
+    cashierUserId: string;
+    notes?: string;
+  }): Promise<User> {
+    const student = this.users.find(user => user.tenantId === params.tenantId && user.id === params.studentId);
+    if (!student) throw new Error('الطالب غير موجود');
+    const open = this.invoices.filter(invoice => invoice.tenantId === params.tenantId && invoice.studentId === params.studentId &&
+      invoice.status !== 'void' && invoice.netAmount > invoice.paidAmount)
+      .sort((a, b) => (params.sessionId ? Number(b.sessionId === params.sessionId) - Number(a.sessionId === params.sessionId) : 0) ||
+        a.dueDate.localeCompare(b.dueDate));
+    const remaining = (invoice: Invoice) => Math.round((invoice.netAmount - invoice.paidAmount) * 100);
+    let cents = Math.round(params.amountPaid * 100);
+    if (!Number.isFinite(cents) || cents <= 0 || cents > open.reduce((sum, invoice) => sum + remaining(invoice), 0)) {
+      throw new Error('أدخل مبلغًا صحيحًا في حدود الرصيد المتبقي على الفواتير');
+    }
+    for (const invoice of open) {
+      if (!cents) break;
+      const collected = Math.min(cents, remaining(invoice));
+      this.addPayment({ ...params, invoiceId: invoice.id, amountPaid: collected / 100 });
+      cents -= collected;
+    }
+    this.commitDemoOperations();
+    return student;
+  }
+
+  private addPayment(params: {
+    tenantId: string;
+    invoiceId: string;
+    amountPaid: number;
+    paymentMethod: PaymentMethod;
+    cashierUserId: string;
+    shiftId?: string;
+    notes?: string;
+  }): { payment: Payment; updatedInvoice: Invoice; updatedStudent?: User } {
     const invoice = this.invoices.find(
       (inv) => inv.id === params.invoiceId && inv.tenantId === params.tenantId
     );
     if (!invoice) throw new Error('الفاتورة غير موجودة');
 
     const remainingBalance = Math.round((invoice.netAmount - invoice.paidAmount) * 100) / 100;
-    if (params.amountPaid <= 0) {
+    if (!Number.isFinite(params.amountPaid) || moneyAmount(params.amountPaid) <= 0 || invoice.status === 'void') {
       throw new Error('مبلغ السداد يجب أن يكون أكبر من الصفر');
     }
     if (params.amountPaid > remainingBalance) {
       throw new Error(`مبلغ السداد (${params.amountPaid}) أكبر من الرصيد المتبقي على الفاتورة (${remainingBalance})`);
     }
 
-    let shift = this.cashierShifts.find((s) => s.id === params.shiftId);
+    let shift = this.cashierShifts.find(s => s.id === params.shiftId && s.tenantId === params.tenantId);
     if (!shift) {
       shift = this.cashierShifts.find(
         (s) => s.tenantId === params.tenantId && s.status === 'open' && s.cashierUserId === params.cashierUserId
@@ -2626,7 +2800,7 @@ export class MockDataProvider implements IDataProvider {
 
     const receiptNumber = `REC-${new Date().getFullYear()}-${String(this.payments.length + 1).padStart(4, '0')}`;
     const payment: Payment = {
-      id: `pay-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      id: `pay-${crypto.randomUUID()}`,
       tenantId: params.tenantId,
       invoiceId: invoice.id,
       studentId: invoice.studentId,
@@ -2646,7 +2820,7 @@ export class MockDataProvider implements IDataProvider {
       invoice.status = 'partially_paid';
     }
 
-    const student = this.users.find((u) => u.id === invoice.studentId);
+    const student = this.users.find((u) => u.id === invoice.studentId && u.tenantId === invoice.tenantId);
     if (student) {
       student.balanceDue = Math.max(0, Math.round((student.balanceDue - params.amountPaid) * 100) / 100);
     }
@@ -2715,6 +2889,7 @@ export class MockDataProvider implements IDataProvider {
     };
 
     this.cashierShifts.push(shift);
+    this.commitDemoOperations();
     return shift;
   }
 
@@ -2724,7 +2899,7 @@ export class MockDataProvider implements IDataProvider {
     notes?: string;
     denominations?: Record<string, number>;
   }): Promise<CashierShift> {
-    const shift = this.cashierShifts.find((s) => s.id === params.shiftId);
+    const shift = this.cashierShifts.find(s => s.id === params.shiftId);
     if (!shift) throw new Error('الوردية غير موجودة');
     if (shift.status === 'closed') throw new Error('هذه الوردية مغلقة بالفعل');
 
@@ -2744,6 +2919,7 @@ export class MockDataProvider implements IDataProvider {
       shift.denominations = params.denominations;
     }
 
+    this.commitDemoOperations();
     return shift;
   }
 
@@ -2768,10 +2944,11 @@ export class MockDataProvider implements IDataProvider {
     };
 
     this.expenses.push(expense);
+    this.commitDemoOperations();
 
     let shift: CashierShift | undefined;
     if (params.shiftId) {
-      shift = this.cashierShifts.find((s) => s.id === params.shiftId);
+      shift = this.cashierShifts.find(s => s.id === params.shiftId && s.tenantId === params.tenantId);
     }
     if (!shift) {
       shift = this.cashierShifts.find((s) => s.tenantId === params.tenantId && s.status === 'open');

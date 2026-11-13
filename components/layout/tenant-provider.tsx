@@ -3,11 +3,14 @@
 import React, { createContext, useContext, useState, useMemo } from 'react';
 import { Tenant, Branch, User, UserRole } from '@/lib/dal/types';
 import { useMasterDataCatalog } from '@/lib/dal/master-data-client';
+import { useCenterGroups } from '@/lib/timetable/group-client';
+import { getDataProvider } from '@/lib/dal/factory';
 
 export interface TenantContextType {
   tenant: Tenant;
   branches: Branch[];
   masterData: ReturnType<typeof useMasterDataCatalog>;
+  groupData: ReturnType<typeof useCenterGroups>;
   activeBranch: Branch | null;
   activeBranchId: string | null;
   setActiveBranchId: (id: string | null) => void;
@@ -60,6 +63,10 @@ export function TenantProvider({
   const [isOwnerMode, setIsOwnerMode] = useState<boolean>(false);
   const masterData = useMasterDataCatalog(tenant,
     currentUser.role === 'CENTER_ADMIN' || currentUser.role === 'PLATFORM_OWNER');
+  const groupData = useCenterGroups(tenant, masterData.data, masterData.auth, currentUser.role);
+  React.useEffect(() => {
+    if (masterData.ready) getDataProvider().setMasterData(tenant.id, masterData.data);
+  }, [masterData.ready, masterData.data, tenant.id]);
   const currentBranches = masterData.ready || !masterData.demo ? masterData.data.branches : branches;
 
   const activeBranch = currentBranches.find(branch => branch.id === preferredBranchId) ?? currentBranches[0] ?? null;
@@ -121,6 +128,7 @@ export function TenantProvider({
         tenant,
         branches: currentBranches,
         masterData,
+        groupData,
         activeBranch,
         activeBranchId: activeBranch?.id ?? null,
         setActiveBranchId,

@@ -1,3 +1,5 @@
+import type { GroupPeriod, GroupPricing, WeeklySlot } from '@/lib/timetable/group-schedule';
+
 export type UserRole =
   | 'PLATFORM_OWNER'
   | 'CENTER_ADMIN'
@@ -8,7 +10,7 @@ export type UserRole =
   | 'PARENT'
   | 'STUDENT';
 
-export type PricingModel = 'center' | 'private';
+export type PricingModel = 'center' | 'private' | 'per_session';
 export type DiscountType = 'none' | 'percentage' | 'fixed' | 'free_100';
 export type SessionStatus = 'scheduled' | 'in_progress' | 'completed' | 'canceled' | 'postponed';
 export type AttendanceStatus = 'present' | 'absent' | 'late' | 'excused';
@@ -172,6 +174,21 @@ export interface Group {
   maxStudents: number;
   isActive: boolean;
   createdAt: string;
+  stageId?: string;
+  teacherName?: string;
+  gradeId?: string;
+  weeklySlots?: WeeklySlot[];
+  pricing?: GroupPricing;
+  effectiveFrom?: string;
+  scheduleHistory?: GroupPeriod[];
+  version?: number;
+  legacyBilling?: {
+    model: PricingModel;
+    monthlyFee: number;
+    sessionFee: number;
+    teacherId: string;
+    subjectId: string;
+  };
 }
 
 export interface Session {
@@ -187,6 +204,9 @@ export interface Session {
   notes?: string;
   cancellationReason?: string;
   createdAt: string;
+  branchId?: string;
+  subjectId?: string;
+  pricing?: GroupPricing;
 }
 
 export interface Enrollment {
@@ -228,6 +248,9 @@ export interface Invoice {
   status: InvoiceStatus;
   dueDate: string;
   createdAt: string;
+  sessionId?: string;
+  pricing?: GroupPricing;
+  teacherId?: string;
 }
 
 export interface Payment {
@@ -250,7 +273,7 @@ export interface TeacherRate {
   teacherId: string;
   groupId?: string;
   subjectId?: string;
-  model: PricingModel;
+  model: Exclude<PricingModel, 'per_session'>;
   fixedRatePerStudent: number;
   teacherPercentage: number;
   centerPercentage: number;
@@ -266,11 +289,14 @@ export interface TeacherLessonCompensation {
     sessionDate: string;
     groupName: string;
     attendanceCount: number;
-    model: 'fixed_session' | 'per_attendee';
+    model: 'fixed_session' | 'per_attendee' | 'per_session';
     rate: number;
     revenue: number;
     teacherDue: number;
     centerNet: number;
+    collected?: number;
+    teacherCollected?: number;
+    centerCollected?: number;
   }>;
   totalCompensation: number;
 }
@@ -599,6 +625,14 @@ export interface SessionAttendanceStats {
   excusedCount: number;
   attendanceRatePercentage: number;
   totalSessionFeeCollected: number;
+  fixedSessionSplit?: {
+    revenue: number;
+    collected: number;
+    teacherDue: number;
+    centerNet: number;
+    teacherCollected: number;
+    centerCollected: number;
+  };
   studentsWithBalanceDueCount: number;
   lastScannedAt?: string;
   records: Array<{

@@ -1,19 +1,30 @@
 import { IDataProvider } from './index';
 import { MockDataProvider } from './mock-data';
 import { cairoClock } from '@/lib/attendance/reception';
+import { attachDemoOperations } from './demo-operations';
 
 let instance: MockDataProvider | null = null;
 
-export function getDataProvider(): IDataProvider {
+export function getDataProvider(): MockDataProvider {
   if (instance) return instance;
 
-  // In demo or offline mode, return in-memory MockDataProvider
   instance = new MockDataProvider();
+  if (typeof window !== 'undefined' && process.env.NODE_ENV !== 'test' &&
+    !(process.env.NEXT_PUBLIC_FIREBASE_API_KEY && process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN &&
+      process.env.NEXT_PUBLIC_FIREBASE_APP_ID)) {
+    try {
+      attachDemoOperations(instance, window.localStorage);
+    } catch {
+      instance.attachDemoOperations(() => {
+        throw new Error('تعذّر حفظ السجلات في هذا المتصفح. تحقّق من إعدادات التخزين.');
+      });
+    }
+  }
   return instance;
 }
 
 export function getReceptionDataProvider(clock = cairoClock()): IDataProvider {
-  const provider = instance ?? (instance = new MockDataProvider());
+  const provider = getDataProvider();
   const template = provider.sessions.find(session => session.id === 'sess-live-today');
   if (!template) return provider;
 

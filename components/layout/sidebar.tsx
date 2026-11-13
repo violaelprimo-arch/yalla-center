@@ -174,7 +174,7 @@ const ROLE_LABELS: Record<UserRole, { label: string; color: string }> = {
   PARENT: { label: 'ولي أمر', color: 'bg-orange-500/20 text-orange-300 border-orange-500/30' },
 };
 
-export function Sidebar() {
+export function Sidebar({ mobileOpen = false, onNavigate }: { mobileOpen?: boolean; onNavigate?: () => void }) {
   const { tenant, currentRole, currentUser, isOwnerMode } = useTenant();
   const pathname = usePathname();
 
@@ -205,7 +205,7 @@ export function Sidebar() {
 
   return (
     <aside
-      className="w-64 h-screen fixed right-0 top-0 z-30 flex flex-col bg-[#0B132B] text-[#F8FAFC] border-l border-[#1C2541] shadow-soft-lg select-none"
+      className={cn("w-64 h-dvh fixed right-0 top-0 z-30 lg:flex flex-col bg-[#0B132B] text-[#F8FAFC] border-l border-[#1C2541] shadow-soft-lg select-none", mobileOpen ? "flex" : "hidden")}
       dir="rtl"
     >
       {/* Platform Owner Mode Top Banner */}
@@ -223,7 +223,7 @@ export function Sidebar() {
 
       {/* Brand & Center Header */}
       <div className="p-4 border-b border-[#1C2541] flex flex-col gap-2">
-        <Link href={`/center/${tenant.slug}`} className="inline-block transition-transform hover:scale-[1.01]">
+        <Link href={`/center/${tenant.slug}`} onClick={onNavigate} className="inline-block transition-transform hover:scale-[1.01]">
           <BrandLogo theme="dark" width={145} height={36} priority />
         </Link>
         <div className="flex items-center justify-between gap-2 mt-1">
@@ -255,6 +255,7 @@ export function Sidebar() {
             <React.Fragment key={item.id}>
               <Link
                 href={itemHref}
+                onClick={onNavigate}
                 className={cn(
                   'group relative flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150',
                   isActive
@@ -335,6 +336,7 @@ export function Sidebar() {
                           <Link
                             key={subItem.id}
                             href={subHref}
+                            onClick={onNavigate}
                             className={cn(
                               'group relative flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-xs font-medium transition-all duration-150',
                               isSubActive

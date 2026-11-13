@@ -105,7 +105,7 @@ export default function TeacherPortalPage({ params }: { params: { centerSlug: st
             <div className="rounded-xl bg-muted/55 p-3" key={label}><dt className="text-sm text-muted-foreground">{label}</dt><dd className="font-bold">{currency.format(Number(value))}</dd></div>)}
         </dl>
         <ul className="divide-y divide-border text-sm">
-          {portal.account.groups.map(group => <li key={group.id} className="flex justify-between gap-2 py-2"><span>{group.name}</span><b>{currency.format(group.due)}</b></li>)}
+          {portal.account.groups.map((group, index) => <li key={`${group.id}:${index}`} className="flex justify-between gap-2 py-2"><span>{group.name}</span><b>{currency.format(group.due)}</b></li>)}
           {portal.account.lessons.map(lesson => <li key={lesson.sessionId} className="flex justify-between gap-2 py-2">
             <span>{lesson.groupName} · {lesson.sessionDate} · {lesson.attendanceCount} حاضر</span><b>{currency.format(lesson.teacherDue)}</b>
           </li>)}
@@ -114,7 +114,7 @@ export default function TeacherPortalPage({ params }: { params: { centerSlug: st
       {tab === 'schedule' && <section className="card-elevated rounded-2xl border border-border p-4">
         {portal.schedule.length ? <ul className="divide-y divide-border text-sm">{portal.schedule.map(session =>
           <li key={session.id} className="flex flex-wrap items-center justify-between gap-2 py-3">
-            <span className="flex items-center gap-2"><CalendarClock size={16} /> {session.groupName}</span>
+            <span className="flex items-center gap-2"><CalendarClock size={16} /> {session.groupName}{session.classroomName && ` · ${session.classroomName}`}</span>
             <span dir="ltr" className="text-muted-foreground">{session.date} · {session.start}–{session.end}</span>
           </li>)}</ul> : <p className="text-sm text-muted-foreground">مفيش حصص قادمة في الجدول.</p>}
       </section>}

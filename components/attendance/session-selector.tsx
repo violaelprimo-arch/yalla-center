@@ -78,7 +78,7 @@ export function SessionSelector({
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
             {sessions.map((s) => {
               const grp = groups.find((g) => g.id === s.groupId);
-              const teacher = teachers.find((t) => t.id === s.teacherId);
+              const teacherName = teachers.find(t => t.id === s.teacherId)?.fullName ?? grp?.teacherName;
               const room = classrooms.find((c) => c.id === s.classroomId);
               const isSelected = selectedSessionId === s.id;
               const isLive = receptionSessionState(s, clock) === 'current';
@@ -111,7 +111,7 @@ export function SessionSelector({
                   </div>
 
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-muted-foreground text-[11px]">
-                    {teacher && <span className="font-medium text-foreground/80">{teacher.fullName}</span>}
+                    {teacherName && <span className="font-medium text-foreground/80">{teacherName}</span>}
                     {room && (
                       <span className="flex items-center gap-1">
                         <MapPin className="w-3 h-3 text-brand-cyan-500" />

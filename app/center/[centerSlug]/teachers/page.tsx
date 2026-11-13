@@ -11,7 +11,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { getDataProvider } from '@/lib/dal/factory';
 import type { IDataProvider } from '@/lib/dal';
-import type { Group, PricingModel, TeacherRate, User, UserRole } from '@/lib/dal/types';
+import type { TeacherRate, User, UserRole } from '@/lib/dal/types';
 import { StaffLogin } from '@/components/layout/staff-login';
 import { readDemoTeacherProfiles, teacherApi, writeDemoTeacherProfile } from '@/lib/teachers/client';
 import {
@@ -39,14 +39,13 @@ export default function TeachersDirectoryPage() {
 }
 
 function TeachersDirectory() {
-  const { tenant, currentRole, masterData } = useTenant();
+  const { tenant, currentRole, masterData, groupData } = useTenant();
   const dal = useMemo(getDataProvider, []);
   const { auth, data: masterCatalog } = masterData;
   const demo = !auth.configured;
   const mayManageDemo = currentRole === 'PLATFORM_OWNER' || currentRole === 'CENTER_ADMIN';
   const [catalog, setCatalog] = useState<{
     users: User[];
-    groups: Group[];
     rates: TeacherRate[];
   }>();
   const [directory, setDirectory] = useState<{ token: string | null; data: DirectoryData }>();
@@ -63,13 +62,11 @@ function TeachersDirectory() {
     let active = true;
     Promise.all([
       dal.getUsers(tenant.id, { role: 'TEACHER' }),
-      dal.getGroups(tenant.id),
       dal.getTeacherRates(tenant.id),
-    ]).then(([users, groups, rates]) => {
+    ]).then(([users, rates]) => {
       if (active) {
         setCatalog({
           users: users.filter(user => user.tenantId === tenant.id),
-          groups,
           rates,
         });
       }
@@ -141,7 +138,7 @@ function TeachersDirectory() {
     setNotice('');
     setError('');
     try {
-      await persistTeacher(teacher.id, profile?.version ?? 0, teacherInputFrom(profile, teacher, catalog?.groups), undefined, true);
+      await persistTeacher(teacher.id, profile?.version ?? 0, teacherInputFrom(profile, teacher, groupData.groups), undefined, true);
       setNotice('تم حذف المعلم من القائمة وإيقاف دخوله إلى البوابة');
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'تعذّر حذف المعلم');
@@ -211,7 +208,7 @@ function TeachersDirectory() {
             <tbody className="divide-y divide-border">
               {!visibleTeachers.length && <tr><td colSpan={4} className="p-10 text-center text-muted-foreground">لا يوجد معلمون مطابقون للبحث</td></tr>}
               {visibleTeachers.map(({ teacher, profile }) => {
-                const groups = catalog.groups.filter(group => group.teacherId === teacher.id && group.isActive);
+                const groups = groupData.groups.filter(group => group.teacherId === teacher.id && group.isActive);
                 const subjectIds = new Set([...(profile?.subjectIds ?? []), ...groups.map(group => group.subjectId)]);
                 const subjects = masterCatalog.subjects.filter(subject => subjectIds.has(subject.id));
                 const rate = catalog.rates.find(item => item.teacherId === teacher.id && item.isActive);
@@ -269,7 +266,7 @@ function TeachersDirectory() {
         </section>}
 
         {editor && <TeacherEditor key={editor.id} editing={Boolean(editor.teacher)} demo={demo}
-          initial={teacherInputFrom(editor.profile, editor.teacher, catalog.groups)}
+          initial={teacherInputFrom(editor.profile, editor.teacher, groupData.groups)}
           originalAvatar={catalog.users.find(user => user.id === editor.id)?.avatarUrl} subjects={masterCatalog.subjects} stages={masterCatalog.stages} onClose={() => setEditor(undefined)}
           onSave={async (input, password) => {
             await persistTeacher(editor.id, editor.profile?.version ?? 0, input, password);
@@ -302,7 +299,7 @@ function TeacherRateModal({
   onSuccess: () => void;
   dal: IDataProvider;
 }) {
-  const [model, setModel] = useState<PricingModel>(currentRate.model || 'center');
+  const [model, setModel] = useState<TeacherRate['model']>(currentRate.model || 'center');
   const [fixedRate, setFixedRate] = useState<number>(currentRate.fixedRatePerStudent ?? 20);
   const [teacherPercentage, setTeacherPercentage] = useState<number>(currentRate.teacherPercentage ?? 70);
   const [isSubmitting, setIsSubmitting] = useState(false);

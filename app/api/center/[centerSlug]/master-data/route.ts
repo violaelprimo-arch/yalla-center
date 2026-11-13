@@ -9,6 +9,7 @@ import {
   verifyFirebaseIdToken,
 } from '@/lib/firebase/server';
 import { authorizeMasterData, listMasterData, saveMasterData } from '@/lib/firebase/master-data-service';
+import { loadGroupProvider } from '@/lib/firebase/group-service';
 
 export const dynamic = 'force-dynamic';
 
@@ -64,7 +65,9 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
     if (!parsed.success) {
       return reply({ success: false, error: parsed.error.issues[0]?.message || 'بيانات الطلب غير صالحة' }, 400);
     }
-    const { data, result } = await saveMasterData(context, parsed.data);
+    const dal = parsed.data.action.startsWith('delete')
+      ? await loadGroupProvider(context.store, context.tenant) : context.dal;
+    const { data, result } = await saveMasterData({ ...context, dal }, parsed.data);
     return reply({ success: true, data, ...result });
   } catch (error) {
     return errorResponse(error);

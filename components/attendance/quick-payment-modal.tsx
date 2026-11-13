@@ -9,14 +9,14 @@ interface QuickPaymentModalProps {
   isOpen: boolean;
   onClose: () => void;
   student: User | null;
-  onPaymentSuccess: (student: User, amount: number) => void;
+  onPayment: (amount: number, method: PaymentMethod, notes: string) => Promise<void>;
 }
 
 export function QuickPaymentModal({
   isOpen,
   onClose,
   student,
-  onPaymentSuccess,
+  onPayment,
 }: QuickPaymentModalProps) {
   const [amount, setAmount] = useState<string>(student ? String(student.balanceDue) : '');
   const [method, setMethod] = useState<PaymentMethod>('cash');
@@ -46,17 +46,10 @@ export function QuickPaymentModal({
     setErrorMessage(null);
 
     try {
-      // Simulate/execute fast payment registration
-      const newBalance = Math.max(0, student.balanceDue - numericAmount);
-      const updatedStudent: User = {
-        ...student,
-        balanceDue: newBalance,
-      };
-
-      onPaymentSuccess(updatedStudent, numericAmount);
+      await onPayment(numericAmount, method, notes.trim());
       onClose();
-    } catch {
-      setErrorMessage('تعذر تسجيل الدفعة المالية، يرجى المحاولة مرة أخرى.');
+    } catch (cause) {
+      setErrorMessage(cause instanceof Error ? cause.message : 'تعذّر تسجيل الدفعة المالية');
     } finally {
       setIsSubmitting(false);
     }
@@ -120,8 +113,8 @@ export function QuickPaymentModal({
             <div className="relative">
               <input
                 type="number"
-                step="0.5"
-                min="1"
+                step="0.01"
+                min="0.01"
                 max={student.balanceDue}
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}

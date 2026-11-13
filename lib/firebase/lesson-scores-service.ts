@@ -1,4 +1,5 @@
 import { getReceptionDataProvider } from '@/lib/dal/factory';
+import { loadGroupProvider } from './group-service';
 import type { IDataProvider } from '@/lib/dal';
 import type { Group, Session, Tenant, User, UserRole } from '@/lib/dal/types';
 import {
@@ -155,7 +156,7 @@ export async function assertSessionAndBranchAccess(params: {
   if (!session || session.tenantId !== params.actor.tenant.id) {
     throw new LessonScoreServiceError(404, 'SESSION_NOT_FOUND', 'الحصة غير موجودة في هذا السنتر');
   }
-  if (session.status === 'canceled') {
+  if (session.status === 'canceled' || session.status === 'postponed') {
     throw new LessonScoreServiceError(409, 'SESSION_CANCELED', 'لا يمكن رصد درجات لحصة ملغاة');
   }
   if (!params.allowClosedHistoricalSession && !receptionSessionState(session)) {
@@ -166,7 +167,9 @@ export async function assertSessionAndBranchAccess(params: {
     );
   }
 
-  const group = await dal.getGroupById(params.actor.tenant.id, session.groupId);
+  const originalGroup = await dal.getGroupById(params.actor.tenant.id, session.groupId);
+  const group = originalGroup && { ...originalGroup, branchId: session.branchId ?? originalGroup.branchId,
+    subjectId: session.subjectId ?? originalGroup.subjectId };
   if (!group || group.tenantId !== params.actor.tenant.id) {
     throw new LessonScoreServiceError(404, 'GROUP_NOT_FOUND', 'المجموعة المرتبطة بالحصة غير موجودة');
   }
@@ -205,6 +208,10 @@ export async function assertSessionAndBranchAccess(params: {
   const subject = subjects.find((s) => s.id === group.subjectId);
 
   return { session, group, subjectNameAr: subject?.nameAr };
+}
+
+async function providerForSession(actor: AuthorizedActorContext, sessionId: string, store: ILessonScoreStore) {
+  return sessionId.startsWith('lesson:') ? loadGroupProvider(store, actor.tenant) : getReceptionDataProvider();
 }
 
 async function resolveStudentEnrollmentInGroup(params: {
@@ -268,7 +275,7 @@ export async function getSessionExamsAndGrades(params: {
   grades: LessonGradeRecord[];
   audits: LessonGradeAuditEntry[];
 }> {
-  const dal = params.dal ?? getReceptionDataProvider();
+  const dal = params.dal ?? await providerForSession(params.actor, params.sessionId, params.store);
   const { session, group, subjectNameAr } = await assertSessionAndBranchAccess({
     actor: params.actor,
     sessionId: params.sessionId,
@@ -414,7 +421,7 @@ export async function saveExamTotalMarks(params: {
   store: ILessonScoreStore;
   dal?: IDataProvider;
 }): Promise<{ exam: LessonExamRecord }> {
-  const dal = params.dal ?? getReceptionDataProvider();
+  const dal = params.dal ?? await providerForSession(params.actor, params.sessionId, params.store);
   const { session, group, subjectNameAr } = await assertSessionAndBranchAccess({
     actor: params.actor,
     sessionId: params.sessionId,
@@ -613,7 +620,7 @@ export async function upsertLessonGrade(params: {
   store: ILessonScoreStore;
   dal?: IDataProvider;
 }): Promise<{ grade: LessonGradeRecord; exam: LessonExamRecord; audit: LessonGradeAuditEntry }> {
-  const dal = params.dal ?? getReceptionDataProvider();
+  const dal = params.dal ?? await providerForSession(params.actor, params.sessionId, params.store);
   const { session, group, subjectNameAr } = await assertSessionAndBranchAccess({
     actor: params.actor,
     sessionId: params.sessionId,
@@ -764,7 +771,7 @@ export async function deleteLessonGrade(params: {
   store: ILessonScoreStore;
   dal?: IDataProvider;
 }): Promise<{ deleted: boolean; gradeId: string }> {
-  const dal = params.dal ?? getReceptionDataProvider();
+  const dal = params.dal ?? await providerForSession(params.actor, params.sessionId, params.store);
   const { session, group } = await assertSessionAndBranchAccess({
     actor: params.actor,
     sessionId: params.sessionId,
@@ -851,7 +858,8 @@ export async function importReviewedLocalStorageGrades(params: {
   rejectedCount: number;
   results: LocalImportItemResult[];
 }> {
-  const dal = params.dal ?? getReceptionDataProvider();
+  const savedProvider = !params.dal && params.items.some(item => item.sessionId.startsWith('lesson:'))
+    ? await loadGroupProvider(params.store, params.actor.tenant) : undefined;
   const results: LocalImportItemResult[] = [];
   let importedCount = 0;
   let skippedCount = 0;
@@ -859,6 +867,7 @@ export async function importReviewedLocalStorageGrades(params: {
 
   for (const item of params.items) {
     try {
+      const dal = params.dal ?? (item.sessionId.startsWith('lesson:') ? savedProvider! : getReceptionDataProvider());
       const { session, group, subjectNameAr } = await assertSessionAndBranchAccess({
         actor: params.actor,
         sessionId: item.sessionId,

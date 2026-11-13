@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { getDataProvider, getReceptionDataProvider } from '@/lib/dal/factory';
+import { getDataProvider } from '@/lib/dal/factory';
+import { loadGroupProvider } from '@/lib/firebase/group-service';
 import { cairoClock } from '@/lib/attendance/reception';
 import {
   createServerFirestoreStore, extractBearerToken, FirebaseAuthError, FirestoreHttpError, verifyFirebaseIdToken,
@@ -67,7 +68,7 @@ export async function GET(req: NextRequest, { params }: Params) {
       if (!Number.isInteger(month) || month < 1 || month > 12 || !Number.isInteger(year) || year < 2000 || year > 2100) {
         throw new TeacherServiceError(400, 'اختر شهرًا وسنة صالحين');
       }
-      return reply({ portal: await readTeacherPortal({ ...context, dal: getReceptionDataProvider() }, teacher, month, year) });
+      return reply({ portal: await readTeacherPortal({ ...context, dal: await loadGroupProvider(context.store, context.tenant) }, teacher, month, year) });
     }
 
     await assertTeacherManager(context.store, token.uid, context.tenant.id, view === 'contracts');
@@ -91,7 +92,7 @@ export async function POST(req: NextRequest, { params }: Params) {
 
     if (input.action === 'extraSession') {
       const teacher = await getSignedInTeacher(context, token);
-      return reply({ request: await submitTeacherExtraSession(context, teacher, input.request) });
+      return reply({ request: await submitTeacherExtraSession({ ...context, dal: await loadGroupProvider(context.store, context.tenant) }, teacher, input.request) });
     }
     await assertTeacherManager(context.store, token.uid, context.tenant.id);
     if (input.action === 'archive') {

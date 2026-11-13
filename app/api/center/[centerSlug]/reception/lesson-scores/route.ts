@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
-  assertSessionAndBranchAccess,
   deleteLessonGrade,
   getSessionExamsAndGrades,
   mapServiceErrorToHttp,
@@ -142,12 +141,6 @@ export async function POST(
     }
 
     const { actor, store } = await authenticateRequest(request, centerSlug);
-    await assertSessionAndBranchAccess({
-      actor,
-      sessionId: body.sessionId,
-      allowClosedHistoricalSession: body.source === 'card',
-    });
-
     const result = await upsertLessonGrade({
       actor,
       sessionId: body.sessionId,

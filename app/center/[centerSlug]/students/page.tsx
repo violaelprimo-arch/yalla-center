@@ -37,7 +37,6 @@ import {
   Payment,
   StudentEnrollmentDetail,
   StudentAttendanceDetail,
-  PricingModel,
   DiscountType,
   EducationalStage,
   Subject,
@@ -47,6 +46,7 @@ import {
   StudentEnrollmentConflictCheckResult,
 } from '@/lib/timetable/conflict-detector';
 import { calculateDiscount } from '@/lib/finance/discounts';
+import { GROUP_PRICING_LABELS, slotSummary, studentGroupFee } from '@/lib/timetable/group-schedule';
 import { BrandLogo } from '@/components/brand/brand-logo';
 
 const DAYS_NAMES: Record<number, string> = {
@@ -77,13 +77,13 @@ function generateBarcodePattern(text: string) {
 }
 
 export default function StudentsDirectoryPage() {
-  const { tenant, masterData } = useTenant();
+  const { tenant, masterData, groupData } = useTenant();
   const { stages: masterStages, subjects: masterSubjects } = masterData.data;
   const dal = useMemo(() => getDataProvider(), []);
 
   // Data states
   const [students, setStudents] = useState<User[]>([]);
-  const [groups, setGroups] = useState<Group[]>([]);
+  const { groups } = groupData;
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -105,14 +105,12 @@ export default function StudentsDirectoryPage() {
   const loadData = useCallback(async () => {
     setIsLoading(true);
     try {
-      const [allUsers, allGroups, allEnrollments, allInvoices] = await Promise.all([
+      const [allUsers, allEnrollments, allInvoices] = await Promise.all([
         dal.getUsers(tenant.id, { role: 'STUDENT' }),
-        dal.getGroups(tenant.id),
         dal.getEnrollments(tenant.id),
         dal.getInvoices(tenant.id),
       ]);
       setStudents(allUsers);
-      setGroups(allGroups);
       setEnrollments(allEnrollments);
       setInvoices(allInvoices);
     } finally {
@@ -966,7 +964,6 @@ function GroupEnrollmentModal({
 }) {
   const [selectedSubjectId, setSelectedSubjectId] = useState<string>('all');
   const [selectedGroupId, setSelectedGroupId] = useState<string>(groups[0]?.id || '');
-  const [pricingModel, setPricingModel] = useState<PricingModel>('center');
   const [discountType, setDiscountType] = useState<DiscountType>('none');
   const [discountValue, setDiscountValue] = useState<number>(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -979,23 +976,17 @@ function GroupEnrollmentModal({
     return match.length > 0 ? match : subjects;
   }, [subjects, student.grade]);
 
-  // Filter groups by selected subject
-  const availableGroups = useMemo(() => {
-    if (selectedSubjectId === 'all') return groups;
-    return groups.filter((g) => g.subjectId === selectedSubjectId);
-  }, [groups, selectedSubjectId]);
+  const availableGroups = useMemo(() => groups.filter(group => group.isActive &&
+    (!group.gradeId || (!student.grade || group.gradeId === student.grade) &&
+      (!student.stage || group.stageId === student.stage)) &&
+    (selectedSubjectId === 'all' || group.subjectId === selectedSubjectId)),
+  [groups, selectedSubjectId, student.grade, student.stage]);
 
-  // Sync selected group when subject filter changes
+  const candidateGroup = availableGroups.find(group => group.id === selectedGroupId) ?? availableGroups[0];
   const handleSubjectChange = (subjectId: string) => {
     setSelectedSubjectId(subjectId);
-    const filtered = subjectId === 'all' ? groups : groups.filter((g) => g.subjectId === subjectId);
-    setSelectedGroupId(filtered[0]?.id || '');
+    setSelectedGroupId('');
   };
-
-  // Selected candidate group
-  const candidateGroup = useMemo(() => {
-    return availableGroups.find((g) => g.id === selectedGroupId) || null;
-  }, [availableGroups, selectedGroupId]);
 
   // Student's currently active enrolled groups
   const studentActiveGroups = useMemo(() => {
@@ -1025,7 +1016,7 @@ function GroupEnrollmentModal({
   // Live Pricing Calculation
   const pricePreview = useMemo(() => {
     if (!candidateGroup) return { base: 0, discount: 0, net: 0 };
-    const base = candidateGroup.monthlyFee || candidateGroup.sessionFee || 0;
+    const base = studentGroupFee(candidateGroup);
     const calc = calculateDiscount({
       basePrice: base,
       discountType,
@@ -1052,7 +1043,7 @@ function GroupEnrollmentModal({
         tenantId,
         studentId: student.id,
         groupId: candidateGroup.id,
-        pricingModel,
+        pricingModel: candidateGroup.pricingModel,
         discountType,
         discountValue,
       });
@@ -1124,13 +1115,13 @@ function GroupEnrollmentModal({
             <div>
               <label className="block text-xs font-semibold mb-1 text-foreground">اختيار المجموعة الدراسية *</label>
               <select
-                value={selectedGroupId}
+                value={candidateGroup?.id ?? ''}
                 onChange={(e) => setSelectedGroupId(e.target.value)}
                 className="w-full px-3 py-2 text-xs bg-background border border-border rounded-xl focus:ring-2 focus:ring-brand-cyan-500 focus:outline-none"
               >
                 {availableGroups.map((g) => (
                   <option key={g.id} value={g.id}>
-                    {g.nameAr} | يوم ({DAYS_NAMES[g.scheduleDay]}) من {g.startTime} إلى {g.endTime}
+                    {g.nameAr} · {slotSummary(g)}
                   </option>
                 ))}
               </select>
@@ -1143,7 +1134,7 @@ function GroupEnrollmentModal({
               <div className="flex justify-between items-center">
                 <span className="text-muted-foreground">الموعد المحدد:</span>
                 <span className="font-bold text-foreground">
-                  يوم ({DAYS_NAMES[candidateGroup.scheduleDay]}) من {candidateGroup.startTime} إلى {candidateGroup.endTime}
+                  {slotSummary(candidateGroup)}
                 </span>
               </div>
               <div className="flex justify-between items-center">
@@ -1209,15 +1200,10 @@ function GroupEnrollmentModal({
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-semibold mb-1 text-foreground">نموذج التسعير</label>
-                <select
-                  value={pricingModel}
-                  onChange={(e) => setPricingModel(e.target.value as PricingModel)}
-                  className="w-full px-3 py-2 text-xs bg-background border border-border rounded-xl focus:ring-2 focus:ring-brand-cyan-500 focus:outline-none"
-                >
-                  <option value="center">نظام السنتر (اشتراك شهري)</option>
-                  <option value="private">نظام البرايفت (حصة خاصة / نسبة)</option>
-                </select>
+                <span className="block text-xs font-semibold mb-1 text-foreground">طريقة حساب المجموعة</span>
+                <p className="rounded-xl border border-border bg-muted/30 px-3 py-2 text-xs">
+                  {candidateGroup ? GROUP_PRICING_LABELS[candidateGroup.pricingModel] : 'اختر مجموعة'}
+                </p>
               </div>
 
               <div>
@@ -1266,7 +1252,7 @@ function GroupEnrollmentModal({
             <div className="p-3 bg-brand-cyan-500/5 border border-brand-cyan-500/20 rounded-xl text-xs space-y-1">
               <div className="flex justify-between items-center text-muted-foreground">
                 <span>المصروفات الشهرية المقررة:</span>
-                <span>{pricePreview.base} ج.م</span>
+                <span>{pricePreview.base} ج.م{candidateGroup?.pricingModel === 'per_session' ? ' / حصة' : ' / شهر'}</span>
               </div>
               <div className="flex justify-between items-center text-rose-500">
                 <span>قيمة الخصم المعتمد:</span>
@@ -1470,7 +1456,7 @@ function StudentDetailDrawer({
                       </p>
                       <div className="flex items-center gap-2 pt-1 text-xs">
                         <Badge variant="cyan">
-                          {enr.pricingModel === 'center' ? 'نظام السنتر' : 'نظام البرايفت'}
+                          {GROUP_PRICING_LABELS[enr.group?.pricingModel ?? enr.pricingModel]}
                         </Badge>
                         {enr.discountType !== 'none' && (
                           <Badge variant="outline" className="bg-purple-500/10 text-purple-600 border-purple-500/20">
@@ -1483,8 +1469,7 @@ function StudentDetailDrawer({
                           </Badge>
                         )}
                         <span className="text-muted-foreground text-[11px]">
-                          الموعد: يوم ({DAYS_NAMES[enr.group?.scheduleDay || 0]}) من {enr.group?.startTime} إلى{' '}
-                          {enr.group?.endTime}
+                          الموعد · {enr.group ? slotSummary(enr.group) : '—'}
                         </span>
                       </div>
                     </div>

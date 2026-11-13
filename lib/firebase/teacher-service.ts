@@ -240,7 +240,7 @@ export async function readTeacherPortal(context: TeacherServiceContext, teacher:
   const groups = seeSchedule || seeStudents || requestExtra ? await dal.getGroups(tenant.id) : [];
   const ownGroups = groups.filter(group => group.teacherId === teacher.id && group.isActive);
 
-  const [schedule, roster, statement] = await Promise.all([
+  const [schedule, roster, statement, rooms] = await Promise.all([
     seeSchedule ? dal.getSessions(tenant.id) : [],
     seeStudents ? Promise.all([
       dal.getEnrollments(tenant.id),
@@ -249,6 +249,7 @@ export async function readTeacherPortal(context: TeacherServiceContext, teacher:
     canUseTeacherTab(teacher, 'account') ? dal.calculateMonthlyTeacherPayroll({
       tenantId: tenant.id, teacherId: teacher.id, month, year, teacherProfile: teacher, persistDraft: false,
     }) : null,
+    seeSchedule ? dal.getClassrooms(tenant.id) : [],
   ]);
   const allowedStudents = new Set(roster?.[0].filter(enrollment => enrollment.isActive &&
     ownGroups.some(group => group.id === enrollment.groupId)).map(enrollment => enrollment.studentId));
@@ -261,9 +262,10 @@ export async function readTeacherPortal(context: TeacherServiceContext, teacher:
       tabs: teacher.tabs,
     },
     schedule: schedule.filter(session => session.status !== 'canceled' && session.status !== 'postponed' &&
-      session.sessionDate >= today).map(session => ({
+      (session.sessionDate > today || session.sessionDate === today && session.endTime >= cairoClock().slice(11))).map(session => ({
       id: session.id, date: session.sessionDate, start: session.startTime, end: session.endTime,
       groupName: groups.find(group => group.id === session.groupId)?.nameAr ?? 'حصة',
+      classroomName: rooms.find(room => room.id === session.classroomId)?.nameAr,
     })).sort((a, b) => (a.date + a.start).localeCompare(b.date + b.start)),
     students: roster?.[1].filter(student => allowedStudents.has(student.id) && student.isActive).map(student => ({
       id: student.id,

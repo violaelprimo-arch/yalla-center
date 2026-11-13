@@ -63,11 +63,12 @@ import { BrandLogo } from '@/components/brand/brand-logo';
 import { useTeacherContracts } from '@/lib/teachers/client';
 import { TEACHER_MODELS } from '@/lib/teachers/profile';
 import { cairoClock } from '@/lib/attendance/reception';
+import { GROUP_PRICING_LABELS, studentGroupFee } from '@/lib/timetable/group-schedule';
 
 type TabKey = 'shifts' | 'invoices' | 'payments' | 'payroll' | 'expenses';
 
 export default function FinancePage() {
-  const { tenant, branches, currentUser, currentRole, masterData } = useTenant();
+  const { tenant, branches, currentUser, currentRole, masterData, groupData } = useTenant();
   const { auth, data: { subjects } } = masterData;
   const dal = useMemo(() => getDataProvider(), []);
 
@@ -88,7 +89,7 @@ export default function FinancePage() {
   const [books, setBooks] = useState<BookInventoryItem[]>([]);
   const [students, setStudents] = useState<User[]>([]);
   const [teachers, setTeachers] = useState<User[]>([]);
-  const [groups, setGroups] = useState<Group[]>([]);
+  const { groups } = groupData;
   const [isLoading, setIsLoading] = useState(true);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -143,7 +144,6 @@ export default function FinancePage() {
         fetchedBooks,
         fetchedStudents,
         fetchedTeachers,
-        fetchedGroups,
       ] = await Promise.all([
         dal.getInvoices(tenant.id),
         dal.getPayments(tenant.id),
@@ -154,7 +154,6 @@ export default function FinancePage() {
         dal.getBooksInventory(tenant.id),
         dal.getUsers(tenant.id, { role: 'STUDENT' }),
         dal.getUsers(tenant.id, { role: 'TEACHER' }),
-        dal.getGroups(tenant.id),
       ]);
 
       setInvoices(fetchedInvoices);
@@ -166,7 +165,6 @@ export default function FinancePage() {
       setBooks(fetchedBooks);
       setStudents(fetchedStudents);
       setTeachers(fetchedTeachers);
-      setGroups(fetchedGroups);
     } catch (err: any) {
       console.error('Failed to load finance data:', err);
       setActionError(err?.message || 'تعذر تحميل البيانات المالية');
@@ -2257,32 +2255,24 @@ function CreateInvoiceModal({
   onSuccess: (invoice: Invoice) => void;
 }) {
   const [studentId, setStudentId] = useState(students[0]?.id || '');
-  const [groupId, setGroupId] = useState(groups[0]?.id || '');
-  const [billingMonth, setBillingMonth] = useState(10);
-  const [billingYear, setBillingYear] = useState(2026);
+  const monthlyGroups = groups.filter(group => group.isActive && group.pricingModel !== 'per_session');
+  const [groupId, setGroupId] = useState(monthlyGroups[0]?.id || '');
+  const selectedGroup = monthlyGroups.find(group => group.id === groupId);
+  const [billingMonth, setBillingMonth] = useState(() => Number(cairoClock().slice(5, 7)));
+  const [billingYear, setBillingYear] = useState(() => Number(cairoClock().slice(0, 4)));
   const [grossPrice, setGrossPrice] = useState(300);
   const [discountType, setDiscountType] = useState<DiscountType>('none');
   const [discountValue, setDiscountValue] = useState(0);
-  const [dueDate, setDueDate] = useState('2026-10-31');
+  const [dueDate, setDueDate] = useState(() => cairoClock().slice(0, 10));
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Auto-fill price when group changes
   useEffect(() => {
-    const selectedGroup = groups.find((g) => g.id === groupId);
-    if (selectedGroup) {
-      setGrossPrice(selectedGroup.monthlyFee || selectedGroup.sessionFee || 300);
-    }
-  }, [groupId, groups]);
+    if (selectedGroup) setGrossPrice(studentGroupFee(selectedGroup));
+  }, [selectedGroup]);
 
-  // Live discount calculation
-  const discountCalc = useMemo(() => {
-    return calculateDiscount({
-      basePrice: grossPrice,
-      discountType,
-      discountValue,
-    });
-  }, [grossPrice, discountType, discountValue]);
+  const basePrice = selectedGroup?.pricing ? studentGroupFee(selectedGroup) : grossPrice;
+  const discountCalc = calculateDiscount({ basePrice, discountType, discountValue });
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -2297,7 +2287,7 @@ function CreateInvoiceModal({
         tenantId,
         studentId,
         groupId: groupId || undefined,
-        totalAmount: grossPrice,
+        totalAmount: basePrice,
         discountType,
         discountValue,
         billingMonth,
@@ -2355,9 +2345,10 @@ function CreateInvoiceModal({
                 onChange={(e) => setGroupId(e.target.value)}
                 className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs focus:ring-1 focus:ring-brand-cyan-500 outline-none"
               >
-                {groups.map((g) => (
+                <option value="">بدون مجموعة</option>
+                {monthlyGroups.map((g) => (
                   <option key={g.id} value={g.id}>
-                    {g.nameAr} ({g.monthlyFee} ج.م)
+                    {g.nameAr} ({studentGroupFee(g)} ج.م)
                   </option>
                 ))}
               </select>
@@ -2404,8 +2395,9 @@ function CreateInvoiceModal({
               <input
                 type="number"
                 min="0"
-                step="1"
-                value={grossPrice}
+                step="0.01"
+                readOnly={Boolean(selectedGroup?.pricing)}
+                value={basePrice}
                 onChange={(e) => setGrossPrice(Number(e.target.value))}
                 className="w-full bg-background border border-border rounded-xl p-2 text-xs font-black"
               />
@@ -2904,7 +2896,7 @@ function TeacherStatementModal({
                   </thead>
                   <tbody>
                     {statement.centerSubscription.groups.map((g) => (
-                      <tr key={g.groupId} className="hover:bg-muted/20">
+                      <tr key={`${g.groupId}:${g.ratePerStudent}`} className="hover:bg-muted/20">
                         <td className="p-2 border border-border font-bold">{g.groupName}</td>
                         <td className="p-2 border border-border font-mono">{g.ratePerStudent.toFixed(2)} ج.م</td>
                         <td className="p-2 border border-border font-mono">{g.conductedSessionsCount}</td>
@@ -2930,7 +2922,7 @@ function TeacherStatementModal({
                   </tr></thead>
                   <tbody>{statement.lessonCompensation.sessions.map(lesson => <tr key={lesson.sessionId}>
                     <td className="border border-border p-2">{lesson.groupName}<br />{lesson.sessionDate}</td>
-                    <td className="border border-border p-2">{TEACHER_MODELS[lesson.model]} · {lesson.rate.toFixed(2)} ج.م</td>
+                    <td className="border border-border p-2">{lesson.model === 'per_session' ? GROUP_PRICING_LABELS.per_session : TEACHER_MODELS[lesson.model]} · {lesson.rate.toFixed(2)} ج.م</td>
                     <td className="border border-border p-2">{lesson.attendanceCount}</td>
                     <td className="border border-border p-2">{lesson.revenue.toFixed(2)} ج.م</td>
                     <td className="border border-border p-2 font-bold">{lesson.teacherDue.toFixed(2)} ج.م</td>
@@ -2961,7 +2953,7 @@ function TeacherStatementModal({
                   </thead>
                   <tbody>
                     {statement.privateLessons.groups.map((g) => (
-                      <tr key={g.groupId} className="hover:bg-muted/20">
+                      <tr key={`${g.groupId}:${g.teacherPercentage}`} className="hover:bg-muted/20">
                         <td className="p-2 border border-border font-bold">{g.groupName}</td>
                         <td className="p-2 border border-border font-mono">{g.enrolledCount}</td>
                         <td className="p-2 border border-border font-mono">{g.totalGrossInvoiced.toFixed(2)}</td>

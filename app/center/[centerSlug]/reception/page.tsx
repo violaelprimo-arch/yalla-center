@@ -13,9 +13,8 @@ import { Button } from '@/components/ui/button';
 import { getReceptionDataProvider as getDataProvider } from '@/lib/dal/factory';
 import {
   Session,
-  Group,
-  Classroom,
   User,
+  PaymentMethod,
   Attendance,
   SessionAttendanceStats,
 } from '@/lib/dal/types';
@@ -44,18 +43,18 @@ import { useReceptionLessonScores } from '@/lib/attendance/use-lesson-scores';
 import { useTeacherContracts } from '@/lib/teachers/client';
 import { matchTeacherContract, TEACHER_MODELS } from '@/lib/teachers/profile';
 import { calculateTeacherSessionPay, countTeacherSessionAttendance } from '@/lib/teachers/session-compensation';
+import { GROUP_PRICING_LABELS } from '@/lib/timetable/group-schedule';
 
 const currency = new Intl.NumberFormat('ar-EG', { style: 'currency', currency: 'EGP' });
 
 export default function ReceptionScanPage() {
-  const { tenant, currentRole, branches, masterData } = useTenant();
+  const { tenant, currentRole, currentUser, branches, masterData, groupData } = useTenant();
   const { subjects } = masterData.data;
 
   // Master Data State
-  const [classrooms, setClassrooms] = useState<Classroom[]>([]);
   const [teachers, setTeachers] = useState<User[]>([]);
   const [allUsers, setAllUsers] = useState<User[]>([]);
-  const [groups, setGroups] = useState<Group[]>([]);
+  const { groups, classrooms } = groupData;
   const [sessions, setSessions] = useState<Session[]>([]);
   const [enrolledStudents, setEnrolledStudents] = useState<User[]>([]);
 
@@ -65,15 +64,19 @@ export default function ReceptionScanPage() {
   const [entryMode, setEntryMode] = useState<ReceptionEntryMode>('attendance');
   const [incomingGradeScan, setIncomingGradeScan] = useState<{ code: string; seq: number } | null>(null);
   const [clock, setClock] = useState(cairoClock);
-  const visibleSessions = useMemo(() => sessions.filter(session =>
-    receptionSessionState(session, clock) && (selectedBranchId === 'ALL' ||
-      groups.some(group => group.id === session.groupId && group.branchId === selectedBranchId)))
-    .sort((a, b) => sessionStart(a).localeCompare(sessionStart(b))), [sessions, groups, selectedBranchId, clock]);
   const cairoDate = clock.slice(0, 10);
-  const selectedSession = visibleSessions.find(session => session.id === selectedSessionId) ??
-    (selectedSessionId === null ? visibleSessions[0] : undefined);
+  const visibleSessions = useMemo(() => sessions.flatMap(session => {
+    const state = receptionSessionState(session, clock);
+    const group = groups.find(item => item.id === session.groupId);
+    if (!state || !group || (selectedBranchId !== 'ALL' && (session.branchId ?? group.branchId) !== selectedBranchId)) return [];
+    return [{ session, state }];
+  }).sort((a, b) => Number(b.state === 'current') - Number(a.state === 'current') ||
+    Number(a.session.id.startsWith('reception-demo-')) - Number(b.session.id.startsWith('reception-demo-')) ||
+    sessionStart(a.session).localeCompare(sessionStart(b.session))).map(item => item.session),
+  [sessions, groups, selectedBranchId, clock]);
+  const selectedSession = visibleSessions.find(session => session.id === selectedSessionId) ?? visibleSessions[0];
   const selectedGroup = groups.find(group => group.id === selectedSession?.groupId);
-  const selectedSubjectName = subjects.find((s) => s.id === selectedGroup?.subjectId)?.nameAr;
+  const selectedSubjectName = subjects.find((s) => s.id === (selectedSession?.subjectId ?? selectedGroup?.subjectId))?.nameAr;
   const canRecordAttendance = ['CENTER_ADMIN', 'BRANCH_MANAGER', 'RECEPTIONIST'].includes(currentRole);
   const canEditScores = ['CENTER_ADMIN', 'BRANCH_MANAGER', 'RECEPTIONIST', 'TEACHER'].includes(currentRole);
 
@@ -125,18 +128,14 @@ export default function ReceptionScanPage() {
   const loadTenantData = useCallback(async () => {
     const dal = getDataProvider();
     try {
-      const [cls, grps, sess, users] = await Promise.all([
-        dal.getClassrooms(tenant.id),
-        dal.getGroups(tenant.id),
+      const [sess, users] = await Promise.all([
         dal.getSessions(tenant.id),
         dal.getUsers(tenant.id),
       ]);
 
-      setClassrooms(cls);
-      setGroups(grps);
       setSessions(sess);
       setAllUsers(users);
-      setTeachers(users.filter((u) => u.role === 'TEACHER'));
+      setTeachers(users.filter(user => user.role === 'TEACHER').map(user => ({ ...user })));
 
     } catch {
       // transient load error
@@ -144,8 +143,8 @@ export default function ReceptionScanPage() {
   }, [tenant.id]);
 
   useEffect(() => {
-    void loadTenantData();
-  }, [loadTenantData, cairoDate]);
+    if (groupData.ready) void loadTenantData();
+  }, [loadTenantData, cairoDate, groups, groupData.ready]);
 
   // Load Session-Specific Data (Attendance & Enrolled Students)
   const refreshSessionData = useCallback(async () => {
@@ -304,12 +303,17 @@ export default function ReceptionScanPage() {
     setIsPaymentModalOpen(true);
   };
 
-  const handlePaymentSuccess = (updatedStudent: User, paidAmount: number) => {
+  const handlePayment = async (amount: number, method: PaymentMethod, notes: string) => {
+    if (!paymentStudent || !canRecordAttendance) throw new Error('تعذّر تسجيل السداد');
+    const updatedStudent = await getDataProvider().collectStudentPayment({
+      tenantId: tenant.id, studentId: paymentStudent.id, sessionId: selectedSession?.id, amountPaid: amount,
+      paymentMethod: method, cashierUserId: currentUser.id, notes,
+    });
     // Update local HUD to success
     setHudData((prev) => ({
       ...prev,
       state: 'success',
-      student: updatedStudent,
+      student: { ...updatedStudent },
       balanceAlert: {
         hasBalance: updatedStudent.balanceDue > 0,
         balanceDue: updatedStudent.balanceDue,
@@ -325,19 +329,20 @@ export default function ReceptionScanPage() {
       prev.map((s) => (s.id === updatedStudent.id ? updatedStudent : s))
     );
 
-    // Refresh stats
-    refreshSessionData();
+    await refreshSessionData();
   };
 
   // Find classroom capacity
-  const contract = selectedSession && matchTeacherContract(
+  const contract = selectedSession && !selectedSession.pricing && matchTeacherContract(
     teacherContracts.find(profile => profile.id === selectedSession.teacherId)?.contracts ?? [],
     subjects.find(subject => subject.id === selectedGroup?.subjectId),
   );
   const liveAttendance = selectedSession ? countTeacherSessionAttendance(sessionAttendance, selectedSession) : 0;
   const sessionRevenue = Math.round(liveAttendance * (selectedGroup?.sessionFee ?? 0) * 100) / 100;
-  const sessionPay = contract && contract.model !== 'private' && selectedSession && sessionStats?.sessionId === selectedSession.id &&
-    receptionSessionState(selectedSession, clock) === 'current'
+  const liveSession = selectedSession && sessionStats?.sessionId === selectedSession.id &&
+    receptionSessionState(selectedSession, clock) === 'current';
+  const fixedSessionSplit = liveSession ? sessionStats?.fixedSessionSplit : undefined;
+  const sessionPay = liveSession && contract && contract.model !== 'private'
     ? calculateTeacherSessionPay(contract, selectedSession, liveAttendance, sessionRevenue, true) : undefined;
 
   const activeClassroom = useMemo(() => {
@@ -476,17 +481,23 @@ export default function ReceptionScanPage() {
         {/* Live Circular Attendance Stats (5 cols) */}
         <div className="space-y-4 lg:col-span-5">
           <LiveStatsRing stats={selectedSession ? sessionStats : null} capacity={activeClassroom?.capacity} />
-          {sessionPay && contract && <section className="card-elevated rounded-2xl border border-border p-4">
+          {liveSession && selectedSession.pricing && selectedSession.pricing.model !== 'per_session' &&
+            <p className="text-xs text-muted-foreground">{GROUP_PRICING_LABELS[selectedSession.pricing.model]} · التسوية في كشف الشهر</p>}
+          {(fixedSessionSplit || (sessionPay && contract)) && <section className="card-elevated rounded-2xl border border-border p-4">
             <h2 className="text-sm font-bold">حساب المعلم في الحصة</h2>
             <p className="mt-1 text-xs text-muted-foreground">
-              {contract.model === 'per_attendee' ? `${liveAttendance} حاضر × ${currency.format(contract.value)}` : TEACHER_MODELS[contract.model]}
+              {fixedSessionSplit ? GROUP_PRICING_LABELS.per_session : contract &&
+                (contract.model === 'per_attendee' ? `${liveAttendance} حاضر × ${currency.format(contract.value)}` : TEACHER_MODELS[contract.model])}
             </p>
             <dl className="mt-3 grid grid-cols-3 gap-2 text-xs">
-              <div><dt className="text-muted-foreground">إجمالي رسوم الحصة</dt><dd className="font-bold">{currency.format(sessionRevenue)}</dd></div>
-              <div><dt className="text-muted-foreground">مستحق المعلم</dt><dd className="font-bold">{currency.format(sessionPay.teacherDue)}</dd></div>
-              <div><dt className="text-muted-foreground">صافي السنتر</dt><dd className="font-bold">{currency.format(sessionPay.centerNet)}</dd></div>
+              <div><dt className="text-muted-foreground">إجمالي رسوم الحصة</dt><dd className="font-bold">{currency.format(fixedSessionSplit?.revenue ?? sessionRevenue)}</dd></div>
+              <div><dt className="text-muted-foreground">مستحق المعلم</dt><dd className="font-bold">{currency.format(fixedSessionSplit?.teacherDue ?? sessionPay?.teacherDue ?? 0)}</dd></div>
+              <div><dt className="text-muted-foreground">صافي السنتر</dt><dd className="font-bold">{currency.format(fixedSessionSplit?.centerNet ?? sessionPay?.centerNet ?? 0)}</dd></div>
             </dl>
-            <p className="mt-2 text-xs text-muted-foreground">تقدير حسب الحضور ورسوم الحصة المسجلة للمجموعة.</p>
+            <p className="mt-2 text-xs text-muted-foreground">
+              {fixedSessionSplit ? `المحصّل من فواتير الحصة ${currency.format(fixedSessionSplit.collected)}`
+                : 'تقدير حسب الحضور ورسوم الحصة المسجلة للمجموعة.'}
+            </p>
           </section>}
         </div>
       </div>
@@ -571,7 +582,7 @@ export default function ReceptionScanPage() {
           setPaymentStudent(null);
         }}
         student={paymentStudent}
-        onPaymentSuccess={handlePaymentSuccess}
+        onPayment={handlePayment}
       />
     </div>
   );
