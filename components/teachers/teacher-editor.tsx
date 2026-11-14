@@ -1,8 +1,9 @@
 'use client';
 
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { Camera, Plus, Trash2, UserRound, X } from 'lucide-react';
+import { Camera, Plus, Trash2, UserRound, X, FileSpreadsheet, User, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { TeacherAccountingView } from '@/components/teachers/teacher-accounting-view';
 import { EGYPTIAN_STAGES, getGradeNameArabic } from '@/lib/materials/taxonomy';
 import type { Subject, EducationalStage } from '@/lib/dal/types';
 import {
@@ -14,6 +15,9 @@ import {
 interface Props {
   initial: TeacherInput;
   editing: boolean;
+  teacherId?: string;
+  tenantId?: string;
+  tenantSlug?: string;
   originalAvatar?: string;
   demo: boolean;
   subjects: Subject[];
@@ -47,7 +51,7 @@ async function thumbnail(file: File) {
   }
 }
 
-export function TeacherEditor({ initial, editing, originalAvatar, demo, subjects, stages, onSave, onClose }: Props) {
+export function TeacherEditor({ initial, editing, teacherId, tenantId, tenantSlug, originalAvatar, demo, subjects, stages, onSave, onClose }: Props) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [step, setStep] = useState(1);
   const [input, setInput] = useState(initial);
@@ -129,18 +133,58 @@ export function TeacherEditor({ initial, editing, originalAvatar, demo, subjects
   return (
     <dialog ref={dialog} dir="rtl" aria-labelledby="teacher-editor-title"
       onCancel={event => { event.preventDefault(); if (!saving) onClose(); }}
-      className="m-auto max-h-[92dvh] w-[min(94vw,760px)] overflow-hidden rounded-3xl border border-border bg-card text-foreground shadow-2xl backdrop:bg-black/60">
-      <form onSubmit={submit} noValidate className="flex max-h-[92dvh] flex-col">
+      className={`m-auto max-h-[94dvh] overflow-hidden rounded-3xl border border-border bg-card text-foreground shadow-2xl backdrop:bg-black/60 transition-all ${
+        step === 3 ? 'w-[min(96vw,1020px)]' : 'w-[min(94vw,760px)]'
+      }`}>
+      <form onSubmit={submit} noValidate className="flex max-h-[94dvh] flex-col">
         <header className="flex items-start justify-between gap-4 border-b border-border px-5 py-4">
           <div>
-            <h2 id="teacher-editor-title" className="text-lg font-black">{editing ? 'تعديل بيانات المعلم' : 'إضافة معلم جديد'}</h2>
-            <p className="mt-1 text-sm text-muted-foreground">{step === 1 ? '١ من ٢ · بيانات المعلم والتعاقد' : '٢ من ٢ · صلاحيات المعلم والتبويبات'}</p>
+            <h2 id="teacher-editor-title" className="text-lg font-black">{editing ? 'الملف الشخصي والمالي للمعلم' : 'إضافة معلم جديد'}</h2>
+            <div className="flex flex-wrap items-center gap-1.5 mt-2">
+              <button
+                type="button"
+                onClick={() => setStep(1)}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                  step === 1 ? 'bg-brand-cyan-500/20 text-brand-cyan-600 border border-brand-cyan-500/30' : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+                }`}
+              >
+                ١. البيانات والتعاقد
+              </button>
+              <button
+                type="button"
+                onClick={() => setStep(2)}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                  step === 2 ? 'bg-brand-cyan-500/20 text-brand-cyan-600 border border-brand-cyan-500/30' : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+                }`}
+              >
+                ٢. الصلاحيات والدخول
+              </button>
+              {editing && teacherId && tenantId && tenantSlug && (
+                <button
+                  type="button"
+                  onClick={() => setStep(3)}
+                  className={`flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                    step === 3 ? 'bg-brand-cyan-500/20 text-brand-cyan-600 border border-brand-cyan-500/30' : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+                  }`}
+                >
+                  <FileSpreadsheet size={13} />
+                  <span>٣. الحسابات والمستحقات</span>
+                </button>
+              )}
+            </div>
           </div>
           <Button type="button" variant="ghost" size="icon" aria-label="إغلاق" onClick={onClose} disabled={saving}><X size={18} /></Button>
         </header>
         <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-5">
           {error && <p role="alert" className="rounded-xl border border-red-500/25 bg-red-500/10 p-3 text-sm text-red-700 dark:text-red-300">{error}</p>}
-          {step === 1 ? <>
+          {step === 3 && teacherId && tenantId && tenantSlug ? (
+            <TeacherAccountingView
+              tenantId={tenantId}
+              tenantSlug={tenantSlug}
+              initialTeacherId={teacherId}
+              isModal={true}
+            />
+          ) : step === 1 ? <>
             <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-4">
               <div className="grid gap-3 sm:grid-cols-2">
                 <label className="sm:col-span-2 text-sm font-semibold">اسم المعلم <span aria-hidden="true">*</span>
@@ -267,10 +311,23 @@ export function TeacherEditor({ initial, editing, originalAvatar, demo, subjects
           </>}
         </div>
         <footer className="flex items-center justify-between gap-3 border-t border-border p-4">
-          <Button type="button" variant="outline" disabled={saving} onClick={step === 2 ? () => { setError(''); setStep(1); } : onClose}>
-            {step === 2 ? 'السابق' : 'إلغاء'}
-          </Button>
-          <Button type="submit" disabled={saving || processingPhoto}>{step === 1 ? 'التالي' : saving ? 'جارٍ الحفظ…' : 'حفظ المعلم'}</Button>
+          {step === 3 ? (
+            <>
+              <Button type="button" variant="outline" onClick={() => setStep(1)}>
+                العودة للبيانات
+              </Button>
+              <Button type="button" onClick={onClose}>
+                إغلاق
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button type="button" variant="outline" disabled={saving} onClick={step === 2 ? () => { setError(''); setStep(1); } : onClose}>
+                {step === 2 ? 'السابق' : 'إلغاء'}
+              </Button>
+              <Button type="submit" disabled={saving || processingPhoto}>{step === 1 ? 'التالي' : saving ? 'جارٍ الحفظ…' : 'حفظ المعلم'}</Button>
+            </>
+          )}
         </footer>
       </form>
     </dialog>

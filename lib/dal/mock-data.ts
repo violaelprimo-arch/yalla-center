@@ -2396,9 +2396,13 @@ export class MockDataProvider implements IDataProvider {
           teacherDue = Math.round(attendanceCount * 40 * 100) / 100;
           centerNet = Math.round((revenue - teacherDue) * 100) / 100;
         }
+        const room = this.classrooms.find(c => c.id === session.classroomId);
         lessonRows.push({
           sessionId: session.id,
           sessionDate: session.sessionDate,
+          startTime: session.startTime,
+          endTime: session.endTime,
+          classroomName: room?.nameAr,
           groupName: group.nameAr,
           attendanceCount,
           revenue,
@@ -2416,21 +2420,38 @@ export class MockDataProvider implements IDataProvider {
     } : undefined;
 
     // Legacy contracts retain their calculation until replaced for that grade.
-    const centerGroups = teacherGroups.filter(g =>
-      !contractsByGroup.get(g.id) &&
-      (g.pricingModel === 'center' || g.pricingModel === 'average_monthly' || (!g.pricingModel && g.pricingModel !== 'private' && g.pricingModel !== 'private_percentage' && g.pricingModel !== 'per_session_fixed' && g.pricingModel !== 'fixed_session'))
-    );
+    const centerGroups = teacherGroups.filter(g => {
+      const contract = contractsByGroup.get(g.id);
+      if (contract) {
+        return contract.model === 'average_monthly';
+      }
+      return (
+        g.pricingModel === 'center' ||
+        g.pricingModel === 'average_monthly' ||
+        (!g.pricingModel &&
+          g.pricingModel !== 'private' &&
+          g.pricingModel !== 'private_percentage' &&
+          g.pricingModel !== 'per_session_fixed' &&
+          g.pricingModel !== 'fixed_session')
+      );
+    });
     let totalCenterCompensation = 0;
     const centerGroupStatements = centerGroups.map((group) => {
+      const contract = contractsByGroup.get(group.id);
       const rateObj = this.teacherRates.find((r) => r.teacherId === params.teacherId && r.model === 'center');
-      const rate = group.teacherRatePerStudent ?? rateObj?.fixedRatePerStudent ?? 20.0;
+      const rate = (contract?.model === 'average_monthly' ? contract.value : undefined) ?? group.teacherRatePerStudent ?? rateObj?.fixedRatePerStudent ?? 20.0;
 
       const groupSessions = this.sessions.filter(
-        (s) => s.groupId === group.id && s.tenantId === params.tenantId
+        (s) => s.groupId === group.id && s.tenantId === params.tenantId &&
+        (!s.sessionDate || s.sessionDate.startsWith(monthKey + '-'))
       );
 
       const sessionRecords = groupSessions.map((s) => {
-        const attCount = this.attendance.filter((a) => a.sessionId === s.id && a.status === 'present').length;
+        const sessionAttendance = this.attendance.filter(
+          (a) => a.sessionId === s.id && a.tenantId === params.tenantId && (a.status === 'present' || a.status === 'late')
+        );
+        const uniqueStudents = new Set(sessionAttendance.map(a => a.studentId));
+        const attCount = uniqueStudents.size > 0 ? uniqueStudents.size : (sessionAttendance.length > 0 ? sessionAttendance.length : 0);
         const validCount = attCount > 0 ? attCount : (s.status === 'completed' ? 13 : 0);
         return {
           id: s.id,
@@ -2456,12 +2477,20 @@ export class MockDataProvider implements IDataProvider {
         totalValidAttendance: comp.totalValidAttendance ?? 0,
         averageAttendance: comp.averageAttendance,
         compensationAmount: comp.totalCompensation,
-        sessions: sessionRecords.map((sr) => ({
-          sessionId: sr.sessionId,
-          sessionDate: sr.sessionDate,
-          status: sr.status,
-          validAttendanceCount: sr.validAttendanceCount,
-        })),
+        sessions: sessionRecords.map((sr) => {
+          const rawSess = groupSessions.find((gs) => gs.id === sr.sessionId);
+          const room = rawSess ? this.classrooms.find((c) => c.id === rawSess.classroomId) : undefined;
+          return {
+            sessionId: sr.sessionId,
+            sessionDate: sr.sessionDate,
+            startTime: rawSess?.startTime,
+            endTime: rawSess?.endTime,
+            classroomName: room?.nameAr,
+            status: sr.status,
+            validAttendanceCount: sr.validAttendanceCount,
+            notes: rawSess?.notes || rawSess?.cancellationReason,
+          };
+        }),
       };
     });
 
@@ -2502,6 +2531,7 @@ export class MockDataProvider implements IDataProvider {
           enrollmentId: e.id,
           studentId: e.studentId,
           studentName: student?.fullName || 'طالب',
+          studentPhone: student?.phone,
           basePrice,
           discountType: e.discountType,
           discountValue: e.discountValue,
@@ -2593,7 +2623,7 @@ export class MockDataProvider implements IDataProvider {
         lessonCompensation,
       });
     }
-    const locked = profile && payrollRecord && (payrollRecord.status === 'approved' || payrollRecord.status === 'paid')
+    const locked = payrollRecord && (payrollRecord.status === 'approved' || payrollRecord.status === 'paid')
       ? payrollRecord : undefined;
 
     return {

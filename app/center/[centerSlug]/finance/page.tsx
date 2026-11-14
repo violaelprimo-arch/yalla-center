@@ -64,6 +64,7 @@ import { useFirebaseAuthSession } from '@/lib/firebase/client';
 import { useTeacherContracts } from '@/lib/teachers/client';
 import { TEACHER_MODELS } from '@/lib/teachers/profile';
 import { cairoClock } from '@/lib/attendance/reception';
+import { TeacherAccountingView } from '@/components/teachers/teacher-accounting-view';
 
 type TabKey = 'shifts' | 'invoices' | 'payments' | 'payroll' | 'expenses';
 
@@ -1578,6 +1579,8 @@ export default function FinancePage() {
       {isStatementModalOpen && (
         <TeacherStatementModal
           statement={statementData}
+          tenantId={tenant.id}
+          tenantSlug={tenant.slug}
           isLoading={isStatementLoading}
           onClose={() => {
             setIsStatementModalOpen(false);
@@ -2836,191 +2839,38 @@ function RecordExpenseModal({
  */
 function TeacherStatementModal({
   statement,
+  tenantId,
+  tenantSlug,
   isLoading,
   onClose,
 }: {
   statement: TeacherMonthlyStatement | null;
+  tenantId?: string;
+  tenantSlug?: string;
   isLoading: boolean;
   onClose: () => void;
 }) {
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-      <div className="bg-card border border-border w-full max-w-3xl rounded-2xl shadow-2xl overflow-hidden animate-scale-up space-y-4 p-6" dir="rtl">
-        <div className="flex items-center justify-between pb-3 border-b border-border">
-          <div className="flex items-center gap-2">
-            <FileText className="w-5 h-5 text-brand-cyan-600" />
-            <h3 className="font-bold text-foreground text-sm sm:text-base">
-              كشف الحساب والمستحقات التفصيلي للمعلم
-            </h3>
+    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6 overflow-y-auto">
+      <div className="bg-card border border-border w-full max-w-5xl rounded-2xl shadow-2xl overflow-hidden animate-scale-up max-h-[92vh] flex flex-col p-4 sm:p-6" dir="rtl">
+        {tenantId && tenantSlug && statement ? (
+          <div className="overflow-y-auto flex-1">
+            <TeacherAccountingView
+              tenantId={tenantId}
+              tenantSlug={tenantSlug}
+              initialTeacherId={statement.teacherId}
+              initialMonth={statement.payrollMonth}
+              initialYear={statement.payrollYear}
+              isModal={true}
+              onClose={onClose}
+            />
           </div>
-          <button onClick={onClose} className="text-muted-foreground hover:text-foreground">
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-
-        {isLoading || !statement ? (
+        ) : (
           <div className="py-12 text-center text-muted-foreground">
             <RefreshCw className="w-7 h-7 animate-spin mx-auto text-brand-cyan-600 mb-2" />
             <p className="text-xs">جاري تجميع بيانات الحضور والحصص وحساب النسب الرياضية...</p>
           </div>
-        ) : (
-          <div className="space-y-6 text-xs">
-            {/* Header Metadata */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-muted/30 p-3.5 rounded-xl border border-border">
-              <div>
-                <span className="text-muted-foreground block text-[10px]">المعلم:</span>
-                <span className="font-bold text-foreground">{statement.teacherName}</span>
-              </div>
-              <div>
-                <span className="text-muted-foreground block text-[10px]">المواد:</span>
-                <span className="font-bold text-foreground">{statement.subjectNames.join('، ')}</span>
-              </div>
-              <div>
-                <span className="text-muted-foreground block text-[10px]">الشهر / السنة:</span>
-                <span className="font-mono font-bold text-foreground">
-                  {statement.payrollMonth} / {statement.payrollYear}
-                </span>
-              </div>
-              <div>
-                <span className="text-muted-foreground block text-[10px]">صافي الراتب المستحق:</span>
-                <span className="font-mono font-black text-brand-cyan-600 text-sm">
-                  {statement.summary.netPayrollInvoiced.toFixed(2)} ج.م
-                </span>
-              </div>
-            </div>
-
-            {/* Part 1: Center Subscription Model Breakdown */}
-            {statement.centerSubscription.groups.length > 0 && (
-              <div className="space-y-2">
-                <h4 className="font-bold text-foreground text-xs flex items-center gap-1.5">
-                  <Building2 className="w-4 h-4 text-brand-cyan-600" />
-                  مجموعات اشتراك السنتر (المعدل الثابت لكل طالب بالحصة)
-                </h4>
-                <table className="w-full text-right border-collapse border border-border rounded-lg overflow-hidden">
-                  <thead className="bg-muted/50 text-muted-foreground font-bold">
-                    <tr>
-                      <th className="p-2 border border-border">المجموعة</th>
-                      <th className="p-2 border border-border">الفئة للرأس</th>
-                      <th className="p-2 border border-border">الحصص</th>
-                      <th className="p-2 border border-border">إجمالي الحضور</th>
-                      <th className="p-2 border border-border">متوسط الحضور</th>
-                      <th className="p-2 border border-border">المستحق المحسوب</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {statement.centerSubscription.groups.map((g) => (
-                      <tr key={g.groupId} className="hover:bg-muted/20">
-                        <td className="p-2 border border-border font-bold">{g.groupName}</td>
-                        <td className="p-2 border border-border font-mono">{g.ratePerStudent.toFixed(2)} ج.م</td>
-                        <td className="p-2 border border-border font-mono">{g.conductedSessionsCount}</td>
-                        <td className="p-2 border border-border font-mono">{g.totalValidAttendance}</td>
-                        <td className="p-2 border border-border font-mono">{g.averageAttendance.toFixed(2)}</td>
-                        <td className="p-2 border border-border font-mono font-bold text-emerald-600">
-                          {g.compensationAmount.toFixed(2)} ج.م
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-
-            {statement.lessonCompensation && <div className="space-y-2">
-              <h4 className="font-bold text-foreground">مستحقات الحصص · {statement.lessonCompensation.totalCompensation.toFixed(2)} ج.م</h4>
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[650px] text-right border-collapse border border-border">
-                  <thead className="bg-muted/50 text-muted-foreground"><tr>
-                    {['الحصة', 'التعاقد', 'الحضور', 'إجمالي الرسوم', 'مستحق المعلم', 'صافي السنتر'].map(label =>
-                      <th className="border border-border p-2" key={label}>{label}</th>)}
-                  </tr></thead>
-                  <tbody>{statement.lessonCompensation.sessions.map(lesson => <tr key={lesson.sessionId}>
-                    <td className="border border-border p-2">{lesson.groupName}<br />{lesson.sessionDate}</td>
-                    <td className="border border-border p-2">{TEACHER_MODELS[lesson.model]} · {lesson.rate.toFixed(2)} ج.م</td>
-                    <td className="border border-border p-2">{lesson.attendanceCount}</td>
-                    <td className="border border-border p-2">{lesson.revenue.toFixed(2)} ج.م</td>
-                    <td className="border border-border p-2 font-bold">{lesson.teacherDue.toFixed(2)} ج.م</td>
-                    <td className="border border-border p-2">{lesson.centerNet.toFixed(2)} ج.م</td>
-                  </tr>)}</tbody>
-                </table>
-              </div>
-            </div>}
-
-            {/* Part 2: Private Lessons Model Breakdown */}
-            {statement.privateLessons.groups.length > 0 && (
-              <div className="space-y-2">
-                <h4 className="font-bold text-foreground text-xs flex items-center gap-1.5">
-                  <Sparkles className="w-4 h-4 text-emerald-600" />
-                  مجموعات الدروس الخاصة (نسبة المعلم من صافي الإيراد)
-                </h4>
-                <table className="w-full text-right border-collapse border border-border rounded-lg overflow-hidden">
-                  <thead className="bg-muted/50 text-muted-foreground font-bold">
-                    <tr>
-                      <th className="p-2 border border-border">المجموعة</th>
-                      <th className="p-2 border border-border">الطلاب</th>
-                      <th className="p-2 border border-border">الإجمالي</th>
-                      <th className="p-2 border border-border">الخصومات</th>
-                      <th className="p-2 border border-border">صافي الإيراد</th>
-                      <th className="p-2 border border-border">نسبة المعلم</th>
-                      <th className="p-2 border border-border">حصة المعلم</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {statement.privateLessons.groups.map((g) => (
-                      <tr key={g.groupId} className="hover:bg-muted/20">
-                        <td className="p-2 border border-border font-bold">{g.groupName}</td>
-                        <td className="p-2 border border-border font-mono">{g.enrolledCount}</td>
-                        <td className="p-2 border border-border font-mono">{g.totalGrossInvoiced.toFixed(2)}</td>
-                        <td className="p-2 border border-border font-mono text-muted-foreground">
-                          -{g.totalDiscountAmount.toFixed(2)}
-                        </td>
-                        <td className="p-2 border border-border font-mono font-bold">{g.totalNetRevenue.toFixed(2)}</td>
-                        <td className="p-2 border border-border font-mono font-bold text-brand-cyan-600">
-                          {g.teacherPercentage}%
-                        </td>
-                        <td className="p-2 border border-border font-mono font-bold text-emerald-600">
-                          {g.totalTeacherShare.toFixed(2)} ج.م
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-
-            {/* Part 3: Advances and Deductions */}
-            <div className="bg-muted/20 p-3.5 rounded-xl border border-border space-y-2">
-              <h4 className="font-bold text-foreground text-xs">التسويات والاستقطاعات:</h4>
-              <div className="flex justify-between text-muted-foreground">
-                <span>إجمالي المستحق من الحصص والمجموعات:</span>
-                <span className="font-mono font-bold text-foreground">
-                  {statement.summary.grossCompensation.toFixed(2)} ج.م
-                </span>
-              </div>
-              <div className="flex justify-between text-rose-600">
-                <span>- السلف النقدية المستردة من الراتب:</span>
-                <span className="font-mono">-{statement.summary.totalAdvances.toFixed(2)} ج.م</span>
-              </div>
-              <div className="flex justify-between text-rose-600">
-                <span>- الخصومات والجزاءات:</span>
-                <span className="font-mono">-{statement.summary.totalDeductions.toFixed(2)} ج.م</span>
-              </div>
-              <div className="flex justify-between text-emerald-600">
-                <span>+ المكافآت التشجيعية:</span>
-                <span className="font-mono">+{statement.summary.totalBonuses.toFixed(2)} ج.م</span>
-              </div>
-              <div className="flex justify-between text-brand-cyan-600 font-black text-sm pt-2 border-t border-border">
-                <span>= صافي الراتب النهائي المستحق للصرف:</span>
-                <span className="font-mono">{statement.summary.netPayrollInvoiced.toFixed(2)} ج.م</span>
-              </div>
-            </div>
-          </div>
         )}
-
-        <div className="flex justify-end pt-2">
-          <Button variant="outline" onClick={onClose} className="text-xs font-bold">
-            إغلاق
-          </Button>
-        </div>
       </div>
     </div>
   );

@@ -312,6 +312,9 @@ export interface TeacherLessonCompensation {
   sessions: Array<{
     sessionId: string;
     sessionDate: string;
+    startTime?: string;
+    endTime?: string;
+    classroomName?: string;
     groupName: string;
     attendanceCount: number;
     model: 'fixed_session' | 'per_attendee';
@@ -537,8 +540,12 @@ export interface TeacherMonthlyStatement {
       sessions?: Array<{
         sessionId: string;
         sessionDate: string;
+        startTime?: string;
+        endTime?: string;
+        classroomName?: string;
         status: SessionStatus;
         validAttendanceCount: number;
+        notes?: string;
       }>;
     }>;
     totalCompensation: number;
@@ -563,6 +570,7 @@ export interface TeacherMonthlyStatement {
         enrollmentId: string;
         studentId: string;
         studentName: string;
+        studentPhone?: string;
         basePrice: number;
         discountType: DiscountType;
         discountValue: number;

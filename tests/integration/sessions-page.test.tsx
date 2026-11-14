@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import React from 'react';
-import SessionsGroupsPage from '@/app/center/[centerSlug]/sessions/page.tsx';
+import SessionsGroupsPage from '@/app/center/[centerSlug]/sessions/page';
 import { TenantProvider } from '@/components/layout/tenant-provider';
 import { getDataProvider } from '@/lib/dal/factory';
 

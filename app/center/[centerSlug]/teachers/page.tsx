@@ -3,10 +3,11 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import Link from 'next/link';
 import {
-  AlertTriangle, Briefcase, CheckCircle2, Edit3, FileText, Phone, Plus, Search, Trash2, Users, X,
+  AlertTriangle, Briefcase, Calculator, CheckCircle2, Edit3, FileSpreadsheet, FileText, Phone, Plus, Search, Trash2, Users, Wallet, X,
 } from 'lucide-react';
 import { useTenant } from '@/components/layout/tenant-provider';
 import { TeacherEditor } from '@/components/teachers/teacher-editor';
+import { TeacherAccountingView } from '@/components/teachers/teacher-accounting-view';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { getDataProvider } from '@/lib/dal/factory';
@@ -44,6 +45,8 @@ function TeachersDirectory() {
   const auth = useFirebaseAuthSession();
   const demo = !auth.configured;
   const mayManageDemo = currentRole === 'PLATFORM_OWNER' || currentRole === 'CENTER_ADMIN';
+  const [activeTab, setActiveTab] = useState<'directory' | 'accounting'>('directory');
+  const [selectedTeacherForAccounting, setSelectedTeacherForAccounting] = useState<string>('');
   const [catalog, setCatalog] = useState<{
     users: User[];
     groups: Group[];
@@ -163,7 +166,33 @@ function TeachersDirectory() {
           <h1 className="flex items-center gap-2 text-2xl font-black sm:text-3xl">
             <Briefcase className="text-brand-cyan-600" size={29} /> شؤون المعلمين
           </h1>
-          <p className="mt-1 text-sm text-muted-foreground">{tenant.nameAr} · بيانات المعلمين والتعاقدات والصلاحيات</p>
+          <p className="mt-1 text-sm text-muted-foreground">{tenant.nameAr} · بيانات المعلمين والتعاقدات والصلاحيات والحسابات الموحدة</p>
+          <div className="flex items-center gap-1.5 mt-3 bg-muted/40 p-1 rounded-xl border border-border w-fit print:hidden">
+            <button
+              type="button"
+              onClick={() => setActiveTab('directory')}
+              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                activeTab === 'directory'
+                  ? 'bg-card text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              <Users size={14} />
+              <span>دليل المعلمين</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('accounting')}
+              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                activeTab === 'accounting'
+                  ? 'bg-card text-brand-cyan-600 shadow-sm border border-brand-cyan-500/30'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              <FileSpreadsheet size={14} />
+              <span>الحسابات والمستحقات</span>
+            </button>
+          </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Link href={`/teacher/${tenant.slug}`} className="rounded-xl border border-border px-3 py-2 text-sm hover:bg-muted">بوابة دخول المعلمين</Link>
@@ -186,104 +215,128 @@ function TeachersDirectory() {
       {demo && !mayManageDemo && <p className="text-sm text-muted-foreground">إدارة المعلمين متاحة لمدير السنتر ومالك المنصة.</p>}
       {(auth.loading || (!catalog && authorized) || (auth.idToken && !authorized && !error)) && <p role="status" className="text-sm text-muted-foreground">جارٍ تحميل المعلمين…</p>}
 
-      {authorized && catalog && <>
-        <section className="card-elevated rounded-2xl border border-border p-4">
-          <div className="flex flex-wrap items-center gap-3">
-            <Badge variant="cyan" className="gap-1"><Users size={14} /> {teachers.length} معلم نشط</Badge>
-            {demo && <span className="text-xs text-muted-foreground">نسخة تجريبية · الحفظ على هذا المتصفح</span>}
-            <div className="relative min-w-52 flex-1">
-              <Search size={16} className="absolute end-3 top-3 text-muted-foreground" />
-              <input aria-label="بحث المعلمين" placeholder="بحث بالاسم أو رقم الهاتف" className={control + ' w-full pe-10'}
-                value={query} onChange={event => setQuery(event.target.value)} />
+      {authorized && catalog && (
+        activeTab === 'accounting' ? (
+          <TeacherAccountingView
+            tenantId={tenant.id}
+            tenantSlug={tenant.slug}
+            initialTeacherId={selectedTeacherForAccounting || visibleTeachers[0]?.teacher.id}
+            teacherProfiles={data.profiles}
+            teachersList={catalog.users}
+          />
+        ) : (
+          <>
+            <section className="card-elevated rounded-2xl border border-border p-4">
+              <div className="flex flex-wrap items-center gap-3">
+                <Badge variant="cyan" className="gap-1"><Users size={14} /> {teachers.length} معلم نشط</Badge>
+                {demo && <span className="text-xs text-muted-foreground">نسخة تجريبية · الحفظ على هذا المتصفح</span>}
+                <div className="relative min-w-52 flex-1">
+                  <Search size={16} className="absolute end-3 top-3 text-muted-foreground" />
+                  <input aria-label="بحث المعلمين" placeholder="بحث بالاسم أو رقم الهاتف" className={control + ' w-full pe-10'}
+                    value={query} onChange={event => setQuery(event.target.value)} />
+                </div>
+                <select aria-label="طريقة التعاقد" className={control} value={model} onChange={event => setModel(event.target.value)}>
+                  <option value="all">كل طرق الحساب</option>
+                  <option value="center">متوسط الحضور · عقود سابقة</option>
+                  {Object.entries(TEACHER_MODELS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+                </select>
+              </div>
+            </section>
+
+            <div className="card-elevated overflow-x-auto rounded-2xl border border-border">
+              <table className="min-w-[780px] w-full text-start text-sm">
+                <thead className="bg-muted/50 text-muted-foreground">
+                  <tr>
+                    <th className="p-4 text-start">المعلم</th>
+                    <th className="p-4 text-start">المواد والمجموعات</th>
+                    <th className="p-4 text-start">العقود حسب المرحلة أو الصف</th>
+                    <th className="p-4 text-start">الإجراءات</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {!visibleTeachers.length && <tr><td colSpan={4} className="p-10 text-center text-muted-foreground">لا يوجد معلمون مطابقون للبحث</td></tr>}
+                  {visibleTeachers.map(({ teacher, profile }) => {
+                    const groups = catalog.groups.filter(group => group.teacherId === teacher.id && group.isActive);
+                    const subjectIds = new Set([...(profile?.subjectIds ?? []), ...groups.map(group => group.subjectId)]);
+                    const subjects = catalog.subjects.filter(subject => subjectIds.has(subject.id));
+                    const rate = catalog.rates.find(item => item.teacherId === teacher.id && item.isActive);
+                    return <tr key={teacher.id} className="hover:bg-muted/20">
+                      <td className="p-4">
+                        <div className="flex items-center gap-3">
+                          <img className="size-11 rounded-xl border border-border object-cover" alt=""
+                            src={teacher.avatarUrl || '/brand/yalla-center-icon.png'} />
+                          <div>
+                            <p className="font-bold">{teacher.fullName}</p>
+                            {[teacher.phone, profile?.phone2].filter(Boolean).map(phone => <p key={phone} className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
+                              <Phone size={12} /> <span dir="ltr">{phone}</span>
+                            </p>)}
+                          </div>
+                        </div>
+                      </td>
+                      <td className="p-4">
+                        <div className="flex flex-wrap gap-1">{subjects.map(subject => <Badge key={subject.id} variant="outline">{subject.nameAr}</Badge>)}</div>
+                        <p className="mt-1 text-xs text-muted-foreground">{groups.length} مجموعات نشطة</p>
+                      </td>
+                      <td className="p-4">
+                        {profile?.contracts.length ? <ul className="space-y-1 text-xs">
+                          {profile.contracts.map(contract => <li key={contract.level}>
+                            <b>{describeTeacherLevel(contract.level)}</b><br />
+                            {TEACHER_MODELS[contract.model]} · {contract.value}{contract.model === 'private' ? '%' : ' ج.م'}
+                          </li>)}
+                        </ul> : rate ? <span className="text-xs text-muted-foreground">{rate.model === 'private'
+                          ? `برايفت · ${rate.teacherPercentage}% للمعلم`
+                          : `متوسط الحضور · ${rate.fixedRatePerStudent} ج.م`}</span> : <span className="text-xs text-muted-foreground">لم يُحدد</span>}
+                      </td>
+                      <td className="p-4">
+                        <div className="flex flex-wrap gap-1.5">
+                          <Button variant="outline" size="sm" onClick={() => setEditor({ id: teacher.id, teacher, profile })}><Edit3 size={14} /> تعديل</Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setSelectedTeacherForAccounting(teacher.id);
+                              setActiveTab('accounting');
+                            }}
+                            className="border-brand-cyan-500/40 text-brand-cyan-600 hover:bg-brand-cyan-500/10 font-bold"
+                          >
+                            <FileSpreadsheet size={14} /> الحسابات والمستحقات
+                          </Button>
+                          <Button variant="ghost" size="sm" className="text-red-600 dark:text-red-400" disabled={Boolean(archiving)}
+                            onClick={() => void archiveTeacher(teacher, profile)}><Trash2 size={14} /> {archiving === teacher.id ? 'جارٍ الحذف…' : 'حذف'}</Button>
+                          {demo && rate && !profile?.contracts.length && <Button variant="ghost" size="sm" onClick={() => setLegacyRate({ teacher, rate })}>العقد السابق</Button>}
+                        </div>
+                      </td>
+                    </tr>;
+                  })}
+                </tbody>
+              </table>
             </div>
-            <select aria-label="طريقة التعاقد" className={control} value={model} onChange={event => setModel(event.target.value)}>
-              <option value="all">كل طرق الحساب</option>
-              <option value="center">متوسط الحضور · عقود سابقة</option>
-              {Object.entries(TEACHER_MODELS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
-            </select>
-          </div>
-        </section>
 
-        <div className="card-elevated overflow-x-auto rounded-2xl border border-border">
-          <table className="min-w-[780px] w-full text-start text-sm">
-            <thead className="bg-muted/50 text-muted-foreground">
-              <tr>
-                <th className="p-4 text-start">المعلم</th>
-                <th className="p-4 text-start">المواد والمجموعات</th>
-                <th className="p-4 text-start">العقود حسب المرحلة أو الصف</th>
-                <th className="p-4 text-start">الإجراءات</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {!visibleTeachers.length && <tr><td colSpan={4} className="p-10 text-center text-muted-foreground">لا يوجد معلمون مطابقون للبحث</td></tr>}
-              {visibleTeachers.map(({ teacher, profile }) => {
-                const groups = catalog.groups.filter(group => group.teacherId === teacher.id && group.isActive);
-                const subjectIds = new Set([...(profile?.subjectIds ?? []), ...groups.map(group => group.subjectId)]);
-                const subjects = catalog.subjects.filter(subject => subjectIds.has(subject.id));
-                const rate = catalog.rates.find(item => item.teacherId === teacher.id && item.isActive);
-                return <tr key={teacher.id} className="hover:bg-muted/20">
-                  <td className="p-4">
-                    <div className="flex items-center gap-3">
-                      <img className="size-11 rounded-xl border border-border object-cover" alt=""
-                        src={teacher.avatarUrl || '/brand/yalla-center-icon.png'} />
-                      <div>
-                        <p className="font-bold">{teacher.fullName}</p>
-                        {[teacher.phone, profile?.phone2].filter(Boolean).map(phone => <p key={phone} className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
-                          <Phone size={12} /> <span dir="ltr">{phone}</span>
-                        </p>)}
-                      </div>
-                    </div>
-                  </td>
-                  <td className="p-4">
-                    <div className="flex flex-wrap gap-1">{subjects.map(subject => <Badge key={subject.id} variant="outline">{subject.nameAr}</Badge>)}</div>
-                    <p className="mt-1 text-xs text-muted-foreground">{groups.length} مجموعات نشطة</p>
-                  </td>
-                  <td className="p-4">
-                    {profile?.contracts.length ? <ul className="space-y-1 text-xs">
-                      {profile.contracts.map(contract => <li key={contract.level}>
-                        <b>{describeTeacherLevel(contract.level)}</b><br />
-                        {TEACHER_MODELS[contract.model]} · {contract.value}{contract.model === 'private' ? '%' : ' ج.م'}
-                      </li>)}
-                    </ul> : rate ? <span className="text-xs text-muted-foreground">{rate.model === 'private'
-                      ? `برايفت · ${rate.teacherPercentage}% للمعلم`
-                      : `متوسط الحضور · ${rate.fixedRatePerStudent} ج.م`}</span> : <span className="text-xs text-muted-foreground">لم يُحدد</span>}
-                  </td>
-                  <td className="p-4">
-                    <div className="flex flex-wrap gap-1.5">
-                      <Button variant="outline" size="sm" onClick={() => setEditor({ id: teacher.id, teacher, profile })}><Edit3 size={14} /> تعديل</Button>
-                      <Button variant="ghost" size="sm" className="text-red-600 dark:text-red-400" disabled={Boolean(archiving)}
-                        onClick={() => void archiveTeacher(teacher, profile)}><Trash2 size={14} /> {archiving === teacher.id ? 'جارٍ الحذف…' : 'حذف'}</Button>
-                      <Link href={`/center/${tenant.slug}/finance?tab=payroll&teacherId=${encodeURIComponent(teacher.id)}`}
-                        className="inline-flex h-8 items-center gap-1 rounded-lg border border-border px-2 text-xs hover:bg-muted"><FileText size={14} /> كشف الحساب</Link>
-                      {demo && rate && !profile?.contracts.length && <Button variant="ghost" size="sm" onClick={() => setLegacyRate({ teacher, rate })}>العقد السابق</Button>}
-                    </div>
-                  </td>
-                </tr>;
-              })}
-            </tbody>
-          </table>
-        </div>
+            {data.requests.length > 0 && <section className="card-elevated space-y-3 rounded-2xl border border-border p-4">
+              <h2 className="font-bold">طلبات المحاضرات الإضافية</h2>
+              <ul className="divide-y divide-border text-sm">
+                {data.requests.map(request => <li key={request.teacherId + request.id} className="py-2">
+                  <b>{request.teacherName}</b> · {request.groupName} · <span dir="ltr">{request.date} {request.time}</span>
+                  {request.note && <p className="mt-1 text-muted-foreground">{request.note}</p>}
+                </li>)}
+              </ul>
+            </section>}
 
-        {data.requests.length > 0 && <section className="card-elevated space-y-3 rounded-2xl border border-border p-4">
-          <h2 className="font-bold">طلبات المحاضرات الإضافية</h2>
-          <ul className="divide-y divide-border text-sm">
-            {data.requests.map(request => <li key={request.teacherId + request.id} className="py-2">
-              <b>{request.teacherName}</b> · {request.groupName} · <span dir="ltr">{request.date} {request.time}</span>
-              {request.note && <p className="mt-1 text-muted-foreground">{request.note}</p>}
-            </li>)}
-          </ul>
-        </section>}
-
-        {editor && <TeacherEditor key={editor.id} editing={Boolean(editor.teacher)} demo={demo}
-          initial={teacherInputFrom(editor.profile, editor.teacher, catalog.groups)}
-          originalAvatar={catalog.users.find(user => user.id === editor.id)?.avatarUrl} subjects={catalog.subjects} stages={catalog.stages} onClose={() => setEditor(undefined)}
-          onSave={async (input, password) => {
-            await persistTeacher(editor.id, editor.profile?.version ?? 0, input, password);
-            setEditor(undefined);
-            setError('');
-            setNotice(editor.teacher ? 'تم تحديث بيانات المعلم' : 'تمت إضافة المعلم');
-          }} />}
-      </>}
+            {editor && <TeacherEditor key={editor.id} editing={Boolean(editor.teacher)} demo={demo}
+              teacherId={editor.teacher?.id || editor.id}
+              tenantId={tenant.id}
+              tenantSlug={tenant.slug}
+              initial={teacherInputFrom(editor.profile, editor.teacher, catalog.groups)}
+              originalAvatar={catalog.users.find(user => user.id === editor.id)?.avatarUrl} subjects={catalog.subjects} stages={catalog.stages} onClose={() => setEditor(undefined)}
+              onSave={async (input, password) => {
+                await persistTeacher(editor.id, editor.profile?.version ?? 0, input, password);
+                setEditor(undefined);
+                setError('');
+                setNotice(editor.teacher ? 'تم تحديث بيانات المعلم' : 'تمت إضافة المعلم');
+              }} />}
+          </>
+        )
+      )}
       {legacyRate && authorized && demo && <TeacherRateModal teacher={legacyRate.teacher} currentRate={legacyRate.rate}
         currentRole={currentRole} onClose={() => setLegacyRate(undefined)} onSuccess={() => {
           setLegacyRate(undefined);
