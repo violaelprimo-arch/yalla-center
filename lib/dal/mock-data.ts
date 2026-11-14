@@ -213,6 +213,15 @@ export const INITIAL_SEEDED_DATA = {
       equipment: { projector: true, airConditioning: true, smartBoard: false },
       createdAt: '2026-01-01T00:00:00Z',
     },
+    {
+      id: 'room-201',
+      tenantId: 'tenant-maher-001',
+      branchId: 'branch-heliopolis',
+      nameAr: 'قاعة الأهرام (مصر الجديدة)',
+      capacity: 50,
+      equipment: { projector: true, airConditioning: true, smartBoard: true },
+      createdAt: '2026-01-01T00:00:00Z',
+    },
   ],
 
   users: [
