@@ -1,7 +1,7 @@
 import { matchTeacherContract, type TeacherProfile } from '@/lib/teachers/profile';
 import { calculateTeacherSessionPay, countTeacherSessionAttendance } from '@/lib/teachers/session-compensation';
 import { cairoClock } from '@/lib/attendance/reception';
-import { archiveGroup, mergeManagedRecords, moneyAmount, recurringSessions, sessionDateFromId, shiftDate, studentGroupFee } from '@/lib/timetable/group-schedule';
+import { archiveGroup, isRegisteredGroup, mergeManagedRecords, moneyAmount, recurringSessions, sessionDateFromId, shiftDate, studentGroupFee } from '@/lib/timetable/group-schedule';
 import { calculateFixedSessionSplit, splitPrivateFee } from '@/lib/finance/group-pricing';
 import {
   Tenant,
@@ -1606,7 +1606,7 @@ export class MockDataProvider implements IDataProvider {
       return { success: false, error: 'المادة الدراسية غير موجودة' };
     }
 
-    const hasGroups = this.groups.some((g) => g.tenantId === tenantId && g.subjectId === subjectId);
+    const hasGroups = this.groups.some(group => group.tenantId === tenantId && group.subjectId === subjectId && isRegisteredGroup(group));
     if (hasGroups) {
       return { success: false, error: 'لا يمكن حذف المادة لوجود مجموعات مرتبطة بها' };
     }

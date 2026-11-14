@@ -140,6 +140,10 @@ export function archiveGroup(group: Group, archivedAt = `${cairoClock()}:00`): G
   return group.archivedAt ? group : { ...group, isActive: false, archivedAt, version: (group.version ?? 0) + 1 };
 }
 
+export function isRegisteredGroup(group: Group) {
+  return !group.archivedAt;
+}
+
 function periodFrom(group: Group): Omit<GroupPeriod, 'endsAt'> | undefined {
   if (!group.pricing || !group.effectiveFrom || !group.weeklySlots) return;
   return {

@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button';
 import { getDataProvider } from '@/lib/dal/factory';
 import type { Group } from '@/lib/dal/types';
 import { useTeacherContracts } from '@/lib/teachers/client';
-import { GROUP_PRICING_LABELS, slotSummary, studentGroupFee, WEEKDAYS, weeklySlots } from '@/lib/timetable/group-schedule';
+import { GROUP_PRICING_LABELS, isRegisteredGroup, slotSummary, studentGroupFee, WEEKDAYS, weeklySlots } from '@/lib/timetable/group-schedule';
 import { weeklyScheduleRows } from '@/lib/timetable/schedule-view';
 
 const currency = new Intl.NumberFormat('ar-EG', { style: 'currency', currency: 'EGP' });
@@ -65,8 +65,8 @@ export default function SessionsGroupsPage() {
   const subjectNames = new Map(subjects.map(subject => [subject.id, subject.nameAr]));
   const gradeNames = new Map(stages.flatMap(stage => stage.grades.map(grade => [grade.id, grade.nameAr])));
   const search = query.trim().toLocaleLowerCase('ar');
-  const activeGroups = groups.filter(group => group.isActive);
-  const filteredGroups = activeGroups.filter(group => (!teacher || group.teacherId === teacher) &&
+  const registeredGroups = groups.filter(isRegisteredGroup);
+  const filteredGroups = registeredGroups.filter(group => (!teacher || group.teacherId === teacher) &&
     (!stage || (group.stageId ?? subjectsById.get(group.subjectId)?.stage) === stage) &&
     (!pricing || group.pricingModel === pricing) &&
     [group.nameAr, teacherNames.get(group.teacherId) ?? group.teacherName, subjectNames.get(group.subjectId)]
@@ -109,7 +109,7 @@ export default function SessionsGroupsPage() {
       </h1>
       <div className="flex flex-wrap gap-2">
         <Button variant="outline" size="sm" aria-pressed={showTable} onClick={toggleSchedule}>
-          <CalendarDays size={16} /> {showTable ? `قائمة المجموعات (${activeGroups.length})` : 'عرض الجدول'}
+          <CalendarDays size={16} /> {showTable ? `قائمة المجموعات (${registeredGroups.length})` : 'عرض الجدول'}
         </Button>
         {groupData.canEdit && <Button size="sm" disabled={!masterData.ready} onClick={() => setEditor({})}>
           <Plus size={17} /> إضافة مجموعة
@@ -157,8 +157,8 @@ export default function SessionsGroupsPage() {
       : <section className="rounded-2xl border border-border bg-card" aria-label="قائمة المجموعات">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border p-3">
           <span className="text-xs text-muted-foreground">{matches.length} مجموعة</span>
-            {groupData.canEdit && activeGroups.length > 1 && <Button variant="outline" size="sm" className="text-rose-600"
-              onClick={() => confirmDeletion(activeGroups)}><Trash2 size={15} /> حذف كل المجموعات</Button>}
+          {groupData.canEdit && registeredGroups.length > 1 && <Button variant="outline" size="sm" className="text-rose-600"
+            onClick={() => confirmDeletion(registeredGroups)}><Trash2 size={15} /> حذف كل المجموعات</Button>}
         </div>
         {matches.length ? <ul className="divide-y divide-border">
           {matches.slice(currentPage * pageSize, (currentPage + 1) * pageSize).map(group => {
@@ -166,7 +166,10 @@ export default function SessionsGroupsPage() {
             const grade = gradeNames.get(group.gradeId ?? subject?.grade ?? '');
             return <li key={group.id} className="grid gap-2 px-3 py-3 text-sm md:grid-cols-[1.35fr_1.2fr_1fr_auto] md:items-center">
               <div className="min-w-0">
-                <p className="break-words font-bold">{group.nameAr}</p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="break-words font-bold">{group.nameAr}</p>
+                  {!group.isActive && <span className="text-xs text-muted-foreground">غير نشطة</span>}
+                </div>
                 <p className="text-xs text-muted-foreground">{[grade, subject?.nameAr].filter(Boolean).join(' · ')}</p>
               </div>
               <div className="min-w-0">
@@ -187,7 +190,7 @@ export default function SessionsGroupsPage() {
               </div>}
             </li>;
           })}
-        </ul> : <p className="p-5 text-sm text-muted-foreground">{activeGroups.length ? 'مفيش مجموعات مطابقة.' : 'مفيش مجموعات مسجلة.'}</p>}
+        </ul> : <p className="p-5 text-sm text-muted-foreground">{registeredGroups.length ? 'مفيش مجموعات مطابقة.' : 'مفيش مجموعات مسجلة.'}</p>}
         {lastPage > 0 && <div className="flex items-center justify-end gap-2 border-t border-border p-2 text-xs">
           <Button variant="outline" size="sm" disabled={!currentPage} onClick={() => setPage(currentPage - 1)}>السابق</Button>
           <span>{currentPage + 1} / {lastPage + 1}</span>
@@ -202,7 +205,7 @@ export default function SessionsGroupsPage() {
         setTeacher('');
         setPricing('');
         setDay('');
-        if (!editor.group) setPage(Math.floor(activeGroups.length / pageSize));
+        if (!editor.group) setPage(Math.floor(registeredGroups.length / pageSize));
         setNotice(`تم حفظ ${group.nameAr}`);
       }} />}
     {deleteSelection.length > 0 && <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4">

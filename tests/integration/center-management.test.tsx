@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import SessionsGroupsPage from '@/app/center/[centerSlug]/sessions/page';
 import BranchesManagementPage from '@/app/center/[centerSlug]/branches-list/page';
+import SubjectsManagementPage from '@/app/center/[centerSlug]/subjects/page';
 import { Sidebar } from '@/components/layout/sidebar';
 import { TenantProvider } from '@/components/layout/tenant-provider';
 import { getDataProvider } from '@/lib/dal/factory';
@@ -40,7 +41,7 @@ beforeEach(() => {
 
 afterEach(cleanup);
 
-it('removes old demo groups once and keeps group changes across reloads', async () => {
+it('keeps registered groups from the old storage format and applies add, edit and delete across reloads', async () => {
   const dal = getDataProvider();
   const previous = buildGroup(tenantId, {
     id: 'old-demo-group', version: 0, nameAr: 'مجموعة من النسخة السابقة',
@@ -51,11 +52,13 @@ it('removes old demo groups once and keeps group changes across reloads', async 
     ...await readMasterData(dal, tenantId), groups: [], classrooms: await dal.getClassrooms(tenantId),
     teachers: await dal.getUsers(tenantId, { role: 'TEACHER' }),
   });
-  localStorage.setItem(groupKey, JSON.stringify([previous]));
+  const { weeklySlots: _slots, pricing: _pricing, ...legacy } = previous;
+  localStorage.setItem(groupKey, JSON.stringify([{ ...legacy, isActive: false }]));
   const initial = await open(<SessionsGroupsPage />);
-  await screen.findByText('مفيش مجموعات مسجلة.');
+  await screen.findByText(previous.nameAr);
+  expect(screen.getByText('غير نشطة')).toBeInTheDocument();
   expect(screen.queryByRole('link', { name: 'الفروع والقاعات' })).not.toBeInTheDocument();
-  expect(await dal.getGroupById(tenantId, previous.id)).toMatchObject({ isActive: false });
+  expect(await dal.getGroupById(tenantId, previous.id)).not.toHaveProperty('archivedAt');
   fireEvent.click(screen.getByRole('button', { name: 'إضافة مجموعة' }));
   const add = within(screen.getByRole('dialog', { name: 'إضافة مجموعة' }));
   fireEvent.change(add.getByLabelText('اسم المجموعة'), { target: { value: 'مجموعة جديدة' } });
@@ -78,12 +81,41 @@ it('removes old demo groups once and keeps group changes across reloads', async 
   await screen.findByText('مجموعة معدلة');
   fireEvent.click(screen.getByRole('button', { name: 'حذف مجموعة معدلة' }));
   fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'تأكيد الحذف' }));
+  await waitFor(() => expect(screen.queryByText('مجموعة معدلة', { exact: true })).not.toBeInTheDocument());
+  fireEvent.click(screen.getByRole('button', { name: `حذف ${previous.nameAr}` }));
+  fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'تأكيد الحذف' }));
   await screen.findByText('مفيش مجموعات مسجلة.');
   reloaded.unmount();
   await open(<SessionsGroupsPage />);
   await screen.findByText('مفيش مجموعات مسجلة.');
   fireEvent.click(screen.getByRole('button', { name: 'عرض الجدول' }));
   expect(screen.getByText('مفيش حصص في الأيام والفروع المختارة.')).toBeInTheDocument();
+});
+
+it('shows linked registered groups for a subject and reports materials once only archived groups remain', async () => {
+  const dal = getDataProvider();
+  const archivedGroup = (await dal.getGroupById(tenantId, 'grp-math-sat'))!;
+  const { archivedAt: _archivedAt, ...record } = archivedGroup;
+  localStorage.setItem(groupKey, JSON.stringify({ groups: [{ ...record, id: 'registered-math-group', nameAr: 'مجموعة الرياضيات المسجلة' }] }));
+
+  const initial = await open(<SubjectsManagementPage />);
+  const math = await screen.findByRole('row', { name: /الرياضيات التطبيقية/ });
+  await waitFor(() => expect(within(math).getByTitle('حذف المادة')).toBeEnabled());
+  fireEvent.click(within(math).getByTitle('حذف المادة'));
+  expect(await screen.findByText('مجموعة الرياضيات المسجلة')).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'إدارة المجموعات المرتبطة' })).toHaveAttribute('href', '/center/al-maher/sessions');
+  fireEvent.click(screen.getByRole('button', { name: 'تأكيد الحذف' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('مجموعات مرتبطة بها');
+  initial.unmount();
+
+  localStorage.removeItem(groupKey);
+  await open(<SubjectsManagementPage />);
+  const reloaded = await screen.findByRole('row', { name: /الرياضيات التطبيقية/ });
+  await waitFor(() => expect(within(reloaded).getByTitle('حذف المادة')).toBeEnabled());
+  fireEvent.click(within(reloaded).getByTitle('حذف المادة'));
+  fireEvent.click(screen.getByRole('button', { name: 'تأكيد الحذف' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('مذكرات ومواد تعليمية مرتبطة بها');
+  expect(screen.queryByRole('link', { name: 'إدارة المجموعات المرتبطة' })).not.toBeInTheDocument();
 });
 
 it('manages rooms inside the selected branch and allows branch deletion once its rooms are removed', async () => {

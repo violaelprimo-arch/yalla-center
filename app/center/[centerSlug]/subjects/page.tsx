@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useMemo, useCallback } from 'react';
+import Link from 'next/link';
 import {
   BookOpen,
   Plus,
@@ -21,9 +22,10 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import type { Subject } from '@/lib/dal/types';
+import { isRegisteredGroup } from '@/lib/timetable/group-schedule';
 
 export default function SubjectsManagementPage() {
-  const { tenant, masterData } = useTenant();
+  const { tenant, masterData, groupData } = useTenant();
 
   const { data: { subjects, stages }, loading, canEdit, save } = masterData;
 
@@ -51,6 +53,9 @@ export default function SubjectsManagementPage() {
   const [deleteTarget, setDeleteTarget] = useState<Subject | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState('');
+  const linkedGroups = deleteTarget
+    ? groupData.groups.filter(group => group.subjectId === deleteTarget.id && isRegisteredGroup(group))
+    : [];
 
   const showToast = useCallback((type: 'success' | 'error', message: string) => {
     setToast({ type, message });
@@ -407,7 +412,7 @@ export default function SubjectsManagementPage() {
                             variant="ghost"
                             size="sm"
                             disabled={!canEdit}
-                            onClick={() => setDeleteTarget(subject)}
+                            onClick={() => { setDeleteError(''); setDeleteTarget(subject); }}
                             className="h-8 w-8 p-0 text-rose-500 hover:bg-rose-500/10"
                             title="حذف المادة"
                           >
@@ -564,11 +569,19 @@ export default function SubjectsManagementPage() {
             <p className="text-xs sm:text-sm text-muted-foreground leading-relaxed">
               هل أنت متأكد من رغبتك في حذف مادة{' '}
               <strong className="text-foreground">{deleteTarget.nameAr}</strong>؟
-              سيتم منع الحذف تلقائيًا إذا كانت هناك مجموعات دراسية أو مذكرات أو امتحانات مرتبطة بهذه المادة.
+              حذف المادة يتطلب إزالة ارتباطها بالمجموعات المسجلة والمذكرات والامتحانات.
             </p>
 
+            {linkedGroups.length > 0 && (
+              <div className="rounded-xl border border-border bg-muted p-3 text-xs">
+                <p className="break-words">{linkedGroups.map(group => group.nameAr).join('، ')}</p>
+                <Link href={`/center/${tenant.slug}/sessions`} className="mt-1 inline-block font-semibold text-brand-cyan-700 underline dark:text-brand-cyan-300">
+                  إدارة المجموعات المرتبطة
+                </Link>
+              </div>
+            )}
             {deleteError && (
-              <div className="p-3 rounded-xl bg-rose-950/80 border border-rose-500/40 text-rose-200 text-xs">
+              <div role="alert" className="p-3 rounded-xl bg-rose-950/80 border border-rose-500/40 text-rose-200 text-xs">
                 {deleteError}
               </div>
             )}

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import { GET, POST } from '@/app/api/center/[centerSlug]/master-data/route';
+import { GET as GET_GROUPS, POST as POST_GROUPS } from '@/app/api/center/[centerSlug]/groups/route';
 import { MockDataProvider } from '@/lib/dal/mock-data';
 import { createServerFirestoreStore, verifyFirebaseIdToken } from '@/lib/firebase/server';
 import { InMemoryTransactionalFirestoreStore } from '../helpers/in-memory-firestore';
@@ -102,6 +103,26 @@ describe('Master Data API', () => {
     expect((await write({ action: 'saveSubject', subject: { ...subject, grade: '2_sec' } })).status).toBe(200);
     expect((await write({ action: 'saveSubject', subject })).status).toBe(400);
     expect((await write({ action: 'saveSubject', subject: { ...subject, stage: 'primary' } })).status).toBe(400);
+  });
+
+  it('lists persisted inactive groups, blocks subject deletion until they are archived, and then deletes the subject', async () => {
+    const { subject } = await (await write({
+      action: 'saveSubject', subject: { nameAr: 'مادة اختبار المجموعات', stage: 'secondary', grade: '3_sec' },
+    })).json();
+    const group = { id: 'registered-group', tenantId, subjectId: subject.id, nameAr: 'مجموعة مسجلة', isActive: false };
+    store.seed(`center_groups/${tenantId}~${group.id}`, group);
+    const groupList = await GET_GROUPS(request('admin'), { params });
+    expect(await groupList.json()).toMatchObject({ groups: [group], canEdit: true });
+    const blocked = await write({ action: 'deleteSubject', subjectId: subject.id });
+    expect(blocked.status).toBe(400);
+    expect(await blocked.json()).toMatchObject({ error: 'لا يمكن حذف المادة لوجود مجموعات مرتبطة بها' });
+
+    const deleted = await POST_GROUPS(request('admin', { action: 'deleteGroups', groups: [{ id: group.id, version: 0 }] }), { params });
+    expect(deleted.status).toBe(200);
+    expect(await deleted.json()).toMatchObject({ groups: [expect.objectContaining({ ...group, archivedAt: expect.any(String) })] });
+    expect((await write({ action: 'deleteSubject', subjectId: subject.id })).status).toBe(200);
+    expect((await (await read()).json()).data.subjects).not.toContainEqual(expect.objectContaining({ id: subject.id }));
+    expect((await store.getDocument(`center_groups/${tenantId}~${group.id}`)).exists).toBe(true);
   });
 
   it('does not acknowledge a write or replace stored data if Firestore is unavailable', async () => {

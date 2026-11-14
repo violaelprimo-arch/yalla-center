@@ -15,8 +15,8 @@ function parseSavedGroups(raw: string | null, tenantId: string): Group[] {
   const snapshot = raw === null ? [] : JSON.parse(raw);
   const records = Array.isArray(snapshot) ? snapshot : snapshot?.groups;
   if (!Array.isArray(records) || !records.every(row => row && row.tenantId === tenantId &&
-    typeof row.id === 'string' && ((Array.isArray(row.weeklySlots) && row.weeklySlots.length && row.pricing) ||
-      (typeof row.archivedAt === 'string' && row.isActive === false)))) {
+    typeof row.id === 'string' && typeof row.nameAr === 'string' && typeof row.subjectId === 'string' &&
+    typeof row.isActive === 'boolean')) {
     throw new Error('تعذّر قراءة المجموعات المحفوظة في هذا المتصفح');
   }
   return records;
@@ -37,17 +37,6 @@ function writeDemoData(key: string, data: object, label: string) {
   } catch {
     throw new Error(`تعذّر حفظ ${label} في هذا المتصفح. تحقّق من مساحة التخزين وإعدادات المتصفح.`);
   }
-}
-
-function loadDemoGroups(key: string, tenantId: string, slug: string) {
-  const raw = window.localStorage.getItem(key);
-  const groups = parseSavedGroups(raw, tenantId);
-  if (slug !== 'al-maher' || !raw || !Array.isArray(JSON.parse(raw))) return groups;
-
-  // Reset the old demo data once. New groups use the snapshot format.
-  const archived = groups.map(group => archiveGroup(group));
-  writeDemoData(key, { groups: archived }, 'المجموعات');
-  return archived;
 }
 
 export function readDemoSchedule(tenantId: string) {
@@ -114,7 +103,7 @@ export function useCenterGroups(tenant: Tenant, catalog: MasterData, auth: Fireb
       const dal = getDataProvider();
       try {
         const stored = demo
-          ? { groups: loadDemoGroups(key, tenantId, slug),
+          ? { groups: parseSavedGroups(window.localStorage.getItem(key), tenantId),
             classrooms: parseSavedClassrooms(window.localStorage.getItem(roomsKey), tenantId), canEdit: true }
           : await requestGroups<{ groups: Group[]; classrooms: Classroom[]; canEdit: boolean }>(slug, token!, undefined, controller.signal);
         if (!active()) return;
@@ -201,7 +190,7 @@ export function useCenterGroups(tenant: Tenant, catalog: MasterData, auth: Fireb
     const archived = targets.map(({ id, version }) => {
       const group = groups.get(id);
       if (group?.archivedAt) return group;
-      if (!group?.isActive || (group.version ?? 0) !== version) throw new Error(groupConflictMessage);
+      if (!group || (group.version ?? 0) !== version) throw new Error(groupConflictMessage);
       return archiveGroup(group);
     });
     const next = mergeManagedRecords(snapshot.storedGroups, archived);

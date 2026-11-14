@@ -94,7 +94,7 @@ export async function archiveManagedGroups(context: GroupContext, selection: { i
   const archived = selection.map(({ id, version }) => {
     const group = all.get(id);
     if (group?.archivedAt) return group;
-    if (!group?.isActive || (group.version ?? 0) !== version) throw new GroupScheduleError(409, groupConflictMessage);
+    if (!group || (group.version ?? 0) !== version) throw new GroupScheduleError(409, groupConflictMessage);
     return archiveGroup(group);
   });
   await store.commit([revision, ...archived.map((group): FirestoreWriteOperation => ({
