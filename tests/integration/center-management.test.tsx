@@ -3,6 +3,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import SessionsGroupsPage from '@/app/center/[centerSlug]/sessions/page';
 import BranchesManagementPage from '@/app/center/[centerSlug]/branches-list/page';
 import SubjectsManagementPage from '@/app/center/[centerSlug]/subjects/page';
+import TeachersDirectoryPage from '@/app/center/[centerSlug]/teachers/page';
 import { Sidebar } from '@/components/layout/sidebar';
 import { TenantProvider } from '@/components/layout/tenant-provider';
 import { createCenterDataProvider, getDataProvider } from '@/lib/dal/factory';
@@ -57,7 +58,8 @@ it('omits default groups, teachers, branches and rooms and keeps real records sa
   localStorage.setItem(`yc-teachers-v1:${tenantId}`, JSON.stringify([teacher]));
   const seedGroup = (await previous.getGroups(tenantId))[0];
   const customGroup = { ...seedGroup, id: 'group-saved', branchId: customBranch.id, classroomId: customRoom.id,
-    teacherId: teacher.id, teacherName: teacher.fullName, nameAr: 'مجموعة المستخدم' };
+    teacherId: teacher.id, teacherName: teacher.fullName, nameAr: 'مجموعة المستخدم', pricingModel: 'center',
+    pricing: { model: 'center', teacherRate: 20, monthlyFee: 300 }, monthlyFee: 300, isActive: true };
   localStorage.setItem(groupKey, JSON.stringify([seedGroup, customGroup]));
 
   try {
@@ -66,10 +68,18 @@ it('omits default groups, teachers, branches and rooms and keeps real records sa
     expect(await dal.getClassrooms(tenantId)).toEqual([]);
     expect(await dal.getGroups(tenantId)).toEqual([]);
     const first = await open(<SessionsGroupsPage />);
-    await screen.findByText(customGroup.nameAr);
-    expect(screen.queryByText(seedGroup.nameAr)).not.toBeInTheDocument();
+    await screen.findByRole('heading', { name: customGroup.nameAr });
+    expect(screen.queryByRole('heading', { name: seedGroup.nameAr })).not.toBeInTheDocument();
     expect(await dal.getGroups(tenantId)).toEqual([expect.objectContaining({ id: customGroup.id })]);
     first.unmount();
+
+    const withTeachers = await open(<TeachersDirectoryPage />);
+    const row = within(await screen.findByRole('row', { name: new RegExp(teacher.fullName) }));
+    fireEvent.click(row.getByRole('button', { name: /الحسابات والمجموعات/ }));
+    await screen.findByRole('heading', { name: customGroup.nameAr });
+    expect(screen.getByText('20 ج.م / طالب')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'إضافة مجموعة' })).not.toBeInTheDocument();
+    withTeachers.unmount();
 
     await open(<BranchesManagementPage />);
     await screen.findByRole('heading', { name: customBranch.nameAr });
@@ -96,7 +106,7 @@ it('keeps registered groups from the old storage format and applies add, edit an
   const { weeklySlots: _slots, pricing: _pricing, ...legacy } = previous;
   localStorage.setItem(groupKey, JSON.stringify([{ ...legacy, isActive: false }]));
   const initial = await open(<SessionsGroupsPage />);
-  await screen.findByText(previous.nameAr);
+  await screen.findByRole('heading', { name: previous.nameAr });
   expect(screen.getByText('غير نشطة')).toBeInTheDocument();
   expect(screen.queryByRole('link', { name: 'الفروع والقاعات' })).not.toBeInTheDocument();
   expect(await dal.getGroupById(tenantId, previous.id)).not.toHaveProperty('archivedAt');
@@ -111,7 +121,7 @@ it('keeps registered groups from the old storage format and applies add, edit an
   fireEvent.change(add.getByLabelText('مصروفات الطالب الشهرية (ج.م)'), { target: { value: '300' } });
   fireEvent.change(add.getByLabelText('سعر الطالب للمعلم في الشهر (ج.م)'), { target: { value: '20' } });
   fireEvent.click(add.getByRole('button', { name: 'حفظ المجموعة' }));
-  await screen.findByText('مجموعة جديدة');
+  await screen.findByRole('heading', { name: 'مجموعة جديدة' });
 
   initial.unmount();
   const reloaded = await open(<SessionsGroupsPage />);
@@ -119,7 +129,7 @@ it('keeps registered groups from the old storage format and applies add, edit an
   const edit = within(screen.getByRole('dialog', { name: 'تعديل المجموعة' }));
   fireEvent.change(edit.getByLabelText('اسم المجموعة'), { target: { value: 'مجموعة معدلة' } });
   fireEvent.click(edit.getByRole('button', { name: 'حفظ المجموعة' }));
-  await screen.findByText('مجموعة معدلة');
+  await screen.findByRole('heading', { name: 'مجموعة معدلة' });
   fireEvent.click(screen.getByRole('button', { name: 'حذف مجموعة معدلة' }));
   fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'تأكيد الحذف' }));
   await waitFor(() => expect(screen.queryByText('مجموعة معدلة', { exact: true })).not.toBeInTheDocument());
@@ -130,7 +140,7 @@ it('keeps registered groups from the old storage format and applies add, edit an
   await open(<SessionsGroupsPage />);
   await screen.findByText('مفيش مجموعات مسجلة.');
   fireEvent.click(screen.getByRole('button', { name: 'عرض الجدول' }));
-  expect(screen.getByText('مفيش حصص في الأيام والفروع المختارة.')).toBeInTheDocument();
+  expect(screen.getAllByText('لا توجد حصص')).toHaveLength(7);
 });
 
 it('shows linked registered groups for a subject and reports materials once only archived groups remain', async () => {

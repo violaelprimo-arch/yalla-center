@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { getGradeNameArabic, getStageNameArabic } from '@/lib/materials/taxonomy';
-import { groupPricingSchema, normalizeGroupPricing, type GroupPricing } from '@/lib/timetable/group-schedule';
+import { groupPricingSchema, normalizeGroupPricing } from '@/lib/timetable/group-schedule';
 import type { EducationalStage, Group, Subject, User } from '@/lib/dal/types';
 
 export const TEACHER_PERMISSIONS = {
@@ -144,11 +144,6 @@ export function matchTeacherContract<T extends TeacherContract>(contracts: T[], 
   if (!subject) return undefined;
   return contracts.find(contract => contract.level === subject.grade) ??
     contracts.find(contract => contract.level === subject.stage);
-}
-
-export function teacherGroupPricing(contracts: TeacherContract[], stage: string, grade: string): GroupPricing | undefined {
-  const contract = matchTeacherContract(contracts, { stage, grade });
-  return contract && !('value' in contract) ? contract : undefined;
 }
 
 export function matchLegacyTeacherContract(contracts: TeacherContract[], subject?: Subject) {

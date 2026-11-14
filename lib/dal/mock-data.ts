@@ -2303,6 +2303,11 @@ export class MockDataProvider implements IDataProvider {
     ]);
     const teacherGroups = this.groups.filter(group => group.tenantId === params.tenantId &&
       (group.teacherId === params.teacherId || historicalGroups.has(group.id)));
+    const roomNames = new Map(this.classrooms.filter(room => room.tenantId === params.tenantId).map(room => [room.id, room.nameAr]));
+    const sessionDetails = (session: Session) => ({
+      startTime: session.startTime, endTime: session.endTime,
+      classroomName: roomNames.get(session.classroomId ?? ''), notes: session.cancellationReason ?? session.notes,
+    });
     const subjectNames = [...new Set(teacherGroups.map(group => this.subjects.find(subject =>
       subject.id === group.subjectId && subject.tenantId === params.tenantId)?.nameAr)
       .filter((name): name is string => Boolean(name)))];
@@ -2328,14 +2333,14 @@ export class MockDataProvider implements IDataProvider {
         } else if (pricing?.model === 'per_session' && session.status === 'completed') {
           const tickets = monthlyInvoices.filter(invoice => invoice.sessionId === session.id);
           lessonRows.push({
-            sessionId: session.id, sessionDate: session.sessionDate, groupName: group.nameAr,
+            sessionId: session.id, sessionDate: session.sessionDate, groupName: group.nameAr, ...sessionDetails(session),
             attendanceCount, model: 'per_session', rate: pricing.teacherFee,
             ...calculateFixedSessionSplit(pricing, tickets),
           });
         } else if (!pricing && legacyModel && contract && contract.model !== 'private' && session.status === 'completed') {
           const revenue = moneyAmount(attendanceCount * (group.legacyBilling?.sessionFee ?? group.sessionFee));
           lessonRows.push({
-            sessionId: session.id, sessionDate: session.sessionDate, groupName: group.nameAr,
+            sessionId: session.id, sessionDate: session.sessionDate, groupName: group.nameAr, ...sessionDetails(session),
             attendanceCount, revenue, model: contract.model, rate: contract.value,
             ...calculateTeacherSessionPay(contract, session, attendanceCount, revenue),
           });
@@ -2358,7 +2363,7 @@ export class MockDataProvider implements IDataProvider {
       let roundedCompensation = 0;
       for (const [ratePerStudent, groupSessions] of averageSessions) {
         const sessionRecords = groupSessions.map(session => ({
-          sessionId: session.id, sessionDate: session.sessionDate, status: session.status,
+          sessionId: session.id, sessionDate: session.sessionDate, status: session.status, ...sessionDetails(session),
           validAttendanceCount: countTeacherSessionAttendance(this.attendance, session),
         }));
         const comp = calcCenterComp(sessionRecords.filter(session => session.status === 'completed'), ratePerStudent);
@@ -2415,7 +2420,7 @@ export class MockDataProvider implements IDataProvider {
         const shares = splitPrivateFee(netRevenue, percentage);
         const collectedAmount = Math.min(netRevenue, invoice?.paidAmount ?? 0);
         return {
-          enrollmentId: enrollment?.id ?? invoice?.id ?? studentId, studentId, studentName: student?.fullName ?? 'طالب',
+          enrollmentId: enrollment?.id ?? invoice?.id ?? studentId, studentId, studentName: student?.fullName ?? 'طالب', studentPhone: student?.phone,
           basePrice, discountType, discountValue, netRevenue, teacherShare: shares.teacher, centerShare: shares.center,
           collectedAmount, collectedTeacher: splitPrivateFee(collectedAmount, percentage).teacher, percentage,
         };

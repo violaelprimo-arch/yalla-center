@@ -71,7 +71,7 @@ export async function POST(
       tenantId: tenant.id,
       groupId: groupId || '',
       subjectId,
-      teacherId: teacherId || 'user-teacher-phys',
+      teacherId: teacherId || '',
       title,
       durationMinutes: durationMinutes || 30,
       sourceDocumentIds,

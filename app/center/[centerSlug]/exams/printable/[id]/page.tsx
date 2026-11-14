@@ -18,7 +18,7 @@ export default async function PrintableExamPage({
   const { exam, questions } = data;
 
   const teacher = await dal.getUserById(exam.teacherId);
-  const teacherName = teacher?.fullName || 'د. هاني نبيل (معلم فيزياء)';
+  const teacherName = teacher?.fullName || 'المعلم';
 
   const printableQuestions: PrintableExamQuestion[] = questions.map((q) => ({
     id: q.id,

@@ -6,7 +6,6 @@ import { Button } from '@/components/ui/button';
 import { useTenant } from '@/components/layout/tenant-provider';
 import type { Classroom, Group, PricingModel } from '@/lib/dal/types';
 import { PricingFields, pricingFormInput, pricingFormValues } from '@/components/finance/pricing-fields';
-import { teacherGroupPricing, type TeacherContract } from '@/lib/teachers/profile';
 import {
   groupInputSchema, WEEKDAYS, weeklySlots, type WeeklySlot,
 } from '@/lib/timetable/group-schedule';
@@ -15,7 +14,6 @@ export interface ScheduleTeacher {
   id: string;
   fullName: string;
   isActive: boolean;
-  contracts?: TeacherContract[];
 }
 
 const control = 'w-full min-w-0 rounded-lg border border-border bg-background px-2.5 py-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-cyan-500';
@@ -47,9 +45,8 @@ export function GroupEditor({ group, classrooms, teachers, onClose, onSaved }: {
   const [slots, setSlots] = useState<WeeklySlot[]>(() => group
     ? weeklySlots(group).map(slot => ({ ...slot, classroomId: slot.classroomId || group.classroomId }))
     : [{ id: crypto.randomUUID(), scheduleDay: 6, startTime: '14:00', endTime: '15:00', classroomId: '' }]);
-  const [manualPricing, setManualPricing] = useState(Boolean(group));
-  const [pricingModel, setPricingModel] = useState<PricingModel>(group?.pricingModel ?? 'center');
-  const [pricingValues, setPricingValues] = useState(() => originalPricing ? pricingFormValues(originalPricing)
+  const [model, setModel] = useState<PricingModel>(group?.pricingModel ?? 'center');
+  const [values, setValues] = useState(() => originalPricing ? pricingFormValues(originalPricing)
     : group && group.pricingModel !== 'per_session' ? { monthlyFee: String(group.monthlyFee) } : {});
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -59,10 +56,6 @@ export function GroupEditor({ group, classrooms, teachers, onClose, onSaved }: {
   const rooms = classrooms.filter(room => room.branchId === branchId);
   const activeTeachers = teachers.filter(teacher => teacher.isActive);
   const activeBranches = branches.filter(branch => branch.isActive);
-  const agreement = gradeId ? teacherGroupPricing(teachers.find(teacher => teacher.id === teacherId)?.contracts ?? [], stageId, gradeId) : undefined;
-  const agreedPricing = manualPricing ? undefined : agreement;
-  const model = agreedPricing?.model ?? pricingModel;
-  const values = agreedPricing ? pricingFormValues(agreedPricing) : pricingValues;
 
   useEffect(() => {
     const element = dialog.current;
@@ -172,11 +165,8 @@ export function GroupEditor({ group, classrooms, teachers, onClose, onSaved }: {
 
       <section className="space-y-3 border-t border-border pt-4">
         <h3 className="font-bold">طريقة الحساب</h3>
-        {agreement && (agreedPricing ? <p className="text-xs text-muted-foreground">الإعدادات من تعاقد المعلم لهذا الصف أو المرحلة.</p>
-          : <Button type="button" size="sm" variant="outline" onClick={() => setManualPricing(false)}>تطبيق تعاقد المعلم</Button>)}
         <PricingFields model={model} values={values} control={control} label="نظام المجموعة" required
-          onModel={next => { setPricingModel(next); setPricingValues(values); setManualPricing(true); }}
-          onAmount={(field, value) => { setPricingModel(model); setPricingValues({ ...values, [field]: value }); setManualPricing(true); }} />
+          onModel={setModel} onAmount={(field, value) => setValues(previous => ({ ...previous, [field]: value }))} />
         {group?.pricing && <p className="text-xs text-muted-foreground">تطبق تغييرات المواعيد والأسعار على الحصص والفواتير الجديدة.</p>}
       </section>
       <div className="flex justify-end gap-2 border-t border-border pt-3">

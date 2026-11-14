@@ -71,7 +71,7 @@ export async function POST(
     // Call Grounded AI Exam Generator
     const generated = await dal.generateAiExam({
       tenantId: tenant.id,
-      teacherId: teacherId || 'user-teacher-phys',
+      teacherId: teacherId || '',
       groupId,
       sessionId,
       title: title || `اختبار دوري مؤصل - ${subject || 'الفيزياء'}`,
