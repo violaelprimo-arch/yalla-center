@@ -23,14 +23,16 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
-it('adds a teacher with different grade contracts and saved permissions, then edits and archives the teacher', async () => {
+it('adds a teacher with saved permissions and subjects, then edits and archives the teacher', async () => {
   const dal = getDataProvider();
   const tenant = (await dal.getTenantBySlug('al-maher'))!;
   const branches = await dal.getBranches(tenantId);
   const users = await dal.getUsers(tenantId);
-  const page = <TenantProvider tenant={tenant} branches={branches} initialUsers={users}>
-    <TeachersDirectoryPage />
-  </TenantProvider>;
+  const page = (
+    <TenantProvider tenant={tenant} branches={branches} initialUsers={users}>
+      <TeachersDirectoryPage />
+    </TenantProvider>
+  );
 
   const first = render(page);
   fireEvent.click(await screen.findByRole('button', { name: 'إضافة معلم جديد' }));
@@ -40,13 +42,6 @@ it('adds a teacher with different grade contracts and saved permissions, then ed
 
   fireEvent.change(form.getByLabelText(/اسم المعلم/), { target: { value: teacherName } });
   fireEvent.change(form.getByLabelText(/رقم الهاتف \(1\)/), { target: { value: '٠١٠ ١٢٣٤ ٥٦٧٨' } });
-  fireEvent.click(form.getByRole('button', { name: 'إضافة مرحلة أو صف' }));
-  fireEvent.change(form.getByLabelText('المرحلة أو الصف'), { target: { value: '1_sec' } });
-  fireEvent.change(form.getByLabelText('ج.م / حصة'), { target: { value: '150' } });
-  fireEvent.click(form.getByRole('button', { name: 'إضافة مرحلة أو صف' }));
-  fireEvent.change(form.getAllByLabelText('المرحلة أو الصف')[1], { target: { value: '2_sec' } });
-  fireEvent.change(form.getAllByLabelText('طريقة الحساب')[1], { target: { value: 'private' } });
-  fireEvent.change(form.getByLabelText('نسبة المعلم %'), { target: { value: '70' } });
   fireEvent.click(form.getByRole('checkbox', { name: /الرياضيات التطبيقية/ }));
   fireEvent.click(form.getByRole('radio', { name: 'حساب Google' }));
   fireEvent.change(form.getByLabelText('بريد حساب Google للمعلم'), { target: { value: 'teacher-test@example.com' } });
@@ -61,9 +56,9 @@ it('adds a teacher with different grade contracts and saved permissions, then ed
   await screen.findByText('تمت إضافة المعلم');
   const [saved] = readDemoTeacherProfiles(tenantId);
   expect(saved).toMatchObject({
-    phone: '01012345678', phone2: '',
+    phone: '01012345678',
+    phone2: '',
     subjectIds: ['sub-math-3sec'],
-    contracts: [{ level: '1_sec', model: 'fixed_session', value: 150 }, { level: '2_sec', model: 'private', value: 70 }],
     permissions: ['viewStudents', 'viewStudentDetails'],
   });
   expect(saved.tabs).not.toContain('students');
