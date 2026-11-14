@@ -128,7 +128,7 @@ export async function changeMasterData(
   input: MasterDataAction,
   currentMaterials?: Awaited<ReturnType<IDataProvider['getMaterials']>>,
 ) {
-  const editor = new MockDataProvider();
+  const editor = new MockDataProvider({ useOperationalFixtures: false });
   editor.setMasterData(tenantId, catalog);
   if (input.action.startsWith('delete')) {
     [editor.users, editor.groups, editor.classrooms, editor.materials, editor.exams] = await Promise.all([

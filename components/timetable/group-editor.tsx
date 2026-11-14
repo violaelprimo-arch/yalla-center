@@ -5,29 +5,23 @@ import { Plus, Trash2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useTenant } from '@/components/layout/tenant-provider';
 import type { Classroom, Group, PricingModel } from '@/lib/dal/types';
-import { splitPrivateFee } from '@/lib/finance/group-pricing';
+import { PricingFields, pricingFormInput, pricingFormValues } from '@/components/finance/pricing-fields';
+import { teacherGroupPricing, type TeacherContract } from '@/lib/teachers/profile';
 import {
-  GROUP_PRICING_LABELS, groupInputSchema, moneyAmount, WEEKDAYS, weeklySlots, type GroupPricing, type WeeklySlot,
+  groupInputSchema, WEEKDAYS, weeklySlots, type WeeklySlot,
 } from '@/lib/timetable/group-schedule';
 
 export interface ScheduleTeacher {
   id: string;
   fullName: string;
   isActive: boolean;
+  contracts?: TeacherContract[];
 }
 
 const control = 'w-full min-w-0 rounded-lg border border-border bg-background px-2.5 py-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-cyan-500';
-const currency = new Intl.NumberFormat('ar-EG', { style: 'currency', currency: 'EGP' });
 
 function Field({ title, children }: { title: string; children: ReactNode }) {
   return <label className="min-w-0 space-y-1 text-sm font-semibold"><span>{title}</span>{children}</label>;
-}
-
-function Amount({ title, value, onChange, max }: {
-  title: string; value: string; onChange: (value: string) => void; max?: number;
-}) {
-  return <Field title={title}><input className={control} type="number" min="0" step="0.01"
-    max={max ?? 1000000} value={value} onChange={event => onChange(event.target.value)} required /></Field>;
 }
 
 export function GroupEditor({ group, classrooms, teachers, onClose, onSaved }: {
@@ -53,13 +47,10 @@ export function GroupEditor({ group, classrooms, teachers, onClose, onSaved }: {
   const [slots, setSlots] = useState<WeeklySlot[]>(() => group
     ? weeklySlots(group).map(slot => ({ ...slot, classroomId: slot.classroomId || group.classroomId }))
     : [{ id: crypto.randomUUID(), scheduleDay: 6, startTime: '14:00', endTime: '15:00', classroomId: '' }]);
-  const [model, setModel] = useState<PricingModel>(group?.pricingModel ?? 'center');
-  const [monthlyFee, setMonthlyFee] = useState(group ? String(group.monthlyFee) : '');
-  const [teacherRate, setTeacherRate] = useState(originalPricing?.model === 'center' ? String(originalPricing.teacherRate) : '');
-  const [teacherPercentage, setTeacherPercentage] = useState(originalPricing?.model === 'private'
-    ? String(originalPricing.teacherPercentage) : '');
-  const [teacherFee, setTeacherFee] = useState(originalPricing?.model === 'per_session' ? String(originalPricing.teacherFee) : '');
-  const [centerFee, setCenterFee] = useState(originalPricing?.model === 'per_session' ? String(originalPricing.centerFee) : '');
+  const [manualPricing, setManualPricing] = useState(Boolean(group));
+  const [pricingModel, setPricingModel] = useState<PricingModel>(group?.pricingModel ?? 'center');
+  const [pricingValues, setPricingValues] = useState(() => originalPricing ? pricingFormValues(originalPricing)
+    : group && group.pricingModel !== 'per_session' ? { monthlyFee: String(group.monthlyFee) } : {});
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -68,7 +59,10 @@ export function GroupEditor({ group, classrooms, teachers, onClose, onSaved }: {
   const rooms = classrooms.filter(room => room.branchId === branchId);
   const activeTeachers = teachers.filter(teacher => teacher.isActive);
   const activeBranches = branches.filter(branch => branch.isActive);
-  const privateShares = splitPrivateFee(Number(monthlyFee), Number(teacherPercentage));
+  const agreement = gradeId ? teacherGroupPricing(teachers.find(teacher => teacher.id === teacherId)?.contracts ?? [], stageId, gradeId) : undefined;
+  const agreedPricing = manualPricing ? undefined : agreement;
+  const model = agreedPricing?.model ?? pricingModel;
+  const values = agreedPricing ? pricingFormValues(agreedPricing) : pricingValues;
 
   useEffect(() => {
     const element = dialog.current;
@@ -84,21 +78,10 @@ export function GroupEditor({ group, classrooms, teachers, onClose, onSaved }: {
     event.preventDefault();
     setError('');
     if (saving) return;
-    let pricing: GroupPricing;
-    switch (model) {
-      case 'center':
-        pricing = { model, monthlyFee: Number(monthlyFee), teacherRate: Number(teacherRate) };
-        break;
-      case 'private':
-        pricing = { model, monthlyFee: Number(monthlyFee), teacherPercentage: Number(teacherPercentage) };
-        break;
-      case 'per_session':
-        pricing = { model, teacherFee: Number(teacherFee), centerFee: Number(centerFee) };
-        break;
-    }
     const result = groupInputSchema.safeParse({
       id, version: group?.version ?? 0, nameAr, branchId, stageId, gradeId, subjectId, teacherId,
-      weeklySlots: slots, pricing, maxStudents: maxStudents === '' ? undefined : Number(maxStudents),
+      weeklySlots: slots, pricing: pricingFormInput(model, values),
+      maxStudents: maxStudents === '' ? undefined : Number(maxStudents),
     });
     if (!result.success) {
       setError(result.error.issues[0].message);
@@ -189,23 +172,11 @@ export function GroupEditor({ group, classrooms, teachers, onClose, onSaved }: {
 
       <section className="space-y-3 border-t border-border pt-4">
         <h3 className="font-bold">طريقة الحساب</h3>
-        <div className="grid gap-3 sm:grid-cols-3">
-          <Field title="نظام المجموعة"><select className={control} value={model} onChange={event => setModel(event.target.value as PricingModel)}>
-            {Object.entries(GROUP_PRICING_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-          </select></Field>
-          {model !== 'per_session' && <Amount title="مصروفات الطالب الشهرية (ج.م)" value={monthlyFee} onChange={setMonthlyFee} />}
-          {model === 'center' && <Amount title="سعر الطالب للمعلم في الشهر (ج.م)" value={teacherRate} onChange={setTeacherRate} />}
-          {model === 'private' && <Amount title="نسبة المعلم (%)" max={100} value={teacherPercentage} onChange={setTeacherPercentage} />}
-          {model === 'per_session' && <>
-            <Amount title="نصيب المعلم لكل طالب في الحصة (ج.م)" value={teacherFee} onChange={setTeacherFee} />
-            <Amount title="نصيب السنتر لكل طالب في الحصة (ج.م)" value={centerFee} onChange={setCenterFee} />
-          </>}
-        </div>
-        <p className="rounded-lg bg-muted/55 px-3 py-2 text-sm" aria-live="polite">
-          {model === 'center' && 'مستحق المعلم الشهري = متوسط حضور الحصص المنعقدة × سعر الطالب للمعلم.'}
-          {model === 'private' && `المعلم ${currency.format(privateShares.teacher)} · السنتر ${moneyAmount(100 - Number(teacherPercentage))}% (${currency.format(privateShares.center)}) لكل طالب شهريًا`}
-          {model === 'per_session' && `سعر الحصة للطالب ${currency.format(moneyAmount(Number(teacherFee) + Number(centerFee)))}`}
-        </p>
+        {agreement && (agreedPricing ? <p className="text-xs text-muted-foreground">الإعدادات من تعاقد المعلم لهذا الصف أو المرحلة.</p>
+          : <Button type="button" size="sm" variant="outline" onClick={() => setManualPricing(false)}>تطبيق تعاقد المعلم</Button>)}
+        <PricingFields model={model} values={values} control={control} label="نظام المجموعة" required
+          onModel={next => { setPricingModel(next); setPricingValues(values); setManualPricing(true); }}
+          onAmount={(field, value) => { setPricingModel(model); setPricingValues({ ...values, [field]: value }); setManualPricing(true); }} />
         {group?.pricing && <p className="text-xs text-muted-foreground">تطبق تغييرات المواعيد والأسعار على الحصص والفواتير الجديدة.</p>}
       </section>
       <div className="flex justify-end gap-2 border-t border-border pt-3">

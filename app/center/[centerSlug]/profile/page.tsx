@@ -13,11 +13,13 @@ import {
 import { useTenant } from '@/components/layout/tenant-provider';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { getDataProvider } from '@/lib/dal/factory';
+import { validateProfilePhotoUpdate } from '@/lib/security/rbac';
 
 export default function ProfilePage() {
   const params = useParams();
   const centerSlug = (params.centerSlug as string) || 'al-maher';
-  const { currentUser, setCurrentUser, currentRole } = useTenant();
+  const { currentUser, setCurrentUser, currentRole, masterData } = useTenant();
 
   const [avatarUrlInput, setAvatarUrlInput] = useState(currentUser?.avatarUrl || '');
   const [isUpdatingPhoto, setIsUpdatingPhoto] = useState(false);
@@ -45,6 +47,16 @@ export default function ProfilePage() {
     setMessage(null);
 
     try {
+      if (masterData.demo) {
+        const actor = { id: currentUser.id, role: currentRole, tenantSlug: centerSlug };
+        const validation = validateProfilePhotoUpdate(actor, currentUser.id, { userId: currentUser.id, avatar_url: avatarUrlInput });
+        if (!validation.success || !validation.data) throw new Error(validation.message);
+        const result = await getDataProvider().updateUserProfilePhoto(currentUser.id, validation.data.avatarUrl, currentUser.id, currentRole);
+        if (!result.success || !result.data) throw new Error(result.error || 'فشل تحديث الصورة الشخصية');
+        setCurrentUser({ ...result.data });
+        setMessage({ text: 'تم حفظ الصورة الشخصية على هذا المتصفح', type: 'success' });
+        return;
+      }
       const res = await fetch('/api/profile/update-photo', {
         method: 'POST',
         headers: {

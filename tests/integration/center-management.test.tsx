@@ -5,7 +5,8 @@ import BranchesManagementPage from '@/app/center/[centerSlug]/branches-list/page
 import SubjectsManagementPage from '@/app/center/[centerSlug]/subjects/page';
 import { Sidebar } from '@/components/layout/sidebar';
 import { TenantProvider } from '@/components/layout/tenant-provider';
-import { getDataProvider } from '@/lib/dal/factory';
+import { createCenterDataProvider, getDataProvider } from '@/lib/dal/factory';
+import { readDemoTeacherProfiles } from '@/lib/teachers/client';
 import { buildGroup } from '@/lib/timetable/group-schedule';
 import { readMasterData } from '@/lib/dal/master-data';
 
@@ -14,7 +15,7 @@ vi.mock('@/lib/dal/factory', async importOriginal => {
   const actual = await importOriginal<typeof import('@/lib/dal/factory')>();
   const { MockDataProvider } = await import('@/lib/dal/mock-data');
   const dal = new MockDataProvider({ archiveMaherGroups: true });
-  return { ...actual, getDataProvider: () => dal };
+  return { ...actual, getDataProvider: vi.fn(() => dal) };
 });
 
 const tenantId = 'tenant-maher-001';
@@ -40,6 +41,46 @@ beforeEach(() => {
 });
 
 afterEach(cleanup);
+
+it('omits default groups, teachers, branches and rooms and keeps real records saved by the previous version', async () => {
+  const dal = createCenterDataProvider(false);
+  const savedProvider = getDataProvider();
+  vi.mocked(getDataProvider).mockReturnValue(dal);
+  const previous = createCenterDataProvider(true);
+  const catalog = await readMasterData(previous, tenantId);
+  const customBranch = await previous.saveBranch(tenantId, { nameAr: 'فرع المستخدم' });
+  const seededRoom = (await previous.getClassrooms(tenantId))[0];
+  const customRoom = { ...seededRoom, id: 'room-saved', branchId: customBranch.id, nameAr: 'قاعة المستخدم' };
+  localStorage.setItem(`yc-master-data-v1:${tenantId}`, JSON.stringify({ ...catalog, branches: [...catalog.branches, customBranch] }));
+  localStorage.setItem(`yc-center-classrooms-v1:${tenantId}`, JSON.stringify([seededRoom, customRoom]));
+  const teacher = { id: 'teacher-user-created', tenantId, fullName: 'معلم المستخدم', active: true, contracts: [] };
+  localStorage.setItem(`yc-teachers-v1:${tenantId}`, JSON.stringify([teacher]));
+  const seedGroup = (await previous.getGroups(tenantId))[0];
+  const customGroup = { ...seedGroup, id: 'group-saved', branchId: customBranch.id, classroomId: customRoom.id,
+    teacherId: teacher.id, teacherName: teacher.fullName, nameAr: 'مجموعة المستخدم' };
+  localStorage.setItem(groupKey, JSON.stringify([seedGroup, customGroup]));
+
+  try {
+    expect(await dal.getUsers(tenantId, { role: 'TEACHER' })).toEqual([]);
+    expect(await dal.getBranches(tenantId)).toEqual([]);
+    expect(await dal.getClassrooms(tenantId)).toEqual([]);
+    expect(await dal.getGroups(tenantId)).toEqual([]);
+    const first = await open(<SessionsGroupsPage />);
+    await screen.findByText(customGroup.nameAr);
+    expect(screen.queryByText(seedGroup.nameAr)).not.toBeInTheDocument();
+    expect(await dal.getGroups(tenantId)).toEqual([expect.objectContaining({ id: customGroup.id })]);
+    first.unmount();
+
+    await open(<BranchesManagementPage />);
+    await screen.findByRole('heading', { name: customBranch.nameAr });
+    await screen.findByText(customRoom.nameAr);
+    expect(await dal.getClassrooms(tenantId)).toEqual([customRoom]);
+    expect(await dal.getBranches(tenantId)).toEqual([customBranch]);
+    expect(readDemoTeacherProfiles(tenantId)).toEqual([teacher]);
+  } finally {
+    vi.mocked(getDataProvider).mockReturnValue(savedProvider);
+  }
+});
 
 it('keeps registered groups from the old storage format and applies add, edit and delete across reloads', async () => {
   const dal = getDataProvider();

@@ -125,6 +125,28 @@ describe('weekly groups and their financial rules', () => {
       .toMatchObject({ teacherDue: 60, centerNet: 25, teacherCollected: 60, centerCollected: 25 });
   });
 
+  it('restores saved changes from the canonical browser data without restoring unedited fixtures', async () => {
+    const previous = new MockDataProvider();
+    attachDemoOperations(previous, localStorage);
+    const avatarUrl = 'https://example.com/profile.jpg';
+    const update = await previous.updateUserProfilePhoto(studentId, avatarUrl, studentId, 'STUDENT');
+    expect(update.success).toBe(true);
+    const restored = new MockDataProvider({ useOperationalFixtures: false });
+    attachDemoOperations(restored, localStorage);
+    expect(await restored.getUsers(tenantId, { role: 'TEACHER' })).toEqual([]);
+    expect(await restored.getSessions(tenantId)).toEqual([]);
+    expect(await restored.getInvoices(tenantId)).toEqual([]);
+    expect(await restored.getUserById(studentId)).toMatchObject({ avatarUrl });
+
+    await previous.updateUserProfilePhoto(studentId, 'https://example.com/other-window.jpg', studentId, 'STUDENT');
+    await expect(restored.updateUserProfilePhoto(studentId, avatarUrl, studentId, 'STUDENT')).rejects.toThrow('نافذة أخرى');
+    expect(await restored.getUserById(studentId)).toMatchObject({ avatarUrl: 'https://example.com/other-window.jpg' });
+    await restored.updateUserProfilePhoto(studentId, avatarUrl, studentId, 'STUDENT');
+    const reloaded = new MockDataProvider({ useOperationalFixtures: false });
+    attachDemoOperations(reloaded, localStorage);
+    expect(await reloaded.getUserById(studentId)).toMatchObject({ avatarUrl });
+  });
+
   it('persists group versions and serializes concurrent schedule changes in Firestore', async () => {
     const dal = new MockDataProvider();
     const tenant = (await dal.getTenantById(tenantId))!;

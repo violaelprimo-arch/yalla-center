@@ -61,7 +61,7 @@ import {
 } from '@/lib/finance/export';
 import { BrandLogo } from '@/components/brand/brand-logo';
 import { useTeacherContracts } from '@/lib/teachers/client';
-import { TEACHER_MODELS } from '@/lib/teachers/profile';
+import { LEGACY_TEACHER_MODELS } from '@/lib/teachers/profile';
 import { cairoClock } from '@/lib/attendance/reception';
 import { GROUP_PRICING_LABELS, studentGroupFee } from '@/lib/timetable/group-schedule';
 
@@ -2922,7 +2922,7 @@ function TeacherStatementModal({
                   </tr></thead>
                   <tbody>{statement.lessonCompensation.sessions.map(lesson => <tr key={lesson.sessionId}>
                     <td className="border border-border p-2">{lesson.groupName}<br />{lesson.sessionDate}</td>
-                    <td className="border border-border p-2">{lesson.model === 'per_session' ? GROUP_PRICING_LABELS.per_session : TEACHER_MODELS[lesson.model]} · {lesson.rate.toFixed(2)} ج.م</td>
+                    <td className="border border-border p-2">{lesson.model === 'per_session' ? GROUP_PRICING_LABELS.per_session : LEGACY_TEACHER_MODELS[lesson.model]} · {lesson.rate.toFixed(2)} ج.م</td>
                     <td className="border border-border p-2">{lesson.attendanceCount}</td>
                     <td className="border border-border p-2">{lesson.revenue.toFixed(2)} ج.م</td>
                     <td className="border border-border p-2 font-bold">{lesson.teacherDue.toFixed(2)} ج.م</td>

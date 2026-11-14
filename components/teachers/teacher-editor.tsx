@@ -3,11 +3,12 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Camera, Plus, Trash2, UserRound, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { EGYPTIAN_STAGES, getGradeNameArabic } from '@/lib/materials/taxonomy';
-import type { Subject, EducationalStage } from '@/lib/dal/types';
+import { PricingFields, pricingFormInput, pricingFormValues } from '@/components/finance/pricing-fields';
+import type { Subject, EducationalStage, PricingModel } from '@/lib/dal/types';
+import { groupPricingSchema } from '@/lib/timetable/group-schedule';
 import {
-  normalizeDigits, TEACHER_MODELS, TEACHER_PERMISSIONS, TEACHER_TABS, teacherInputSchema,
-  teacherModels, teacherPermissions, teacherTabs, type TeacherContract, type TeacherInput,
+  describeTeacherLevel, invalidTeacherLevel, LEGACY_TEACHER_MODELS, TEACHER_PERMISSIONS, TEACHER_TABS, teacherInputSchema,
+  teacherPermissions, teacherTabs, type LegacyTeacherContract, type TeacherContract, type TeacherInput,
   type TeacherPermission, type TeacherTab,
 } from '@/lib/teachers/profile';
 
@@ -17,12 +18,29 @@ interface Props {
   originalAvatar?: string;
   demo: boolean;
   subjects: Subject[];
-  stages?: EducationalStage[];
+  stages: EducationalStage[];
   onSave: (input: TeacherInput, password?: string) => Promise<void>;
   onClose: () => void;
 }
 
 const control = 'mt-1 block w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-cyan-500';
+
+interface AgreementDraft {
+  level: string;
+  model: PricingModel | '';
+  values: ReturnType<typeof pricingFormValues>;
+  previousPricing?: Omit<LegacyTeacherContract, 'level'>;
+}
+
+function agreementDraft(contract: TeacherContract): AgreementDraft {
+  if ('value' in contract) {
+    const { level, model, value } = contract;
+    const values = model === 'private' ? { teacherPercentage: String(value) }
+      : model === 'per_attendee' ? { teacherFee: String(value) } : {};
+    return { level, model: '', values, previousPricing: { model, value } };
+  }
+  return { level: contract.level, model: contract.model, values: pricingFormValues(contract), previousPricing: contract.previousPricing };
+}
 
 async function thumbnail(file: File) {
   if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 8 * 1024 * 1024) {
@@ -51,20 +69,14 @@ export function TeacherEditor({ initial, editing, originalAvatar, demo, subjects
   const dialog = useRef<HTMLDialogElement>(null);
   const [step, setStep] = useState(1);
   const [input, setInput] = useState(initial);
-  const [contracts, setContracts] = useState(initial.contracts.map(item => ({ ...item, value: String(item.value) })));
+  const [contracts, setContracts] = useState(() => initial.contracts.map(agreementDraft));
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const [processingPhoto, setProcessingPhoto] = useState(false);
   const [showOldPhoto, setShowOldPhoto] = useState(true);
 
-  const stageList = stages && stages.length > 0
-    ? stages.map(s => ({
-        code: s.id,
-        nameAr: s.nameAr,
-        grades: (s.grades || []).map(g => ({ code: g.id, nameAr: g.nameAr })),
-      }))
-    : EGYPTIAN_STAGES;
+  const levelIds = new Set(stages.flatMap(stage => [stage.id, ...stage.grades.map(grade => grade.id)]));
 
   useEffect(() => { dialog.current?.showModal(); }, []);
 
@@ -84,7 +96,7 @@ export function TeacherEditor({ initial, editing, originalAvatar, demo, subjects
     setField('tabs', checked ? [...input.tabs, tab] : input.tabs.filter(item => item !== tab));
   }
 
-  function updateContract(index: number, change: Partial<Omit<TeacherContract, 'value'> & { value: string }>) {
+  function updateContract(index: number, change: Partial<AgreementDraft>) {
     setContracts(items => items.map((item, at) => at === index ? { ...item, ...change } : item));
   }
 
@@ -92,16 +104,34 @@ export function TeacherEditor({ initial, editing, originalAvatar, demo, subjects
     event.preventDefault();
     if (saving || processingPhoto) return;
     setError('');
-    const parsed = teacherInputSchema.safeParse({
-      ...input,
-      contracts: contracts.map(contract => ({
-        ...contract,
-        value: contract.value.trim() ? Number(normalizeDigits(contract.value).replace('٫', '.')) : NaN,
-      })),
-    });
+    const savedContracts: TeacherContract[] = [];
+    for (const contract of contracts) {
+      if (!contract.level) {
+        setError('اختر المرحلة أو الصف لكل تعاقد');
+        return;
+      }
+      if (!contract.model && contract.previousPricing) {
+        savedContracts.push({ ...contract.previousPricing, level: contract.level });
+        continue;
+      }
+      if (!contract.model) {
+        setError('اختر طريقة الحساب لكل تعاقد');
+        return;
+      }
+      const pricing = groupPricingSchema.safeParse(pricingFormInput(contract.model, contract.values));
+      if (!pricing.success) {
+        setError(pricing.error.issues[0].message);
+        return;
+      }
+      savedContracts.push({ ...pricing.data, level: contract.level, ...(contract.previousPricing && { previousPricing: contract.previousPricing }) });
+    }
+    const parsed = teacherInputSchema.safeParse({ ...input, contracts: savedContracts });
     if (!parsed.success) {
-      const issue = parsed.error.issues[0];
-      setError(issue.path[0] === 'contracts' && issue.code === 'invalid_type' ? 'اكتب قيمة التعاقد لكل صف أو مرحلة' : issue.message);
+      setError(parsed.error.issues[0].message);
+      return;
+    }
+    if (invalidTeacherLevel(parsed.data.contracts, stages, initial.contracts)) {
+      setError('اختر المراحل والصفوف من البيانات الأساسية');
       return;
     }
     if (!editing && !parsed.data.login) {
@@ -178,35 +208,33 @@ export function TeacherEditor({ initial, editing, originalAvatar, demo, subjects
 
             <fieldset className="space-y-3 rounded-2xl border border-border p-3">
               <legend className="px-1 text-sm font-bold">المراحل والصفوف وطريقة الحساب</legend>
+              <p className="text-xs text-muted-foreground">تظهر الأسعار تلقائيًا عند إضافة مجموعة للمعلم في الصف أو المرحلة المختارة.</p>
               {contracts.map((contract, index) => (
-                <div key={index} className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-2 rounded-xl bg-muted/45 p-3 sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1.2fr)_minmax(0,0.65fr)_auto]">
-                  <label className="text-xs font-semibold">المرحلة أو الصف
-                    <select className={control} value={contract.level} onChange={event => updateContract(index, { level: event.target.value })}>
-                      <option value="">اختر</option>
-                      {stageList.map(stage => <optgroup key={stage.code} label={stage.nameAr}>
-                        <option value={stage.code} disabled={contracts.some((item, at) => at !== index && item.level === stage.code)}>{stage.nameAr} بالكامل</option>
-                        {stage.grades.map(grade => <option key={grade.code} value={grade.code}
-                          disabled={contracts.some((item, at) => at !== index && item.level === grade.code)}>{grade.nameAr}</option>)}
-                      </optgroup>)}
-                    </select>
-                  </label>
-                  <label className="col-span-2 text-xs font-semibold sm:col-span-1">طريقة الحساب
-                    <select className={control} value={contract.model} onChange={event =>
-                      updateContract(index, { model: event.target.value as TeacherContract['model'], value: '' })}>
-                      {teacherModels.map(model => <option key={model} value={model}>{TEACHER_MODELS[model]}</option>)}
-                    </select>
-                  </label>
-                  <label className="text-xs font-semibold">
-                    {contract.model === 'private' ? 'نسبة المعلم %' : contract.model === 'per_attendee' ? 'ج.م / طالب' : 'ج.م / حصة'}
-                    <input className={control} inputMode="decimal" value={contract.value}
-                      onChange={event => updateContract(index, { value: event.target.value })} />
-                  </label>
-                  <Button type="button" variant="ghost" size="icon" aria-label={`حذف التعاقد ${index + 1}`}
-                    onClick={() => setContracts(items => items.filter((_, at) => at !== index))}><Trash2 size={16} className="text-red-600" /></Button>
+                <div key={index} className="space-y-3 rounded-xl border border-border p-3">
+                  <div className="flex items-end gap-2">
+                    <label className="min-w-0 flex-1 text-sm font-semibold">المرحلة أو الصف
+                      <select className={control} value={contract.level} onChange={event => updateContract(index, { level: event.target.value })}>
+                        <option value="">اختر</option>
+                        {contract.level && !levelIds.has(contract.level) && <option value={contract.level}>{describeTeacherLevel(contract.level, stages)}</option>}
+                        {stages.map(stage => <optgroup key={stage.id} label={stage.nameAr}>
+                          <option value={stage.id} disabled={contracts.some((item, at) => at !== index && item.level === stage.id)}>{stage.nameAr} بالكامل</option>
+                          {stage.grades.map(grade => <option key={grade.id} value={grade.id}
+                            disabled={contracts.some((item, at) => at !== index && item.level === grade.id)}>{grade.nameAr}</option>)}
+                        </optgroup>)}
+                      </select>
+                    </label>
+                    <Button type="button" variant="ghost" size="icon" aria-label={`حذف التعاقد ${index + 1}`}
+                      onClick={() => setContracts(items => items.filter((_, at) => at !== index))}><Trash2 size={16} className="text-red-600" /></Button>
+                  </div>
+                  {!contract.model && contract.previousPricing && <p className="text-xs text-muted-foreground">تعاقد سابق · {contract.previousPricing.model === 'private'
+                    ? `${contract.previousPricing.value}% للمعلم` : `${LEGACY_TEACHER_MODELS[contract.previousPricing.model]} · ${contract.previousPricing.value} ج.م`}</p>}
+                  <PricingFields model={contract.model} values={contract.values} control={control}
+                    onModel={model => updateContract(index, { model })}
+                    onAmount={(field, value) => updateContract(index, { values: { ...contract.values, [field]: value } })} />
                 </div>
               ))}
-              <Button type="button" variant="outline" size="sm" disabled={contracts.length >= 15}
-                onClick={() => setContracts(items => [...items, { level: '', model: 'fixed_session', value: '' }])}><Plus size={15} /> إضافة مرحلة أو صف</Button>
+              <Button type="button" variant="outline" size="sm" disabled={contracts.length >= 100}
+                onClick={() => setContracts(items => [...items, { level: '', model: 'center', values: {} }])}><Plus size={15} /> إضافة مرحلة أو صف</Button>
             </fieldset>
 
             <fieldset className="space-y-2 rounded-2xl border border-border p-3">
@@ -215,7 +243,7 @@ export function TeacherEditor({ initial, editing, originalAvatar, demo, subjects
                 {subjects.map(subject => <label key={subject.id} className="flex items-start gap-2 rounded-lg bg-muted/40 p-2 text-xs">
                   <input type="checkbox" className="mt-0.5 accent-cyan-600" checked={input.subjectIds.includes(subject.id)}
                     onChange={event => setField('subjectIds', event.target.checked ? [...input.subjectIds, subject.id] : input.subjectIds.filter(id => id !== subject.id))} />
-                  <span>{subject.nameAr}<span className="block text-muted-foreground">{getGradeNameArabic(subject.grade)}</span></span>
+                  <span>{subject.nameAr}<span className="block text-muted-foreground">{describeTeacherLevel(subject.grade, stages)}</span></span>
                 </label>)}
               </div> : <p className="text-xs text-muted-foreground">اختيار المواد هيتاح لما تتضاف مواد لقائمة السنتر.</p>}
             </fieldset>

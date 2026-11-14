@@ -1,5 +1,5 @@
 import type { Attendance, Session } from '@/lib/dal/types';
-import type { TeacherContract } from './profile';
+import type { LegacyTeacherContract } from './profile';
 
 export function countTeacherSessionAttendance(records: Attendance[], session: Session) {
   const students = new Set(records.filter(record =>
@@ -10,7 +10,7 @@ export function countTeacherSessionAttendance(records: Attendance[], session: Se
 }
 
 export function calculateTeacherSessionPay(
-  contract: TeacherContract,
+  contract: LegacyTeacherContract,
   session: Session,
   attendanceCount: number,
   revenue: number,

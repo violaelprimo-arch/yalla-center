@@ -1,4 +1,4 @@
-import { matchTeacherContract, type TeacherProfile } from '@/lib/teachers/profile';
+import { matchLegacyTeacherContract, type TeacherProfile } from '@/lib/teachers/profile';
 import { calculateTeacherSessionPay, countTeacherSessionAttendance } from '@/lib/teachers/session-compensation';
 import { cairoClock } from '@/lib/attendance/reception';
 import { archiveGroup, isRegisteredGroup, mergeManagedRecords, moneyAmount, recurringSessions, sessionDateFromId, shiftDate, studentGroupFee } from '@/lib/timetable/group-schedule';
@@ -1082,8 +1082,10 @@ export const INITIAL_SEEDED_DATA = {
 };
 
 export class MockDataProvider implements IDataProvider {
+  readonly useOperationalFixtures: boolean;
   private initializedStageTenants: Set<string>;
   private readonly baseGroups: Group[];
+  private readonly baseClassrooms: Classroom[];
   private managedGroupIds = new Map<string, Set<string>>();
   private managedClassroomIds = new Map<string, Set<string>>();
   private saveDemoOperations?: () => void;
@@ -1111,33 +1113,48 @@ export class MockDataProvider implements IDataProvider {
   public booksInventory: BookInventoryItem[];
   public notifications: NotificationRecord[];
 
-  constructor({ archiveMaherGroups = false } = {}) {
+  constructor({ archiveMaherGroups = false, useOperationalFixtures = true } = {}) {
+    this.useOperationalFixtures = useOperationalFixtures;
     this.tenants = JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.tenants));
     this.stages = JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.stages));
     this.initializedStageTenants = new Set(this.stages.map(stage => stage.tenantId));
-    this.branches = JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.branches));
-    this.classrooms = JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.classrooms));
-    this.users = JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.users));
+    this.branches = useOperationalFixtures ? structuredClone(INITIAL_SEEDED_DATA.branches) : [];
+    this.baseClassrooms = useOperationalFixtures ? structuredClone(INITIAL_SEEDED_DATA.classrooms) : [];
+    this.classrooms = structuredClone(this.baseClassrooms);
+    this.users = structuredClone(INITIAL_SEEDED_DATA.users).filter(user => useOperationalFixtures || user.role !== 'TEACHER');
     this.subjects = JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.subjects));
-    this.baseGroups = INITIAL_SEEDED_DATA.groups.map(group =>
-      archiveMaherGroups && group.tenantId === 'tenant-maher-001' ? archiveGroup(group) : { ...group });
+    this.baseGroups = useOperationalFixtures ? INITIAL_SEEDED_DATA.groups.map(group =>
+      archiveMaherGroups && group.tenantId === 'tenant-maher-001' ? archiveGroup(group) : { ...group }) : [];
     this.groups = structuredClone(this.baseGroups);
-    this.sessions = JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.sessions));
-    this.enrollments = JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.enrollments));
-    this.attendance = JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.attendance));
-    this.teacherRates = JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.teacherRates));
-    this.teacherPayroll = JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.teacherPayroll));
-    this.teacherAdvances = JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.teacherAdvances));
+    this.sessions = useOperationalFixtures ? structuredClone(INITIAL_SEEDED_DATA.sessions) : [];
+    this.enrollments = useOperationalFixtures ? structuredClone(INITIAL_SEEDED_DATA.enrollments) : [];
+    this.attendance = [];
+    this.teacherRates = useOperationalFixtures ? structuredClone(INITIAL_SEEDED_DATA.teacherRates) : [];
+    this.teacherPayroll = useOperationalFixtures ? structuredClone(INITIAL_SEEDED_DATA.teacherPayroll) : [];
+    this.teacherAdvances = useOperationalFixtures ? structuredClone(INITIAL_SEEDED_DATA.teacherAdvances) : [];
     this.materials = JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.materials));
     this.exams = JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.exams));
     this.examQuestions = JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.examQuestions));
     this.examSubmissions = JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.examSubmissions));
-    this.invoices = JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.invoices));
-    this.payments = JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.payments));
-    this.cashierShifts = JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.cashierShifts));
-    this.expenses = JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.expenses));
+    this.invoices = useOperationalFixtures ? structuredClone(INITIAL_SEEDED_DATA.invoices) : [];
+    this.payments = useOperationalFixtures ? structuredClone(INITIAL_SEEDED_DATA.payments) : [];
+    this.cashierShifts = useOperationalFixtures ? structuredClone(INITIAL_SEEDED_DATA.cashierShifts) : [];
+    this.expenses = useOperationalFixtures ? structuredClone(INITIAL_SEEDED_DATA.expenses) : [];
     this.booksInventory = JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.booksInventory));
     this.notifications = JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.notifications));
+  }
+
+  // Older snapshots contain both saved records and exact copies of the initial fixtures.
+  keepSavedRecords<T extends { id: string; tenantId?: string }>(records: T[], fixtures: readonly T[], ignore = new Set<string>()) {
+    if (this.useOperationalFixtures) return records;
+    const byId = new Map(fixtures.map(record => [record.id, record]));
+    return records.filter(record => {
+      const fixture = byId.get(record.id);
+      if (!fixture || fixture.tenantId !== record.tenantId) return true;
+      const fields = new Set([...Object.keys(fixture), ...Object.keys(record)]);
+      return [...fields].some(field => !ignore.has(field) &&
+        JSON.stringify(Reflect.get(fixture, field)) !== JSON.stringify(Reflect.get(record, field)));
+    });
   }
 
   setMasterData(tenantId: string, data: MasterData) {
@@ -1158,7 +1175,7 @@ export class MockDataProvider implements IDataProvider {
 
   setManagedClassrooms(tenantId: string, rooms: Classroom[]) {
     const managedIds = this.managedClassroomIds.get(tenantId);
-    const seeds = INITIAL_SEEDED_DATA.classrooms.filter(room => room.tenantId === tenantId && managedIds?.has(room.id));
+    const seeds = this.baseClassrooms.filter(room => room.tenantId === tenantId && managedIds?.has(room.id));
     const base = this.classrooms.filter(room => room.tenantId !== tenantId || !managedIds?.has(room.id));
     this.classrooms = mergeManagedRecords([...base, ...structuredClone(seeds)], rooms);
     this.managedClassroomIds.set(tenantId, new Set(rooms.map(room => room.id)));
@@ -1512,6 +1529,7 @@ export class MockDataProvider implements IDataProvider {
     }
 
     Object.assign(targetUser, updates, { updatedAt: new Date().toISOString() });
+    this.commitDemoOperations();
     return { success: true, data: targetUser, status: 200 };
   }
 
@@ -1530,6 +1548,7 @@ export class MockDataProvider implements IDataProvider {
 
     user.avatarUrl = avatarUrl;
     user.updatedAt = new Date().toISOString();
+    this.commitDemoOperations();
     return { success: true, data: user };
   }
 
@@ -2153,6 +2172,7 @@ export class MockDataProvider implements IDataProvider {
     if (rate.teacherPercentage !== undefined) {
       rate.splitPercentage = rate.teacherPercentage;
     }
+    this.commitDemoOperations();
     return { success: true, data: rate, status: 200 };
   }
 
@@ -2287,7 +2307,7 @@ export class MockDataProvider implements IDataProvider {
       subject.id === group.subjectId && subject.tenantId === params.tenantId)?.nameAr)
       .filter((name): name is string => Boolean(name)))];
     const contractsByGroup = new Map(teacherGroups.map(group => [
-      group.id, group.pricing && !group.legacyBilling ? undefined : matchTeacherContract(profile?.contracts ?? [],
+      group.id, group.pricing && !group.legacyBilling ? undefined : matchLegacyTeacherContract(profile?.contracts ?? [],
         this.subjects.find(subject => subject.id === (group.legacyBilling?.subjectId ?? group.subjectId) && subject.tenantId === params.tenantId)),
     ]));
 

@@ -4,12 +4,12 @@ import { useEffect, useState } from 'react';
 import { hasFirebaseWebConfig } from '@/lib/firebase/client';
 import type { TeacherProfile } from './profile';
 
-function demoKey(tenantId: string) {
+export function demoTeacherKey(tenantId: string) {
   return 'yc-teachers-v1:' + tenantId;
 }
 
 export function readDemoTeacherProfiles(tenantId: string): TeacherProfile[] {
-  const raw = localStorage.getItem(demoKey(tenantId));
+  const raw = localStorage.getItem(demoTeacherKey(tenantId));
   if (!raw) return [];
   const records: TeacherProfile[] = JSON.parse(raw);
   return records.filter(profile => profile.tenantId === tenantId);
@@ -26,7 +26,11 @@ export function writeDemoTeacherProfile(profile: TeacherProfile) {
     throw new Error('بيانات الدخول مستخدمة لمعلم آخر في هذا السنتر');
   }
   const next = [...records.filter(record => record.id !== profile.id), profile];
-  localStorage.setItem(demoKey(profile.tenantId), JSON.stringify(next));
+  try {
+    localStorage.setItem(demoTeacherKey(profile.tenantId), JSON.stringify(next));
+  } catch {
+    throw new Error('تعذّر حفظ المعلم على هذا المتصفح. تحقّق من مساحة التخزين وإعدادات المتصفح.');
+  }
   return next;
 }
 
@@ -64,13 +68,14 @@ export function useTeacherContracts(tenantId: string, centerSlug: string, enable
         }
       };
       refresh();
-      window.addEventListener('storage', refresh);
-      return () => window.removeEventListener('storage', refresh);
+      const sync = (event: StorageEvent) => { if (event.key === demoTeacherKey(tenantId) || event.key === null) refresh(); };
+      window.addEventListener('storage', sync);
+      return () => window.removeEventListener('storage', sync);
     }
     if (!idToken) return;
     const request = new AbortController();
     teacherApi<{ profiles: TeacherContractSummary[] }>(centerSlug, idToken, '?view=contracts', undefined, request.signal)
-      .then(data => setState({ tenantId, idToken, items: data.profiles }))
+      .then(data => { if (!request.signal.aborted) setState({ tenantId, idToken, items: data.profiles }); })
       .catch(cause => {
         if (!request.signal.aborted) setState({ tenantId, idToken, items: [], error: cause.message });
       });

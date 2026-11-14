@@ -1,6 +1,7 @@
 import { z } from 'zod';
-import { EGYPTIAN_STAGES, getGradeNameArabic, getStageNameArabic } from '@/lib/materials/taxonomy';
-import type { Group, Subject, User } from '@/lib/dal/types';
+import { getGradeNameArabic, getStageNameArabic } from '@/lib/materials/taxonomy';
+import { groupPricingSchema, normalizeGroupPricing, type GroupPricing } from '@/lib/timetable/group-schedule';
+import type { EducationalStage, Group, Subject, User } from '@/lib/dal/types';
 
 export const TEACHER_PERMISSIONS = {
   viewAccount: 'الاطلاع على كشف حساباته',
@@ -24,16 +25,11 @@ export type TeacherTab = keyof typeof TEACHER_TABS;
 export const teacherPermissions = Object.keys(TEACHER_PERMISSIONS) as TeacherPermission[];
 export const teacherTabs = Object.keys(TEACHER_TABS) as TeacherTab[];
 
-export const TEACHER_MODELS = {
-  fixed_session: 'نظام السنتر · أجر ثابت للحصة',
-  private: 'نظام البرايفت · نسبة مئوية',
+export const LEGACY_TEACHER_MODELS = {
+  fixed_session: 'أجر ثابت للحصة',
   per_attendee: 'مبلغ ثابت لكل طالب حاضر',
 } as const;
 
-export type TeacherCompensationModel = keyof typeof TEACHER_MODELS;
-export const teacherModels = Object.keys(TEACHER_MODELS) as TeacherCompensationModel[];
-
-const levels = new Set(EGYPTIAN_STAGES.flatMap(stage => [stage.code, ...stage.grades.map(grade => grade.code)]));
 const usernamePattern = /^[a-z0-9][a-z0-9._-]{2,31}$/;
 const key = z.string().regex(/^[a-zA-Z0-9_-]{1,100}$/, 'المعرّف غير صالح');
 export const teacherIdSchema = key;
@@ -46,12 +42,17 @@ export function normalizeDigits(value: string): string {
 const phone = z.string().transform(value => normalizeDigits(value).replace(/[\s()-]/g, ''))
   .pipe(z.string().regex(/^\+?\d{7,15}$/, 'اكتب رقم هاتف صحيح'));
 
-const contractSchema = z.object({
-  level: z.string().refine(value => levels.has(value), 'اختر مرحلة أو صفًا'),
+const legacyPricingSchema = z.object({
   model: z.enum(['fixed_session', 'private', 'per_attendee']),
   value: z.number().finite().min(0, 'القيمة لازم تكون صفر أو أكثر').max(1000000)
     .refine(value => Math.abs(value * 100 - Math.round(value * 100)) < 0.000001, 'استخدم رقمًا بمنزلتين عشريتين كحد أقصى'),
 }).refine(contract => contract.model !== 'private' || contract.value <= 100, 'نسبة المعلم من صفر إلى 100');
+
+const contractLevel = z.string().regex(/^[a-zA-Z0-9_-]{1,200}$/, 'اختر مرحلة أو صفًا');
+const contractSchema = z.union([
+  groupPricingSchema.transform(normalizeGroupPricing).and(z.object({ level: contractLevel, previousPricing: legacyPricingSchema.optional() })),
+  legacyPricingSchema.and(z.object({ level: contractLevel })),
+]);
 
 const loginSchema = z.discriminatedUnion('mode', [
   z.object({ mode: z.literal('username'), username: z.string().trim().toLowerCase().regex(usernamePattern, 'اسم المستخدم من 3 إلى 32 حرفًا إنجليزيًا أو رقمًا') }),
@@ -63,7 +64,7 @@ export const teacherInputSchema = z.object({
   phone: phone,
   phone2: z.union([z.literal(''), phone]),
   avatarData: z.string().max(90000).regex(/^data:image\/jpeg;base64,\/9j\/[A-Za-z0-9+/]+={0,2}$/, 'صورة المعلم غير صالحة').nullable(),
-  contracts: z.array(contractSchema).max(levels.size)
+  contracts: z.array(contractSchema).max(100)
     .refine(items => new Set(items.map(item => item.level)).size === items.length, 'اختر كل مرحلة أو صف مرة واحدة'),
   subjectIds: z.array(key).max(100).transform(items => [...new Set(items)]),
   login: loginSchema.nullable(),
@@ -82,6 +83,7 @@ export const teacherInputSchema = z.object({
 
 export type TeacherInput = z.output<typeof teacherInputSchema>;
 export type TeacherContract = TeacherInput['contracts'][number];
+export type LegacyTeacherContract = Extract<TeacherContract, { value: number }>;
 export type TeacherLogin = NonNullable<TeacherInput['login']>;
 
 export interface TeacherProfile extends TeacherInput {
@@ -132,14 +134,32 @@ export function teacherInputFrom(profile?: TeacherProfile, teacher?: User, group
   };
 }
 
-export function describeTeacherLevel(level: string) {
-  return getGradeNameArabic(getStageNameArabic(level));
+export function describeTeacherLevel(level: string, stages: EducationalStage[]) {
+  return stages.find(stage => stage.id === level)?.nameAr ??
+    stages.flatMap(stage => stage.grades).find(grade => grade.id === level)?.nameAr ??
+    getGradeNameArabic(getStageNameArabic(level));
 }
 
-export function matchTeacherContract(contracts: TeacherContract[], subject?: Subject) {
+export function matchTeacherContract<T extends TeacherContract>(contracts: T[], subject?: Pick<Subject, 'stage' | 'grade'>) {
   if (!subject) return undefined;
   return contracts.find(contract => contract.level === subject.grade) ??
     contracts.find(contract => contract.level === subject.stage);
+}
+
+export function teacherGroupPricing(contracts: TeacherContract[], stage: string, grade: string): GroupPricing | undefined {
+  const contract = matchTeacherContract(contracts, { stage, grade });
+  return contract && !('value' in contract) ? contract : undefined;
+}
+
+export function matchLegacyTeacherContract(contracts: TeacherContract[], subject?: Subject) {
+  return matchTeacherContract(contracts.flatMap(contract => 'value' in contract ? [contract] :
+    contract.previousPricing ? [{ ...contract.previousPricing, level: contract.level }] : []), subject);
+}
+
+export function invalidTeacherLevel(contracts: TeacherContract[], stages: EducationalStage[], previous: TeacherContract[] = []) {
+  const levels = new Set(stages.flatMap(stage => [stage.id, ...stage.grades.map(grade => grade.id)]));
+  for (const contract of previous) levels.add(contract.level);
+  return contracts.some(contract => !levels.has(contract.level));
 }
 
 export function canUseTeacherTab(profile: TeacherProfile, tab: TeacherTab) {

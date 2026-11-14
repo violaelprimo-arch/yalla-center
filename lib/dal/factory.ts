@@ -5,8 +5,8 @@ import { attachDemoOperations } from './demo-operations';
 
 let instance: MockDataProvider | null = null;
 
-export function createCenterDataProvider() {
-  return new MockDataProvider({ archiveMaherGroups: process.env.NODE_ENV !== 'test' });
+export function createCenterDataProvider(useOperationalFixtures = process.env.NODE_ENV === 'test') {
+  return new MockDataProvider({ useOperationalFixtures });
 }
 
 export function getDataProvider(): MockDataProvider {

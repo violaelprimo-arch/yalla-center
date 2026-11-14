@@ -1,6 +1,7 @@
-import type { IDataProvider } from '@/lib/dal';
+import { getDataProvider, type IDataProvider } from '@/lib/dal';
 import { createCenterDataProvider } from '@/lib/dal/factory';
 import type { Classroom, Group, Tenant } from '@/lib/dal/types';
+import { INITIAL_SEEDED_DATA } from '@/lib/dal/mock-data';
 import {
   archiveClassroom, archiveGroup, buildClassroom, buildGroup, groupConflictMessage, GroupScheduleError,
   mergeManagedRecords, type ClassroomInput, type GroupInput,
@@ -21,12 +22,13 @@ const revisionCollection = 'center_group_revisions';
 
 export async function listManagedGroups(store: ILessonScoreStore, tenantId: string): Promise<Group[]> {
   const rows = await store.queryCollection<Group>(collection, [{ fieldPath: 'tenantId', op: 'EQUAL', value: tenantId }]);
-  return rows.map(row => row.data);
+  return getDataProvider().keepSavedRecords(rows.map(row => row.data), INITIAL_SEEDED_DATA.groups,
+    new Set(['isActive', 'archivedAt', 'version']));
 }
 
 export async function listManagedClassrooms(store: ILessonScoreStore, tenantId: string): Promise<Classroom[]> {
   const rows = await classroomDocuments(store, tenantId);
-  return rows.map(row => row.data);
+  return getDataProvider().keepSavedRecords(rows.map(row => row.data), INITIAL_SEEDED_DATA.classrooms);
 }
 
 function classroomDocuments(store: ILessonScoreStore, tenantId: string) {

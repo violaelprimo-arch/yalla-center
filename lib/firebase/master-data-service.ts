@@ -8,6 +8,7 @@ import {
   type MasterDataAction,
 } from '@/lib/dal/master-data';
 import type { Material, Tenant } from '@/lib/dal/types';
+import { INITIAL_SEEDED_DATA, MockDataProvider } from '@/lib/dal/mock-data';
 import type { FirestoreWriteOperation, StructuredFilter } from './firestore-rest';
 import type { ILessonScoreStore, StaffMembershipRecord } from './server';
 
@@ -54,11 +55,13 @@ async function readCatalog({ tenant, store, dal }: MasterDataContext) {
     subjects: subjects.map(row => row.data),
     branches: branches.map(row => row.data),
   };
-  const data = revision || stored.stages.length ? stored : {
+  const catalog = revision || stored.stages.length ? stored : {
     ...await readMasterData(dal, tenantId),
     ...(stored.subjects.length ? { subjects: stored.subjects } : {}),
     ...(stored.branches.length ? { branches: stored.branches } : {}),
   };
+  const data = dal instanceof MockDataProvider
+    ? { ...catalog, branches: dal.keepSavedRecords(catalog.branches, INITIAL_SEEDED_DATA.branches) } : catalog;
   return { data, stored, revision, revisionPath: `master_stages/${revisionId}` };
 }
 

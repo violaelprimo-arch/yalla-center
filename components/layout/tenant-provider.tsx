@@ -39,7 +39,8 @@ export function TenantProvider({
 }: TenantProviderProps) {
   const [preferredBranchId, setActiveBranchId] = useState<string | null>(null);
 
-  const [availableUsers] = useState<User[]>(initialUsers);
+  const [savedUsers, setSavedUsers] = useState<User[]>();
+  const availableUsers = savedUsers ?? initialUsers;
 
   // Default initial user to Center Admin
   const defaultAdmin = useMemo(
@@ -64,6 +65,16 @@ export function TenantProvider({
   const masterData = useMasterDataCatalog(tenant,
     currentUser.role === 'CENTER_ADMIN' || currentUser.role === 'PLATFORM_OWNER');
   const groupData = useCenterGroups(tenant, masterData.data, masterData.auth, currentUser.role);
+  React.useEffect(() => {
+    if (!masterData.demo) return;
+    let active = true;
+    getDataProvider().getUsers(tenant.id).then(users => {
+      if (!active) return;
+      setSavedUsers(users);
+      setCurrentUser(user => users.find(saved => saved.id === user.id) ?? user);
+    });
+    return () => { active = false; };
+  }, [masterData.demo, tenant.id]);
   React.useEffect(() => {
     if (masterData.ready) getDataProvider().setMasterData(tenant.id, masterData.data);
   }, [masterData.ready, masterData.data, tenant.id]);

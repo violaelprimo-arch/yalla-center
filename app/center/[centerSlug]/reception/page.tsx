@@ -41,7 +41,7 @@ import {
 } from '@/components/attendance/lesson-exam-score-panel';
 import { useReceptionLessonScores } from '@/lib/attendance/use-lesson-scores';
 import { useTeacherContracts } from '@/lib/teachers/client';
-import { matchTeacherContract, TEACHER_MODELS } from '@/lib/teachers/profile';
+import { matchLegacyTeacherContract, LEGACY_TEACHER_MODELS } from '@/lib/teachers/profile';
 import { calculateTeacherSessionPay, countTeacherSessionAttendance } from '@/lib/teachers/session-compensation';
 import { GROUP_PRICING_LABELS } from '@/lib/timetable/group-schedule';
 
@@ -333,16 +333,17 @@ export default function ReceptionScanPage() {
   };
 
   // Find classroom capacity
-  const contract = selectedSession && !selectedSession.pricing && matchTeacherContract(
+  const legacyContract = selectedSession && !selectedSession.pricing && matchLegacyTeacherContract(
     teacherContracts.find(profile => profile.id === selectedSession.teacherId)?.contracts ?? [],
     subjects.find(subject => subject.id === selectedGroup?.subjectId),
   );
+  const contract = legacyContract && legacyContract.model !== 'private' ? legacyContract : undefined;
   const liveAttendance = selectedSession ? countTeacherSessionAttendance(sessionAttendance, selectedSession) : 0;
   const sessionRevenue = Math.round(liveAttendance * (selectedGroup?.sessionFee ?? 0) * 100) / 100;
   const liveSession = selectedSession && sessionStats?.sessionId === selectedSession.id &&
     receptionSessionState(selectedSession, clock) === 'current';
   const fixedSessionSplit = liveSession ? sessionStats?.fixedSessionSplit : undefined;
-  const sessionPay = liveSession && contract && contract.model !== 'private'
+  const sessionPay = liveSession && contract
     ? calculateTeacherSessionPay(contract, selectedSession, liveAttendance, sessionRevenue, true) : undefined;
 
   const activeClassroom = useMemo(() => {
@@ -487,7 +488,7 @@ export default function ReceptionScanPage() {
             <h2 className="text-sm font-bold">حساب المعلم في الحصة</h2>
             <p className="mt-1 text-xs text-muted-foreground">
               {fixedSessionSplit ? GROUP_PRICING_LABELS.per_session : contract &&
-                (contract.model === 'per_attendee' ? `${liveAttendance} حاضر × ${currency.format(contract.value)}` : TEACHER_MODELS[contract.model])}
+                (contract.model === 'per_attendee' ? `${liveAttendance} حاضر × ${currency.format(contract.value)}` : LEGACY_TEACHER_MODELS.fixed_session)}
             </p>
             <dl className="mt-3 grid grid-cols-3 gap-2 text-xs">
               <div><dt className="text-muted-foreground">إجمالي رسوم الحصة</dt><dd className="font-bold">{currency.format(fixedSessionSplit?.revenue ?? sessionRevenue)}</dd></div>

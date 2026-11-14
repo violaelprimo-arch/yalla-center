@@ -3,6 +3,7 @@ import { cairoClock } from '@/lib/attendance/reception';
 import type { Tenant } from '@/lib/dal/types';
 import {
   canUseTeacherTab,
+  invalidTeacherLevel,
   teacherPasswordEmail,
   type ExtraSessionRequest,
   type TeacherInput,
@@ -149,6 +150,9 @@ export async function saveTeacherProfile(
   if (previous && !previous.active) throw new TeacherServiceError(409, 'حساب المعلم مؤرشف');
 
   const masterData = await listMasterData(context);
+  if (invalidTeacherLevel(input.contracts, masterData.stages, previous?.contracts)) {
+    throw new TeacherServiceError(400, 'اختر المراحل والصفوف من البيانات الأساسية');
+  }
   const subjects = new Set(masterData.subjects.map(subject => subject.id));
   if (input.subjectIds.some(subjectId => !subjects.has(subjectId))) {
     throw new TeacherServiceError(400, 'اختر المواد من قائمة هذا السنتر');

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { Classroom, Group, Tenant, UserRole } from '@/lib/dal/types';
 import type { MasterData } from '@/lib/dal/master-data';
 import { getDataProvider } from '@/lib/dal/factory';
+import { INITIAL_SEEDED_DATA } from '@/lib/dal/mock-data';
 import type { FirebaseAuthSessionState } from '@/lib/firebase/client';
 import { readDemoTeacherProfiles } from '@/lib/teachers/client';
 import {
@@ -19,7 +20,7 @@ function parseSavedGroups(raw: string | null, tenantId: string): Group[] {
     typeof row.isActive === 'boolean')) {
     throw new Error('تعذّر قراءة المجموعات المحفوظة في هذا المتصفح');
   }
-  return records;
+  return getDataProvider().keepSavedRecords(records, INITIAL_SEEDED_DATA.groups, new Set(['isActive', 'archivedAt', 'version']));
 }
 
 function parseSavedClassrooms(raw: string | null, tenantId: string): Classroom[] {
@@ -28,7 +29,7 @@ function parseSavedClassrooms(raw: string | null, tenantId: string): Classroom[]
     classroomInputSchema.safeParse(room).success)) {
     throw new Error('تعذّر قراءة القاعات المحفوظة في هذا المتصفح');
   }
-  return rooms;
+  return getDataProvider().keepSavedRecords(rooms, INITIAL_SEEDED_DATA.classrooms);
 }
 
 function writeDemoData(key: string, data: object, label: string) {
@@ -85,7 +86,7 @@ export function useCenterGroups(tenant: Tenant, catalog: MasterData, auth: Fireb
   const managedGroups = useRef<Group[]>([]);
   const managedClassrooms = useRef<Classroom[]>([]);
   const request = useRef(0);
-  const current = state?.tenantId === tenantId && state.account === account ? state : undefined;
+  const current = state?.tenantId === tenantId && state.account === account && (demo || token) ? state : undefined;
   const canEdit = Boolean(current && !current.error && (demo
     ? ['CENTER_ADMIN', 'PLATFORM_OWNER'].includes(role) : token && current.canEdit));
 

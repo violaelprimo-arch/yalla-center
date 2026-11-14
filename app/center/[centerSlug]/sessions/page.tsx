@@ -41,7 +41,7 @@ export default function SessionsGroupsPage() {
   const teachers = useMemo(() => {
     const entries = new Map(baseTeachers.map(user => [user.id, user]));
     for (const profile of teacherDirectory.profiles) entries.set(profile.id, {
-      id: profile.id, fullName: profile.fullName, isActive: profile.active,
+      id: profile.id, fullName: profile.fullName, isActive: profile.active, contracts: profile.contracts,
     });
     return [...entries.values()];
   }, [baseTeachers, teacherDirectory.profiles]);
@@ -140,7 +140,7 @@ export default function SessionsGroupsPage() {
       </select>
       <select className={filterControl} aria-label="المعلم" value={teacher} onChange={event => { setTeacher(event.target.value); setPage(0); }}>
         <option value="">كل المعلمين</option>
-        {teachers.map(item => <option key={item.id} value={item.id}>{item.fullName}</option>)}
+        {teachers.filter(item => item.isActive).map(item => <option key={item.id} value={item.id}>{item.fullName}</option>)}
       </select>
       {groupData.canEdit && <select className={filterControl} aria-label="طريقة الحساب" value={pricing}
         onChange={event => { setPricing(event.target.value); setPage(0); }}>

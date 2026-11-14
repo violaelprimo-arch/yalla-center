@@ -16,10 +16,10 @@ export const GROUP_PRICING_LABELS = {
 
 const id = z.string().regex(/^[a-zA-Z0-9_-]{1,100}$/, 'المعرّف غير صالح');
 const time = z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/, 'اكتب وقتًا صحيحًا');
-const money = z.number().min(0).max(1000000);
-const percent = z.number().min(0).max(100);
+const money = z.number({ invalid_type_error: 'أدخل المبالغ المطلوبة' }).min(0, 'المبلغ لازم يكون صفر أو أكثر').max(1000000);
+const percent = z.number({ invalid_type_error: 'أدخل نسبة المعلم' }).min(0).max(100, 'نسبة المعلم من صفر إلى 100');
 
-const pricingSchema = z.discriminatedUnion('model', [
+export const groupPricingSchema = z.discriminatedUnion('model', [
   z.object({ model: z.literal('center'), monthlyFee: money, teacherRate: money }),
   z.object({ model: z.literal('private'), monthlyFee: money, teacherPercentage: percent }),
   z.object({ model: z.literal('per_session'), teacherFee: money, centerFee: money }),
@@ -39,7 +39,7 @@ export const groupInputSchema = z.object({
   branchId: id, stageId: id, gradeId: id, subjectId: id, teacherId: id,
   maxStudents: z.number().int().min(1, 'سعة المجموعة لازم تكون أكبر من صفر').max(1000).optional(),
   weeklySlots: z.array(slotSchema).min(1, 'أضف موعدًا واحدًا على الأقل').max(28),
-  pricing: pricingSchema,
+  pricing: groupPricingSchema,
 });
 
 export const classroomInputSchema = z.object({
@@ -50,7 +50,7 @@ export const classroomInputSchema = z.object({
 export const groupDeletionSchema = z.object({ id, version: z.number().int().min(0) });
 export const classroomDeletionSchema = z.object({ id, branchId: id });
 
-export type GroupPricing = z.infer<typeof pricingSchema>;
+export type GroupPricing = z.infer<typeof groupPricingSchema>;
 export type WeeklySlot = z.infer<typeof slotSchema>;
 export type GroupInput = z.infer<typeof groupInputSchema>;
 export type ClassroomInput = z.infer<typeof classroomInputSchema>;
@@ -152,7 +152,7 @@ function periodFrom(group: Group): Omit<GroupPeriod, 'endsAt'> | undefined {
   };
 }
 
-function normalizedPricing(pricing: GroupPricing): GroupPricing {
+export function normalizeGroupPricing(pricing: GroupPricing): GroupPricing {
   switch (pricing.model) {
     case 'center':
       return { ...pricing, monthlyFee: moneyAmount(pricing.monthlyFee), teacherRate: moneyAmount(pricing.teacherRate) };
@@ -221,7 +221,7 @@ export function buildGroup(tenantId: string, input: GroupInput, refs: ScheduleRe
     throw new GroupScheduleError(400, `أقصى عدد للمجموعة حسب القاعات المختارة ${capacity} طالب`);
   }
 
-  const pricing = normalizedPricing(input.pricing);
+  const pricing = normalizeGroupPricing(input.pricing);
   const first = slots[0];
   const today = cairoClock(now);
   const previous = current && periodFrom(current);
