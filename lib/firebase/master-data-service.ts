@@ -7,7 +7,7 @@ import {
   type MasterData,
   type MasterDataAction,
 } from '@/lib/dal/master-data';
-import type { Tenant } from '@/lib/dal/types';
+import type { Material, Tenant } from '@/lib/dal/types';
 import type { FirestoreWriteOperation, StructuredFilter } from './firestore-rest';
 import type { ILessonScoreStore, StaffMembershipRecord } from './server';
 
@@ -90,10 +90,11 @@ function catalogWrites<T extends { id: string }>(
   return writes;
 }
 
-export async function saveMasterData(context: MasterDataContext, input: MasterDataAction, scheduleWrite?: FirestoreWriteOperation) {
+export async function saveMasterData(context: MasterDataContext, input: MasterDataAction,
+  dependencyWrites: FirestoreWriteOperation[] = [], currentMaterials?: Material[]) {
   const { tenant, dal, store } = context;
   const { data, stored, revision, revisionPath } = await readCatalog(context);
-  const change = await changeMasterData(dal, tenant.id, data, input);
+  const change = await changeMasterData(dal, tenant.id, data, input, currentMaterials);
   const writes = [
     ...catalogWrites(`master_stages/${tenant.id}~`, stored.stages, change.data.stages),
     ...catalogWrites(`master_subjects/${tenant.id}~`, stored.subjects, change.data.subjects),
@@ -104,7 +105,7 @@ export async function saveMasterData(context: MasterDataContext, input: MasterDa
     throw new MasterDataError(503, 'تعذّر التحقق من إصدار البيانات الأساسية');
   }
   await store.commit([
-    ...(scheduleWrite ? [scheduleWrite] : []),
+    ...dependencyWrites,
     {
       type: 'set',
       documentPath: revisionPath,

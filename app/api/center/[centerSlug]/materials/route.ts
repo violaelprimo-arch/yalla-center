@@ -1,122 +1,103 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDataProvider } from '@/lib/dal/factory';
-import { CreateMaterialInput, DocumentCategory, MaterialIndexStatus } from '@/lib/dal/types';
+import type { MaterialIndexStatus } from '@/lib/dal/types';
+import { authorizeMaterialAccess, loadMaterialProvider, saveManagedMaterial } from '@/lib/firebase/material-service';
+import { FirebaseAuthError, FirestoreHttpError } from '@/lib/firebase/server';
+import { MasterDataError } from '@/lib/dal/master-data';
+import {
+  createMaterialSchema, deleteMaterialSchema, materialConflict, MaterialError, updateMaterialSchema,
+  type MaterialMutation,
+} from '@/lib/materials/management';
 
-export async function GET(
-  request: NextRequest,
-  { params }: { params: { centerSlug: string } }
-) {
+export const dynamic = 'force-dynamic';
+type Params = { params: { centerSlug: string } };
+
+function reply(data: object, status = 200) {
+  return NextResponse.json(data, { status, headers: { 'Cache-Control': 'no-store' } });
+}
+
+function failure(cause: unknown) {
+  if (cause instanceof MaterialError || cause instanceof FirebaseAuthError || cause instanceof MasterDataError) {
+    return reply({ error: cause.message }, cause.status);
+  }
+  if (cause instanceof FirestoreHttpError &&
+    ([409, 412].includes(cause.status) || ['ALREADY_EXISTS', 'ABORTED', 'FAILED_PRECONDITION'].includes(cause.code ?? ''))) {
+    return reply({ error: materialConflict }, 409);
+  }
+  return reply({ error: 'تعذّر الاتصال بخدمة المذكرات' }, 503);
+}
+
+async function center(slug: string) {
+  const dal = getDataProvider();
+  const tenant = await dal.getTenantBySlug(slug);
+  if (!tenant?.isActive) throw new MaterialError(404, 'السنتر غير متاح');
+  return { dal, tenant };
+}
+
+export async function GET(req: NextRequest, { params }: Params) {
   try {
-    const dal = getDataProvider();
-    const tenant = await dal.getTenantBySlug(params.centerSlug);
-    if (!tenant) {
-      return NextResponse.json({ error: 'Center not found' }, { status: 404 });
-    }
-
-    const { searchParams } = new URL(request.url);
-    const stage = searchParams.get('stage') || undefined;
-    const grade = searchParams.get('grade') || undefined;
-    const subjectId = searchParams.get('subjectId') || undefined;
-    const indexStatus = (searchParams.get('indexStatus') as MaterialIndexStatus) || undefined;
-    const search = searchParams.get('search') || undefined;
-
-    const materials = await dal.getMaterials(tenant.id, {
-      stage,
-      grade,
-      subjectId,
-      indexStatus,
-      search,
-    });
-
-    const stats = await dal.getMaterialsStats(tenant.id);
-
-    return NextResponse.json({
-      success: true,
-      materials,
-      stats,
-    });
-  } catch (error: any) {
-    return NextResponse.json(
-      { error: error.message || 'Internal Server Error' },
-      { status: 500 }
-    );
+    const { dal, tenant } = await center(params.centerSlug);
+    const access = req.headers.has('authorization')
+      ? await authorizeMaterialAccess(req.headers.get('authorization'), tenant.id) : undefined;
+    const source = access ? await loadMaterialProvider(access.store, dal, tenant.id) : dal;
+    const { searchParams } = req.nextUrl;
+    const [materials, stats] = await Promise.all([
+      source.getMaterials(tenant.id, {
+        stage: searchParams.get('stage') || undefined,
+        grade: searchParams.get('grade') || undefined,
+        subjectId: searchParams.get('subjectId') || undefined,
+        indexStatus: (searchParams.get('indexStatus') as MaterialIndexStatus | null) ?? undefined,
+        search: searchParams.get('search') || undefined,
+      }),
+      source.getMaterialsStats(tenant.id),
+    ]);
+    return reply({ success: true, materials, stats, canEdit: access?.canEdit ?? false });
+  } catch (cause) {
+    return failure(cause);
   }
 }
 
-export async function POST(
-  request: NextRequest,
-  { params }: { params: { centerSlug: string } }
-) {
+async function mutate(req: NextRequest, { params }: Params, action: MaterialMutation['action']) {
   try {
-    const dal = getDataProvider();
-    const tenant = await dal.getTenantBySlug(params.centerSlug);
-    if (!tenant) {
-      return NextResponse.json({ error: 'Center not found' }, { status: 404 });
+    const context = await center(params.centerSlug);
+    const { store, uid } = await authorizeMaterialAccess(req.headers.get('authorization'), context.tenant.id, true);
+    const body = await req.json().catch(() => null);
+    let input: MaterialMutation;
+    switch (action) {
+      case 'create': {
+        const result = createMaterialSchema.safeParse(body);
+        if (!result.success) return reply({ error: result.error.issues[0].message }, 400);
+        input = { action, input: result.data };
+        break;
+      }
+      case 'update': {
+        const result = updateMaterialSchema.safeParse(body);
+        if (!result.success) return reply({ error: result.error.issues[0].message }, 400);
+        input = { action, ...result.data };
+        break;
+      }
+      case 'delete': {
+        const result = deleteMaterialSchema.safeParse(body);
+        if (!result.success) return reply({ error: result.error.issues[0].message }, 400);
+        input = { action, ...result.data };
+        break;
+      }
     }
-
-    const body = await request.json();
-    const {
-      googleDriveUrlOrId,
-      title,
-      teacherId,
-      stage,
-      grade,
-      subjectId,
-      unitName,
-      lessonName,
-      category,
-      autoIndex,
-      fileUrl,
-      textContentIndexed,
-    } = body;
-
-    if (!stage || !grade || !subjectId || !unitName || !lessonName) {
-      return NextResponse.json(
-        { error: 'جميع حقول التصنيف الأكاديمي مطلوبة (المرحلة، الصف، المادة، الوحدة، الدرس)' },
-        { status: 400 }
-      );
-    }
-
-    // Google Drive linking flow
-    if (googleDriveUrlOrId) {
-      const material = await dal.linkGoogleDriveDocument(tenant.id, {
-        googleDriveUrlOrId,
-        teacherId: teacherId || 'user-teacher-phys',
-        stage,
-        grade,
-        subjectId,
-        unitName,
-        lessonName,
-        title,
-        category: category as DocumentCategory,
-        autoIndex: autoIndex !== false,
-      });
-
-      return NextResponse.json({ success: true, material }, { status: 201 });
-    }
-
-    // Direct file creation flow
-    const materialInput: CreateMaterialInput = {
-      tenantId: tenant.id,
-      teacherId: teacherId || 'user-teacher-phys',
-      stage,
-      grade,
-      subjectId,
-      unitName,
-      lessonName,
-      title: title || 'مذكرة دراسية جديدة',
-      category: category as DocumentCategory,
-      fileUrl: fileUrl || '/materials/document.pdf',
-      textContentIndexed,
-      indexImmediately: autoIndex !== false,
-    };
-
-    const material = await dal.createMaterial(materialInput);
-    return NextResponse.json({ success: true, material }, { status: 201 });
-  } catch (error: any) {
-    return NextResponse.json(
-      { error: error.message || 'Failed to create material' },
-      { status: 400 }
-    );
+    const material = await saveManagedMaterial({ ...context, store }, uid, input);
+    return reply({ success: true, material }, action === 'create' ? 201 : 200);
+  } catch (cause) {
+    return failure(cause);
   }
+}
+
+export function POST(req: NextRequest, context: Params) {
+  return mutate(req, context, 'create');
+}
+
+export function PATCH(req: NextRequest, context: Params) {
+  return mutate(req, context, 'update');
+}
+
+export function DELETE(req: NextRequest, context: Params) {
+  return mutate(req, context, 'delete');
 }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDataProvider } from '@/lib/dal/factory';
 import { validateExamPreflightInput } from '@/lib/exams/preflight';
+import { readExamSourceMaterials } from '@/lib/materials/exam-source';
 
 export async function POST(
   request: NextRequest,
@@ -18,9 +19,8 @@ export async function POST(
 
     let documents;
     if (sourceDocumentIds && Array.isArray(sourceDocumentIds) && sourceDocumentIds.length > 0) {
-      const allMaterials = await dal.getMaterials(tenant.id);
-      documents = allMaterials
-        .filter((m) => sourceDocumentIds.includes(m.id))
+      const selected = await readExamSourceMaterials(dal, tenant, request.headers.get('authorization'), sourceDocumentIds);
+      documents = selected
         .map((m) => ({
           id: m.id,
           title: m.title,
@@ -52,7 +52,7 @@ export async function POST(
   } catch (error: any) {
     return NextResponse.json(
       { error: error.message || 'Internal Server Error' },
-      { status: 500 }
+      { status: error.status || 500 }
     );
   }
 }

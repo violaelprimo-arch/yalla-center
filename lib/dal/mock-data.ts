@@ -3095,6 +3095,16 @@ export class MockDataProvider implements IDataProvider {
     const mat = this.materials.find((m) => m.tenantId === tenantId && m.id === materialId);
     if (!mat) throw new Error('المذكرة غير موجودة');
 
+    if (updates.fileUrl !== undefined) {
+      const driveId = extractGoogleDriveFileId(updates.fileUrl);
+      const driveLinks = driveId ? buildDriveLinks(driveId) : undefined;
+      Object.assign(mat, {
+        fileUrl: updates.fileUrl, googleDriveFileId: driveId ?? undefined,
+        googleDriveWebViewLink: driveLinks?.webViewLink, googleDriveWebContentLink: driveLinks?.webContentLink,
+        googleDriveThumbnailLink: driveLinks?.thumbnailLink, fileSizeBytes: 0, fileType: updates.fileType ?? mat.fileType,
+        textContentIndexed: undefined, wordCount: 0, indexStatus: 'pending', lastIndexedAt: undefined,
+      });
+    }
     if (updates.textContentIndexed !== undefined) {
       mat.textContentIndexed = updates.textContentIndexed;
       mat.wordCount = countArabicWords(updates.textContentIndexed);
@@ -3107,6 +3117,9 @@ export class MockDataProvider implements IDataProvider {
     if (updates.category !== undefined) mat.category = updates.category;
     if (updates.unitName !== undefined) mat.unitName = updates.unitName;
     if (updates.lessonName !== undefined) mat.lessonName = updates.lessonName;
+    if (updates.stage !== undefined) mat.stage = updates.stage;
+    if (updates.grade !== undefined) mat.grade = updates.grade;
+    if (updates.subjectId !== undefined) mat.subjectId = updates.subjectId;
     if (updates.indexStatus !== undefined) mat.indexStatus = updates.indexStatus;
 
     mat.updatedAt = new Date().toISOString();

@@ -11,6 +11,8 @@ import {
 import { authorizeMasterData, listMasterData, saveMasterData } from '@/lib/firebase/master-data-service';
 import { groupRevisionWrite, loadGroupProvider } from '@/lib/firebase/group-service';
 import { GroupScheduleError } from '@/lib/timetable/group-schedule';
+import { readManagedMaterials, materialRevisionWrite } from '@/lib/firebase/material-service';
+import { MaterialError } from '@/lib/materials/management';
 
 export const dynamic = 'force-dynamic';
 
@@ -22,7 +24,7 @@ function reply(body: object, status = 200) {
   return NextResponse.json(body, { status, headers: { 'Cache-Control': 'no-store' } });
 }
 
-async function resolveContext(req: NextRequest, centerSlug: string, requireAdmin: boolean) {
+async function resolveContext(req: NextRequest, centerSlug: string, requireAdmin: boolean, requireServiceAccount = false) {
   const dal = getDataProvider();
   const tenant = await dal.getTenantBySlug(centerSlug);
   if (!tenant?.isActive) throw new MasterDataError(404, 'السنتر غير موجود أو غير مفعل');
@@ -32,13 +34,13 @@ async function resolveContext(req: NextRequest, centerSlug: string, requireAdmin
   const { uid } = await verifyFirebaseIdToken(bearer);
   if (uid.includes('/')) throw new MasterDataError(401, 'معرّف الحساب غير صالح');
 
-  const store = await createServerFirestoreStore({ callerIdToken: bearer });
+  const store = await createServerFirestoreStore({ callerIdToken: bearer, requireServiceAccount });
   const canEdit = await authorizeMasterData(store, uid, tenant.id, requireAdmin);
   return { tenant, store, dal, canEdit };
 }
 
 function errorResponse(error: unknown) {
-  if (error instanceof MasterDataError || error instanceof FirebaseAuthError || error instanceof GroupScheduleError) {
+  if (error instanceof MasterDataError || error instanceof FirebaseAuthError || error instanceof GroupScheduleError || error instanceof MaterialError) {
     return reply({ success: false, error: error.message }, error.status);
   }
   if (error instanceof FirestoreHttpError &&
@@ -61,16 +63,21 @@ export async function GET(req: NextRequest, { params }: RouteContext) {
 export async function POST(req: NextRequest, { params }: RouteContext) {
   try {
     const { centerSlug } = await params;
-    const context = await resolveContext(req, centerSlug, true);
     const parsed = masterDataActionSchema.safeParse(await req.json().catch(() => null));
+    const context = await resolveContext(req, centerSlug, true, parsed.success && parsed.data.action === 'deleteSubject');
     if (!parsed.success) {
       return reply({ success: false, error: parsed.error.issues[0]?.message || 'بيانات الطلب غير صالحة' }, 400);
     }
     const scheduleWrite = parsed.data.action.startsWith('delete')
       ? await groupRevisionWrite(context.store, context.tenant.id) : undefined;
-    const dal = scheduleWrite
-      ? await loadGroupProvider(context.store, context.tenant) : context.dal;
-    const { data, result } = await saveMasterData({ ...context, dal }, parsed.data, scheduleWrite);
+    const materialWrite = parsed.data.action === 'deleteSubject'
+      ? await materialRevisionWrite(context.store, context.tenant.id) : undefined;
+    const [dal, materials] = await Promise.all([
+      scheduleWrite ? loadGroupProvider(context.store, context.tenant) : context.dal,
+      materialWrite ? readManagedMaterials(context.store, context.dal, context.tenant.id) : undefined,
+    ]);
+    const dependencyWrites = [scheduleWrite, materialWrite].filter(write => write !== undefined);
+    const { data, result } = await saveMasterData({ ...context, dal }, parsed.data, dependencyWrites, materials);
     return reply({ success: true, data, ...result });
   } catch (error) {
     return errorResponse(error);

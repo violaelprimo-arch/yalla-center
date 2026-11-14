@@ -1,113 +1,43 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import {
-  FolderTree,
-  Search,
-  Filter,
-  Plus,
-  FileText,
-  ExternalLink,
-  BookOpen,
-  Sparkles,
-  RefreshCw,
-  Eye,
-  CheckCircle2,
-  AlertCircle,
-  Clock,
-  Layers,
-  ChevronRight,
-  Folder,
-  LayoutGrid,
-  List,
-  Upload,
-  Link as LinkIcon,
-  X,
-  FileSpreadsheet,
-  FileCode,
+  FolderTree, Search, Plus, FileText, ExternalLink, Sparkles, Eye, CheckCircle2,
+  AlertCircle, Clock, ChevronRight, Folder, LayoutGrid, List, Link as LinkIcon, Pencil, Trash2, X,
 } from 'lucide-react';
-import { useTenant } from '@/components/layout/tenant-provider';
-import { Badge } from '@/components/ui/badge';
-import { MathView } from '@/components/ui/math-view';
-import { Material, Subject, DocumentCategory, MaterialIndexStatus } from '@/lib/dal/types';
-import { EGYPTIAN_STAGES, DOCUMENT_CATEGORIES, buildTaxonomyTree } from '@/lib/materials/taxonomy';
-import { extractGoogleDriveFileId } from '@/lib/materials/drive';
 import Link from 'next/link';
+import { useTenant } from '@/components/layout/tenant-provider';
+import { MasterDataStatus } from '@/components/layout/master-data-status';
+import { Button } from '@/components/ui/button';
+import { MathView } from '@/components/ui/math-view';
+import { MaterialEditor } from '@/components/materials/material-editor';
+import type { Material } from '@/lib/dal/types';
+import { useCenterMaterials } from '@/lib/materials/client';
+import type { MaterialMutation } from '@/lib/materials/management';
+import { DOCUMENT_CATEGORIES, getGradeNameArabic, getStageNameArabic } from '@/lib/materials/taxonomy';
 
-export default function MaterialsPage({ params }: { params: { centerSlug: string } }) {
-  const { tenant } = useTenant();
-  const centerSlug = params?.centerSlug || tenant?.slug || 'al-maher';
-
-  // Data State
-  const [materials, setMaterials] = useState<Material[]>([]);
-  const [subjects, setSubjects] = useState<Subject[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  // Filters State
+export default function MaterialsPage() {
+  const { tenant, masterData, currentUser } = useTenant();
+  const centerSlug = tenant.slug;
+  const { materials, loading, error, refresh, canEdit, save } = useCenterMaterials(tenant, masterData.auth, currentUser);
+  const { stages, subjects } = masterData.data;
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedStage, setSelectedStage] = useState<string>('all');
-  const [selectedGrade, setSelectedGrade] = useState<string>('all');
-  const [selectedSubject, setSelectedSubject] = useState<string>('all');
-  const [selectedStatus, setSelectedStatus] = useState<string>('all');
+  const [selectedStage, setSelectedStage] = useState('all');
+  const [selectedGrade, setSelectedGrade] = useState('all');
+  const [selectedSubject, setSelectedSubject] = useState('all');
+  const [selectedStatus, setSelectedStatus] = useState('all');
   const [viewMode, setViewMode] = useState<'grid' | 'table' | 'tree'>('grid');
-
-  // Modals State
-  const [showAddModal, setShowAddModal] = useState(false);
+  const [editor, setEditor] = useState<{ material?: Material }>();
   const [selectedMaterialForText, setSelectedMaterialForText] = useState<Material | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Material>();
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
+  const [notice, setNotice] = useState('');
 
-  // Add/Link Form State
-  const [driveUrl, setDriveUrl] = useState('');
-  const [formTitle, setFormTitle] = useState('');
-  const [formDescription, setFormDescription] = useState('');
-  const [formStage, setFormStage] = useState('secondary');
-  const [formGrade, setFormGrade] = useState('3_sec');
-  const [formSubjectId, setFormSubjectId] = useState('');
-  const [formUnitName, setFormUnitName] = useState('');
-  const [formLessonName, setFormLessonName] = useState('');
-  const [formCategory, setFormCategory] = useState<DocumentCategory>('lecture_notes');
-  const [autoIndex, setAutoIndex] = useState(true);
-  const [formSubmitting, setFormSubmitting] = useState(false);
-  const [formError, setFormError] = useState('');
-
-  // Fetch Materials and Subjects
-  const fetchData = async () => {
-    try {
-      setLoading(true);
-      const res = await fetch(`/api/center/${centerSlug}/materials`);
-      if (res.ok) {
-        const data = await res.json();
-        setMaterials(data.materials || []);
-      }
-
-      // Fetch subjects
-      const subjRes = await fetch(`/api/center/${centerSlug}/attendance/scan?check=true`).catch(() => null);
-    } catch {
-      // Fallback
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [centerSlug]);
-
-  // Set default subject ID when materials or subjects change
-  useEffect(() => {
-    if (materials.length > 0 && !formSubjectId) {
-      setFormSubjectId(materials[0].subjectId || 'sub-phys-3sec');
-    }
-  }, [materials, formSubjectId]);
-
-  // Available grades cascading from selected stage
-  const availableGrades = useMemo(() => {
-    if (selectedStage === 'all') {
-      return EGYPTIAN_STAGES.flatMap((s) => s.grades);
-    }
-    const stage = EGYPTIAN_STAGES.find((s) => s.code === selectedStage);
-    return stage ? stage.grades : [];
-  }, [selectedStage]);
+  const availableGrades = selectedStage === 'all' ? stages.flatMap(stage => stage.grades)
+    : stages.find(stage => stage.id === selectedStage)?.grades ?? [];
+  const availableSubjects = subjects.filter(subject => (selectedStage === 'all' || subject.stage === selectedStage) &&
+    (selectedGrade === 'all' || subject.grade === selectedGrade));
 
   // Filtered Materials
   const filteredMaterials = useMemo(() => {
@@ -145,59 +75,41 @@ export default function MaterialsPage({ params }: { params: { centerSlug: string
     return { total, indexed, insufficient, pending, totalWords, driveCount };
   }, [materials]);
 
-  // Handle Add / Link Submit
-  const handleAddMaterialSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setFormError('');
+  async function saveMaterial(mutation: MaterialMutation) {
+    await save(mutation);
+    setEditor(undefined);
+    setNotice(mutation.action === 'create' ? 'تمت إضافة المذكرة' : 'تم تعديل المذكرة');
+    setSelectedStage('all');
+    setSelectedGrade('all');
+    setSelectedSubject('all');
+    setSelectedStatus('all');
+    setSearchQuery('');
+  }
 
-    if (!formTitle.trim()) {
-      setFormError('يرجى إدخال عنوان المذكرة');
-      return;
-    }
-    if (!formUnitName.trim() || !formLessonName.trim()) {
-      setFormError('يرجى تحديد الوحدة والدرس التعليمي بدقة');
-      return;
-    }
-
-    setFormSubmitting(true);
+  async function confirmDelete() {
+    if (!deleteTarget || deleting) return;
+    setDeleting(true);
+    setDeleteError('');
     try {
-      const res = await fetch(`/api/center/${centerSlug}/materials`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          googleDriveUrlOrId: driveUrl.trim() || undefined,
-          title: formTitle.trim(),
-          description: formDescription.trim(),
-          stage: formStage,
-          grade: formGrade,
-          subjectId: formSubjectId || 'sub-phys-3sec',
-          unitName: formUnitName.trim(),
-          lessonName: formLessonName.trim(),
-          category: formCategory,
-          autoIndex,
-        }),
-      });
-
-      if (!res.ok) {
-        const errData = await res.json();
-        throw new Error(errData.error || 'فشلت عملية الإضافة');
-      }
-
-      const resData = await res.json();
-      setMaterials((prev) => [resData.material, ...prev]);
-      setShowAddModal(false);
-      // Reset form
-      setDriveUrl('');
-      setFormTitle('');
-      setFormDescription('');
-      setFormUnitName('');
-      setFormLessonName('');
-    } catch (err: any) {
-      setFormError(err.message || 'حدث خطأ أثناء حفظ المذكرة');
+      await save({ action: 'delete', id: deleteTarget.id, updatedAt: deleteTarget.updatedAt });
+      setDeleteTarget(undefined);
+      setNotice('تم حذف المذكرة من البنك');
+    } catch (cause) {
+      setDeleteError(cause instanceof Error ? cause.message : 'تعذّر حذف المذكرة');
     } finally {
-      setFormSubmitting(false);
+      setDeleting(false);
     }
-  };
+  }
+
+  function materialActions(material: Material) {
+    if (!canEdit) return null;
+    return <div className="flex flex-wrap items-center gap-1.5">
+      <Button type="button" variant="outline" size="sm" aria-label={`تعديل ${material.title}`}
+        onClick={() => { setNotice(''); setEditor({ material }); }}><Pencil size={13} /> تعديل</Button>
+      <Button type="button" variant="outline" size="sm" className="text-rose-700 dark:text-rose-400" aria-label={`حذف ${material.title}`}
+        onClick={() => { setNotice(''); setDeleteError(''); setDeleteTarget(material); }}><Trash2 size={13} /> حذف</Button>
+    </div>;
+  }
 
   return (
     <div className="space-y-6" dir="rtl">
@@ -218,16 +130,23 @@ export default function MaterialsPage({ params }: { params: { centerSlug: string
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        {canEdit && <div className="flex items-center gap-3">
           <button
-            onClick={() => setShowAddModal(true)}
+            disabled={!masterData.ready}
+            onClick={() => { setNotice(''); setEditor({}); }}
             className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold text-xs shadow-md transition-all active:scale-95"
           >
             <Plus className="w-4 h-4" />
             <span>إضافة مذكرة / ربط Google Drive</span>
           </button>
-        </div>
+        </div>}
       </div>
+      <MasterDataStatus />
+      {error && <p role="alert" className="rounded-lg border border-rose-500/30 px-3 py-2 text-sm text-rose-700 dark:text-rose-300">
+        {error} <button type="button" className="ms-2 underline" onClick={refresh}>إعادة المحاولة</button>
+      </p>}
+      {loading && <p role="status" className="text-sm text-muted-foreground">جارٍ تحميل المذكرات…</p>}
+      {notice && <p role="status" className="rounded-lg bg-emerald-500/10 px-3 py-2 text-sm text-emerald-700 dark:text-emerald-300">{notice}</p>}
 
       {/* Fast Statistics HUD Bar */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
@@ -340,29 +259,22 @@ export default function MaterialsPage({ params }: { params: { centerSlug: string
             onChange={(e) => {
               setSelectedStage(e.target.value);
               setSelectedGrade('all');
+              setSelectedSubject('all');
             }}
             className="p-2 rounded-xl border border-border bg-background text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-cyan-500"
           >
             <option value="all">جميع المراحل التعليمية</option>
-            {EGYPTIAN_STAGES.map((s) => (
-              <option key={s.code} value={s.code}>
-                {s.nameAr}
-              </option>
-            ))}
+            {stages.map(stage => <option key={stage.id} value={stage.id}>{stage.nameAr}</option>)}
           </select>
 
           {/* Grade Filter */}
           <select
             value={selectedGrade}
-            onChange={(e) => setSelectedGrade(e.target.value)}
+            onChange={event => { setSelectedGrade(event.target.value); setSelectedSubject('all'); }}
             className="p-2 rounded-xl border border-border bg-background text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-cyan-500"
           >
             <option value="all">جميع الصفوف الدراسية</option>
-            {availableGrades.map((g) => (
-              <option key={g.code} value={g.code}>
-                {g.nameAr}
-              </option>
-            ))}
+            {availableGrades.map(grade => <option key={grade.id} value={grade.id}>{grade.nameAr}</option>)}
           </select>
 
           {/* Subject Filter */}
@@ -372,9 +284,7 @@ export default function MaterialsPage({ params }: { params: { centerSlug: string
             className="p-2 rounded-xl border border-border bg-background text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-cyan-500"
           >
             <option value="all">جميع المواد الدراسية</option>
-            <option value="sub-phys-3sec">الفيزياء الكهربية والحديثة</option>
-            <option value="sub-math-3sec">الرياضيات التطبيقية</option>
-            <option value="sub-chem-3sec">الكيمياء العامة</option>
+            {availableSubjects.map(subject => <option key={subject.id} value={subject.id}>{subject.nameAr}</option>)}
           </select>
 
           {/* Index Status Filter */}
@@ -390,6 +300,11 @@ export default function MaterialsPage({ params }: { params: { centerSlug: string
           </select>
         </div>
       </div>
+
+      {!loading && !error && !filteredMaterials.length &&
+        <p className="rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground">
+          {materials.length ? 'مفيش مذكرات مطابقة للبحث.' : 'مفيش مذكرات في البنك.'}
+        </p>}
 
       {/* Main View: Grid Mode */}
       {viewMode === 'grid' && (
@@ -433,7 +348,7 @@ export default function MaterialsPage({ params }: { params: { centerSlug: string
 
                   {/* Title & Hierarchy Trail */}
                   <div>
-                    <h3 className="text-sm font-bold text-foreground line-clamp-1">{mat.title}</h3>
+                  <h3 className="text-sm font-bold text-foreground line-clamp-2" title={mat.title}>{mat.title}</h3>
                     <div className="text-[11px] text-cyan-600 dark:text-cyan-400 font-medium mt-1 flex items-center gap-1">
                       <Folder className="w-3 h-3" />
                       <span>{mat.unitName}</span>
@@ -451,7 +366,7 @@ export default function MaterialsPage({ params }: { params: { centerSlug: string
                 </div>
 
                 {/* Actions Footer */}
-                <div className="pt-3 border-t border-border flex items-center justify-between gap-2">
+                <div className="pt-3 border-t border-border flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-1.5">
                     {/* View Text / Equations Inspector */}
                     <button
@@ -478,6 +393,7 @@ export default function MaterialsPage({ params }: { params: { centerSlug: string
                     )}
                   </div>
 
+                  {materialActions(mat)}
                   {/* Generate Exam Trigger */}
                   <Link
                     href={`/center/${centerSlug}/exams?sourceDocId=${mat.id}`}
@@ -495,7 +411,7 @@ export default function MaterialsPage({ params }: { params: { centerSlug: string
 
       {/* Main View: Table Mode */}
       {viewMode === 'table' && (
-        <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-sm">
+        <div className="bg-card border border-border rounded-2xl overflow-x-auto shadow-sm">
           <table className="w-full text-xs text-start">
             <thead className="bg-muted/50 border-b border-border text-muted-foreground">
               <tr>
@@ -536,7 +452,7 @@ export default function MaterialsPage({ params }: { params: { centerSlug: string
                     )}
                   </td>
                   <td className="p-3">
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <button
                         onClick={() => setSelectedMaterialForText(mat)}
                         className="text-cyan-500 hover:underline flex items-center gap-1"
@@ -549,6 +465,7 @@ export default function MaterialsPage({ params }: { params: { centerSlug: string
                       >
                         <Sparkles className="w-3 h-3" /> امتحان
                       </Link>
+                      {materialActions(mat)}
                     </div>
                   </td>
                 </tr>
@@ -567,55 +484,25 @@ export default function MaterialsPage({ params }: { params: { centerSlug: string
           </h3>
 
           <div className="space-y-3 font-mono text-xs">
-            {EGYPTIAN_STAGES.map((stg) => {
-              const stageMats = materials.filter((m) => m.stage === stg.code);
-              return (
-                <div key={stg.code} className="p-3 rounded-xl bg-muted/30 border border-border space-y-2">
-                  <div className="font-bold text-foreground text-sm flex items-center justify-between">
-                    <span className="flex items-center gap-2">
-                      <Folder className="w-4 h-4 text-amber-500" />
-                      {stg.nameAr}
-                    </span>
-                    <span className="text-xs text-muted-foreground font-normal">
-                      {stageMats.length} مذكرة
-                    </span>
-                  </div>
-
-                  <div className="mr-6 space-y-2 pt-1 border-r-2 border-border pr-3">
-                    {stg.grades.map((grd) => {
-                      const gradeMats = stageMats.filter((m) => m.grade === grd.code);
-                      if (gradeMats.length === 0) return null;
-                      return (
-                        <div key={grd.code} className="space-y-1">
-                          <div className="text-foreground font-semibold flex items-center justify-between">
-                            <span>📂 {grd.nameAr}</span>
-                            <span className="text-[11px] text-muted-foreground">
-                              {gradeMats.length} ملف
-                            </span>
-                          </div>
-                          <div className="mr-4 space-y-1 text-muted-foreground">
-                            {gradeMats.map((m) => (
-                              <div
-                                key={m.id}
-                                className="flex items-center justify-between p-1.5 rounded-lg hover:bg-muted/50 cursor-pointer"
-                                onClick={() => setSelectedMaterialForText(m)}
-                              >
-                                <span className="flex items-center gap-1.5 text-foreground">
-                                  <FileText className="w-3.5 h-3.5 text-cyan-500" />
-                                  {m.title}
-                                </span>
-                                <span className="text-[10px] text-muted-foreground">
-                                  {m.wordCount} كلمة
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              );
+            {Array.from(new Set(filteredMaterials.map(material => material.stage))).map(stage => {
+              const stageMaterials = filteredMaterials.filter(material => material.stage === stage);
+              return <section key={stage} className="space-y-2 rounded-xl border border-border bg-muted/30 p-3">
+                <h4 className="flex items-center gap-2 text-sm font-bold">
+                  <Folder className="size-4 text-amber-500" /> {stages.find(item => item.id === stage)?.nameAr ?? getStageNameArabic(stage)}
+                </h4>
+                {Array.from(new Set(stageMaterials.map(material => material.grade))).map(grade => <div key={grade} className="space-y-1 border-s-2 border-border ps-3">
+                  <p className="text-sm font-semibold">{availableGrades.find(item => item.id === grade)?.nameAr ?? getGradeNameArabic(grade)}</p>
+                  <ul className="divide-y divide-border">
+                    {stageMaterials.filter(material => material.grade === grade).map(material => <li key={material.id} className="flex flex-wrap items-center justify-between gap-2 py-1.5">
+                      <button type="button" onClick={() => setSelectedMaterialForText(material)}
+                        className="flex items-center gap-2 text-start text-sm text-cyan-700 hover:underline dark:text-cyan-300">
+                        <FileText className="size-4 shrink-0" /> {material.title}
+                      </button>
+                      {materialActions(material)}
+                    </li>)}
+                  </ul>
+                </div>)}
+              </section>;
             })}
           </div>
         </div>
@@ -707,176 +594,26 @@ export default function MaterialsPage({ params }: { params: { centerSlug: string
         </div>
       )}
 
-      {/* Modal: Add Material / Link Google Drive */}
-      {showAddModal && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-card border border-border rounded-3xl w-full max-w-xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl">
-            <div className="p-5 border-b border-border flex items-center justify-between">
-              <h3 className="text-base font-bold text-foreground flex items-center gap-2">
-                <LinkIcon className="w-4 h-4 text-cyan-500" />
-                <span>إضافة مذكرة جديدة أو ربط Google Drive</span>
-              </h3>
-              <button
-                onClick={() => setShowAddModal(false)}
-                className="p-1.5 rounded-xl border border-border hover:bg-muted text-muted-foreground hover:text-foreground"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
+      {editor && <MaterialEditor material={editor.material} stages={stages} subjects={subjects}
+        onClose={() => setEditor(undefined)} onSave={saveMaterial} />}
 
-            <form onSubmit={handleAddMaterialSubmit} className="p-6 overflow-y-auto space-y-4 text-xs">
-              {formError && (
-                <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-500 text-xs">
-                  {formError}
-                </div>
-              )}
-
-              {/* Google Drive URL */}
-              <div>
-                <label className="font-bold text-foreground block mb-1">
-                  رابط ملف Google Drive (اختياري للربط السحابي):
-                </label>
-                <input
-                  type="text"
-                  value={driveUrl}
-                  onChange={(e) => setDriveUrl(e.target.value)}
-                  placeholder="https://drive.google.com/file/d/1BxiMVs.../view أو معرف الملف"
-                  className="w-full p-2.5 rounded-xl border border-border bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-cyan-500"
-                />
-                <p className="text-[11px] text-muted-foreground mt-1">
-                  يدعم مشاركة Google Docs أو PDF أو معرف الملف المباشر.
-                </p>
-              </div>
-
-              {/* Title */}
-              <div>
-                <label className="font-bold text-foreground block mb-1">عنوان المذكرة *:</label>
-                <input
-                  type="text"
-                  required
-                  value={formTitle}
-                  onChange={(e) => setFormTitle(e.target.value)}
-                  placeholder="مثال: مذكرة شرح قوانين كيرشوف والدوائر الكهربية"
-                  className="w-full p-2.5 rounded-xl border border-border bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-cyan-500"
-                />
-              </div>
-
-              {/* Description */}
-              <div>
-                <label className="font-bold text-foreground block mb-1">نبذة عن المحتوى:</label>
-                <textarea
-                  rows={2}
-                  value={formDescription}
-                  onChange={(e) => setFormDescription(e.target.value)}
-                  placeholder="شرح موجز لأهم النقاط والمفاهيم..."
-                  className="w-full p-2.5 rounded-xl border border-border bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-cyan-500"
-                />
-              </div>
-
-              {/* Category */}
-              <div>
-                <label className="font-bold text-foreground block mb-1">تصنيف المذكرة:</label>
-                <select
-                  value={formCategory}
-                  onChange={(e) => setFormCategory(e.target.value as DocumentCategory)}
-                  className="w-full p-2.5 rounded-xl border border-border bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-cyan-500"
-                >
-                  <option value="lecture_notes">مذكرة شرح تفصيلية</option>
-                  <option value="summary">ملخص ومراجعة سريعة</option>
-                  <option value="exercises">تمارين وتطبيقات عملية</option>
-                  <option value="exam_bank">بنك أسئلة واختبارات</option>
-                  <option value="formula_sheet">ورقة قوانين ومفاهيم</option>
-                </select>
-              </div>
-
-              {/* 6-Tier Hierarchy Selectors */}
-              <div className="grid grid-cols-2 gap-3 pt-1">
-                <div>
-                  <label className="font-bold text-foreground block mb-1">المرحلة *:</label>
-                  <select
-                    value={formStage}
-                    onChange={(e) => setFormStage(e.target.value)}
-                    className="w-full p-2 rounded-xl border border-border bg-background text-foreground"
-                  >
-                    {EGYPTIAN_STAGES.map((s) => (
-                      <option key={s.code} value={s.code}>
-                        {s.nameAr}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="font-bold text-foreground block mb-1">الصف الدراسي *:</label>
-                  <select
-                    value={formGrade}
-                    onChange={(e) => setFormGrade(e.target.value)}
-                    className="w-full p-2 rounded-xl border border-border bg-background text-foreground"
-                  >
-                    <option value="3_sec">الصف الثالث الثانوي</option>
-                    <option value="2_sec">الصف الثاني الثانوي</option>
-                    <option value="1_sec">الصف الأول الثانوي</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="font-bold text-foreground block mb-1">الوحدة الدراسية *:</label>
-                  <input
-                    type="text"
-                    required
-                    value={formUnitName}
-                    onChange={(e) => setFormUnitName(e.target.value)}
-                    placeholder="مثال: الوحدة الأولى: التيار الكهربي"
-                    className="w-full p-2.5 rounded-xl border border-border bg-background text-foreground"
-                  />
-                </div>
-
-                <div>
-                  <label className="font-bold text-foreground block mb-1">الدرس التعليمي *:</label>
-                  <input
-                    type="text"
-                    required
-                    value={formLessonName}
-                    onChange={(e) => setFormLessonName(e.target.value)}
-                    placeholder="مثال: قوانين كيرشوف"
-                    className="w-full p-2.5 rounded-xl border border-border bg-background text-foreground"
-                  />
-                </div>
-              </div>
-
-              {/* Auto-Index Checkbox */}
-              <label className="flex items-center gap-2 pt-2 cursor-pointer font-bold">
-                <input
-                  type="checkbox"
-                  checked={autoIndex}
-                  onChange={(e) => setAutoIndex(e.target.checked)}
-                  className="rounded border-border text-cyan-500 focus:ring-cyan-500"
-                />
-                <span>استخراج وفهرسة النص تلقائياً تمهيداً لتوليد امتحانات AI</span>
-              </label>
-
-              <div className="pt-4 border-t border-border flex items-center justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setShowAddModal(false)}
-                  className="px-4 py-2 rounded-xl border border-border text-foreground hover:bg-muted font-bold"
-                >
-                  إلغاء
-                </button>
-                <button
-                  type="submit"
-                  disabled={formSubmitting}
-                  className="px-5 py-2 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-bold shadow-md hover:from-cyan-400 hover:to-blue-500"
-                >
-                  {formSubmitting ? 'جاري الحفظ...' : 'حفظ وإضافة المذكرة'}
-                </button>
-              </div>
-            </form>
+      {deleteTarget && <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4 backdrop-blur-sm">
+        <section role="alertdialog" aria-modal="true" aria-labelledby="delete-material-title"
+          className="w-full max-w-md space-y-4 rounded-2xl border border-border bg-card p-5 shadow-xl">
+          <h2 id="delete-material-title" className="flex items-center gap-2 font-bold">
+            <Trash2 size={17} className="text-rose-600" /> حذف المذكرة
+          </h2>
+          <p className="break-words text-sm text-muted-foreground">
+            هل تريد حذف <strong className="text-foreground">{deleteTarget.title}</strong> من بنك المذكرات؟
+            {deleteTarget.googleDriveFileId && ' الملف الأصلي يفضل محفوظ على Google Drive.'}
+          </p>
+          {deleteError && <p role="alert" className="text-sm text-rose-700 dark:text-rose-400">{deleteError}</p>}
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" disabled={deleting} onClick={() => setDeleteTarget(undefined)}>إلغاء</Button>
+            <Button variant="destructive" disabled={deleting} onClick={confirmDelete}>{deleting ? 'جاري الحذف…' : 'تأكيد الحذف'}</Button>
           </div>
-        </div>
-      )}
+        </section>
+      </div>}
     </div>
   );
 }

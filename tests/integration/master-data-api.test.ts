@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import { GET, POST } from '@/app/api/center/[centerSlug]/master-data/route';
 import { GET as GET_GROUPS, POST as POST_GROUPS } from '@/app/api/center/[centerSlug]/groups/route';
+import { DELETE as DELETE_MATERIAL, GET as GET_MATERIALS, PATCH as PATCH_MATERIAL } from '@/app/api/center/[centerSlug]/materials/route';
+import { POST as PREFLIGHT } from '@/app/api/center/[centerSlug]/exams/preflight/route';
 import { MockDataProvider } from '@/lib/dal/mock-data';
 import { createServerFirestoreStore, verifyFirebaseIdToken } from '@/lib/firebase/server';
 import { InMemoryTransactionalFirestoreStore } from '../helpers/in-memory-firestore';
@@ -135,5 +137,36 @@ describe('Master Data API', () => {
     expect(data.branches).not.toContainEqual(expect.objectContaining({ nameAr: 'فرع لم يُحفظ' }));
     vi.spyOn(store, 'queryCollection').mockRejectedValueOnce(new Error('connection failed'));
     expect((await read()).status).toBe(503);
+  });
+
+  it('persists a seeded memo edit and deletion and updates the exam and subject dependencies', async () => {
+    const original = (await new MockDataProvider().getMaterialById(tenantId, 'mat-math-calculus'))!;
+    const { title, stage, grade, subjectId, unitName, lessonName, category } = original;
+    const update = { id: original.id, details: { title, stage, grade, subjectId, unitName, lessonName, category,
+      googleDriveUrlOrId: 'https://drive.google.com/file/d/test_replacement_drive_file_999/view' } };
+    const materialRequest = (token: string | null, method: string, body?: object) => new NextRequest(url, {
+      method, headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    expect((await PATCH_MATERIAL(materialRequest(null, 'PATCH', update), { params })).status).toBe(401);
+    expect((await PATCH_MATERIAL(materialRequest('staff', 'PATCH', update), { params })).status).toBe(403);
+    expect((await PATCH_MATERIAL(materialRequest('other-admin', 'PATCH', update), { params })).status).toBe(403);
+    const changed = await PATCH_MATERIAL(materialRequest('admin', 'PATCH', update), { params });
+    expect(changed.status).toBe(200);
+    const { material } = await changed.json();
+    expect(material).toMatchObject({ id: original.id, googleDriveFileId: 'test_replacement_drive_file_999', indexStatus: 'pending', wordCount: 0 });
+    expect(material.textContentIndexed).toBeUndefined();
+    const list = () => GET_MATERIALS(materialRequest('admin', 'GET'), { params });
+    expect((await (await list()).json()).materials.find((item: { id: string }) => item.id === original.id)).toEqual(material);
+    expect((await DELETE_MATERIAL(materialRequest('admin', 'DELETE', { id: original.id }), { params })).status).toBe(409);
+    const deleted = await DELETE_MATERIAL(materialRequest('admin', 'DELETE', { id: original.id, updatedAt: material.updatedAt }), { params });
+    expect(deleted.status).toBe(200);
+    expect((await (await list()).json()).materials).not.toContainEqual(expect.objectContaining({ id: original.id }));
+    const preflight = await PREFLIGHT(request('admin', { sourceDocumentIds: [original.id] }), { params });
+    expect(preflight.status).toBe(422);
+    expect((await preflight.json()).error).toContain('المذكرات المحددة غير متاحة');
+
+    await POST_GROUPS(request('admin', { action: 'deleteGroups', groups: [{ id: 'grp-math-sat', version: 0 }] }), { params });
+    expect((await write({ action: 'deleteSubject', subjectId: original.subjectId })).status).toBe(200);
   });
 });

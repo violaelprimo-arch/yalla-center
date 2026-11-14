@@ -21,6 +21,10 @@ export class MasterDataError extends Error {
 
 export const catalogRevisionId = '__catalog_revision';
 
+export function masterDataStorageKey(tenantId: string) {
+  return `yc-master-data-v1:${tenantId}`;
+}
+
 const id = z.string().min(1).max(200).regex(/^[a-zA-Z0-9_-]+$/, 'المعرّف غير صالح')
   .refine(value => value !== catalogRevisionId, 'المعرّف غير صالح');
 const name = (message: string) => z.string().trim().min(1, message);
@@ -121,7 +125,8 @@ export async function changeMasterData(
   dal: IDataProvider,
   tenantId: string,
   catalog: MasterData,
-  input: MasterDataAction
+  input: MasterDataAction,
+  currentMaterials?: Awaited<ReturnType<IDataProvider['getMaterials']>>,
 ) {
   const editor = new MockDataProvider();
   editor.setMasterData(tenantId, catalog);
@@ -130,7 +135,7 @@ export async function changeMasterData(
       dal.getUsers(tenantId, { role: 'STUDENT' }),
       dal.getGroups(tenantId),
       dal.getClassrooms(tenantId),
-      dal.getMaterials(tenantId),
+      currentMaterials ?? dal.getMaterials(tenantId),
       dal.getExams(tenantId),
     ]);
   }

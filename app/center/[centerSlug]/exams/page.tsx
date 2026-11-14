@@ -26,17 +26,18 @@ import {
 import { useTenant } from '@/components/layout/tenant-provider';
 import { Badge } from '@/components/ui/badge';
 import { MathView } from '@/components/ui/math-view';
-import { Exam, ExamQuestion, Material, ExamStatus } from '@/lib/dal/types';
+import { Exam, ExamQuestion, ExamStatus } from '@/lib/dal/types';
 import { countArabicWords, MIN_EXAM_WORD_COUNT } from '@/lib/materials/indexer';
+import { useCenterMaterials } from '@/lib/materials/client';
 import Link from 'next/link';
 
 export default function ExamsPage({ params }: { params: { centerSlug: string } }) {
-  const { tenant } = useTenant();
+  const { tenant, masterData } = useTenant();
+  const { materials, error: materialsError } = useCenterMaterials(tenant, masterData.auth);
   const centerSlug = params?.centerSlug || tenant?.slug || 'al-maher';
 
   // Exams & Materials State
   const [exams, setExams] = useState<Exam[]>([]);
-  const [materials, setMaterials] = useState<Material[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<'all' | ExamStatus>('all');
 
@@ -61,21 +62,14 @@ export default function ExamsPage({ params }: { params: { centerSlug: string } }
   const [reviewMessage, setReviewMessage] = useState('');
 
   // Fetch Exams and Materials
-  const fetchExamsAndMaterials = async () => {
+  const fetchExams = async () => {
     try {
       setLoading(true);
-      const [examsRes, matsRes] = await Promise.all([
-        fetch(`/api/center/${centerSlug}/exams`),
-        fetch(`/api/center/${centerSlug}/materials`),
-      ]);
+      const examsRes = await fetch(`/api/center/${centerSlug}/exams`);
 
       if (examsRes.ok) {
         const examsData = await examsRes.json();
         setExams(examsData.exams || []);
-      }
-      if (matsRes.ok) {
-        const matsData = await matsRes.json();
-        setMaterials(matsData.materials || []);
       }
     } catch {
       // offline fallback
@@ -85,22 +79,15 @@ export default function ExamsPage({ params }: { params: { centerSlug: string } }
   };
 
   useEffect(() => {
-    fetchExamsAndMaterials();
+    fetchExams();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [centerSlug]);
 
   // Word count calculation for preflight gauge
+  const selectedMaterials = useMemo(() => materials.filter(item => selectedMaterialIds.includes(item.id)), [materials, selectedMaterialIds]);
   const selectedDocsWords = useMemo(() => {
-    let count = 0;
-    const selected = materials.filter((m) => selectedMaterialIds.includes(m.id));
-    for (const m of selected) {
-      count += m.wordCount || 0;
-    }
-    if (customSourceText.trim()) {
-      count += countArabicWords(customSourceText);
-    }
-    return count;
-  }, [materials, selectedMaterialIds, customSourceText]);
+    return selectedMaterials.reduce((count, item) => count + (item.wordCount || 0), countArabicWords(customSourceText));
+  }, [selectedMaterials, customSourceText]);
 
   const isPreflightSatisfied = selectedDocsWords >= MIN_EXAM_WORD_COUNT;
   const wordCountPercentage = Math.min(
@@ -121,6 +108,11 @@ export default function ExamsPage({ params }: { params: { centerSlug: string } }
     e.preventDefault();
     setGenError('');
 
+    if (selectedMaterials.some(item => item.indexStatus !== 'indexed')) {
+      setGenError('اختر مذكرات مفهرسة قبل توليد الامتحان');
+      return;
+    }
+
     if (selectedDocsWords < MIN_EXAM_WORD_COUNT) {
       setGenError(
         `نص المصدر قصير جداً (${selectedDocsWords} كلمة). الحد الأدنى المطلوب هو ${MIN_EXAM_WORD_COUNT} كلمة لمنع الهلوسة وتأصيل الامتحان (AC-8).`
@@ -130,16 +122,19 @@ export default function ExamsPage({ params }: { params: { centerSlug: string } }
 
     setIsGenerating(true);
     try {
+      const idToken = masterData.auth.idToken;
+      const sourceDocumentIds = selectedMaterials.map(material => material.id);
       const res = await fetch(`/api/center/${centerSlug}/exams/generate`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}) },
         body: JSON.stringify({
           title: genTitle.trim(),
           subject: genSubject,
           grade: genGrade,
           durationMinutes: Number(genDuration),
-          sourceDocumentIds: selectedMaterialIds,
-          sourceText: customSourceText.trim() || undefined,
+          sourceDocumentIds: masterData.demo ? undefined : sourceDocumentIds,
+          sourceText: (masterData.demo ? [...selectedMaterials.map(material => material.textContentIndexed), customSourceText] : [customSourceText])
+            .filter(Boolean).join('\n\n').trim() || undefined,
           questionCounts: {
             mcq: Number(mcqCount),
             shortAnswer: Number(shortAnswerCount),
@@ -247,7 +242,7 @@ export default function ExamsPage({ params }: { params: { centerSlug: string } }
       if (res.ok) {
         setReviewMessage('تم حفظ التعديلات بنجاح وتمت إعادة حساب الدرجات الكلية.');
         setSelectedExamForReview((prev) => (prev ? { ...prev, totalMarks, passMarks } : null));
-        fetchExamsAndMaterials();
+        fetchExams();
       }
     } catch {
       setReviewMessage('تعذر الحفظ');
@@ -551,6 +546,7 @@ export default function ExamsPage({ params }: { params: { centerSlug: string } }
                 <label className="font-bold text-foreground block mb-1.5">
                   اختر المذكرات المصدرية المعتمدة (تأصيل 100%):
                 </label>
+                {materialsError && <p role="alert" className="text-xs text-rose-600">{materialsError}</p>}
                 <div className="max-h-36 overflow-y-auto space-y-1.5 p-3 rounded-2xl bg-background border border-border">
                   {materials.map((m) => {
                     const isSelected = selectedMaterialIds.includes(m.id);

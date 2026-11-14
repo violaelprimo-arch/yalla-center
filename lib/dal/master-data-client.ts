@@ -3,11 +3,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useFirebaseAuthSession } from '@/lib/firebase/client';
 import { readDemoSchedule } from '@/lib/timetable/group-client';
+import { demoMaterialsKey, readDemoMaterials } from '@/lib/materials/demo-storage';
 import { getDataProvider } from './factory';
 import {
   changeMasterData,
   emptyMasterData,
   masterDataConflict,
+  masterDataStorageKey,
   readMasterData,
   type MasterData,
   type MasterDataAction,
@@ -15,9 +17,7 @@ import {
 import { MockDataProvider } from './mock-data';
 import type { Tenant } from './types';
 
-export function masterDataStorageKey(tenantId: string) {
-  return 'yc-master-data-v1:' + tenantId;
-}
+export { masterDataStorageKey } from './master-data';
 
 async function readDemoData(tenantId: string, raw: string | null): Promise<MasterData> {
   if (raw === null) return readMasterData(new MockDataProvider(), tenantId);
@@ -37,9 +37,12 @@ export async function saveDemoMasterData(tenantId: string, input: MasterDataActi
   const storage = window.localStorage;
   const raw = storage.getItem(key);
   const schedule = input.action.startsWith('delete') ? readDemoSchedule(tenantId) : undefined;
+  const materialKey = demoMaterialsKey(tenantId);
+  const materialSnapshot = storage.getItem(materialKey);
   const catalog = await readDemoData(tenantId, raw);
-  const { data } = await changeMasterData(getDataProvider(), tenantId, catalog, input);
-  if (storage.getItem(key) !== raw) throw new Error(masterDataConflict);
+  const materials = input.action === 'deleteSubject' ? await readDemoMaterials(tenantId, materialSnapshot) : undefined;
+  const { data } = await changeMasterData(getDataProvider(), tenantId, catalog, input, materials);
+  if (storage.getItem(key) !== raw || (materials && storage.getItem(materialKey) !== materialSnapshot)) throw new Error(masterDataConflict);
   schedule?.verifyCurrent();
   try {
     storage.setItem(key, JSON.stringify(data));

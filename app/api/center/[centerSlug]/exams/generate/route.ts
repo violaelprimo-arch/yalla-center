@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDataProvider } from '@/lib/dal/factory';
 import { validateExamPreflightInput } from '@/lib/exams/preflight';
+import { readExamSourceMaterials } from '@/lib/materials/exam-source';
 
 export async function POST(
   request: NextRequest,
@@ -31,8 +32,7 @@ export async function POST(
     let docItems: Array<{ id: string; title: string; isIndexed: boolean; wordCount: number }> = [];
 
     if (sourceDocumentIds && Array.isArray(sourceDocumentIds) && sourceDocumentIds.length > 0) {
-      const allMaterials = await dal.getMaterials(tenant.id);
-      const selected = allMaterials.filter((m) => sourceDocumentIds.includes(m.id));
+      const selected = await readExamSourceMaterials(dal, tenant, request.headers.get('authorization'), sourceDocumentIds);
 
       docItems = selected.map((m) => ({
         id: m.id,
