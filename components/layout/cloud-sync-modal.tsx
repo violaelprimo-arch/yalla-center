@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Cloud,
   CloudOff,
@@ -13,6 +14,7 @@ import {
   UserCheck,
   Database,
   ArrowRight,
+  Key,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -23,6 +25,7 @@ import {
   signInFirebaseGoogle,
   signOutFirebaseStaff,
   getFreshFirebaseIdToken,
+  saveFirebaseWebConfig,
 } from '@/lib/firebase/client';
 import {
   bootstrapCenterStaff,
@@ -38,6 +41,15 @@ interface CloudSyncModalProps {
 export function CloudSyncModal({ isOpen, onClose }: CloudSyncModalProps) {
   const { tenant } = useTenant();
   const auth = useFirebaseAuthSession();
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // Quick config keys state (if not injected via build env)
+  const [customApiKey, setCustomApiKey] = useState('');
+  const [customAppId, setCustomAppId] = useState('');
 
   // Sign-in form state
   const [email, setEmail] = useState('');
@@ -180,7 +192,7 @@ export function CloudSyncModal({ isOpen, onClose }: CloudSyncModalProps) {
     }
   };
 
-  if (!isOpen) return null;
+  if (!isOpen || !mounted) return null;
 
   const totalDetected =
     (detectedPayload?.students?.length || 0) +
@@ -193,7 +205,7 @@ export function CloudSyncModal({ isOpen, onClose }: CloudSyncModalProps) {
     (detectedPayload?.payments?.length || 0) +
     (detectedPayload?.materials?.length || 0);
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in" dir="rtl">
       <div className="bg-card border border-border rounded-2xl w-full max-w-xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
         {/* Header */}
@@ -308,17 +320,49 @@ export function CloudSyncModal({ isOpen, onClose }: CloudSyncModalProps) {
             </div>
           )}
 
-          {/* If Firebase config is missing in environment */}
+          {/* If Firebase config is missing in environment: allow instant browser link */}
           {!auth.configured && (
-            <div className="p-4 rounded-xl border border-amber-500/20 bg-amber-500/5 text-amber-700 dark:text-amber-400 text-xs space-y-2">
-              <div className="font-bold flex items-center gap-2">
-                <AlertTriangle className="w-4 h-4" />
-                إعدادات تطبيق Firebase Web
+            <div className="p-4 rounded-xl border border-amber-500/30 bg-amber-500/5 text-xs space-y-3">
+              <div className="font-bold flex items-center justify-between text-amber-700 dark:text-amber-400">
+                <div className="flex items-center gap-2">
+                  <Key className="w-4 h-4 text-amber-500" />
+                  <span>تفعيل تطبيق Firebase Web للمتصفح</span>
+                </div>
+                <Badge variant="outline" className="text-[10px] font-mono">مشروع yalla-center</Badge>
               </div>
-              <p>
-                مشروع Firebase المطلوب هو <code className="font-mono font-bold">yalla-center</code>.
-                عند إضافة متغيرات <code className="font-mono">NEXT_PUBLIC_FIREBASE_*</code> ستعمل المصادقة وقاعدة البيانات السحابية مباشرة.
+              <p className="text-muted-foreground text-xs leading-relaxed">
+                لتفعيل تسجيل الدخول بحساب Google والبريد الإلكتروني، يمكنك إدخال مفاتيح تطبيق الويب من Firebase Console:
               </p>
+              <div className="space-y-2 pt-1">
+                <input
+                  type="text"
+                  placeholder="Firebase Web API Key (مثال: AIzaSy...)"
+                  value={customApiKey}
+                  onChange={(e) => setCustomApiKey(e.target.value)}
+                  className="w-full h-8 px-3 text-xs rounded-lg border border-border bg-background text-foreground font-mono focus:outline-none focus:ring-1 focus:ring-amber-500"
+                />
+                <input
+                  type="text"
+                  placeholder="Firebase Web App ID (مثال: 1:123456...:web:...)"
+                  value={customAppId}
+                  onChange={(e) => setCustomAppId(e.target.value)}
+                  className="w-full h-8 px-3 text-xs rounded-lg border border-border bg-background text-foreground font-mono focus:outline-none focus:ring-1 focus:ring-amber-500"
+                />
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => {
+                    if (customApiKey.trim() && customAppId.trim()) {
+                      saveFirebaseWebConfig({ apiKey: customApiKey, appId: customAppId });
+                      window.location.reload();
+                    }
+                  }}
+                  disabled={!customApiKey.trim() || !customAppId.trim()}
+                  className="w-full h-8 text-xs font-semibold bg-amber-600 hover:bg-amber-700 text-white"
+                >
+                  حفظ وتفعيل الاتصال السحابي بالمتصفح
+                </Button>
+              </div>
             </div>
           )}
 
@@ -430,6 +474,7 @@ export function CloudSyncModal({ isOpen, onClose }: CloudSyncModalProps) {
           </Button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

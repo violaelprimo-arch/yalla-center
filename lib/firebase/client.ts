@@ -25,10 +25,18 @@ export interface FirebaseWebConfig {
 }
 
 export function getFirebaseWebConfig(): FirebaseWebConfig | null {
-  const apiKey = process.env.NEXT_PUBLIC_FIREBASE_API_KEY?.trim() || '';
-  const authDomain = process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN?.trim() || '';
-  const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID?.trim() || 'yalla-center';
-  const appId = process.env.NEXT_PUBLIC_FIREBASE_APP_ID?.trim() || '';
+  let stored: Partial<FirebaseWebConfig> = {};
+  if (typeof window !== 'undefined') {
+    try {
+      const raw = localStorage.getItem('yc-firebase-web-config');
+      if (raw) stored = JSON.parse(raw);
+    } catch {}
+  }
+
+  const apiKey = (process.env.NEXT_PUBLIC_FIREBASE_API_KEY || stored.apiKey || '').trim();
+  const authDomain = (process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || stored.authDomain || 'yalla-center.firebaseapp.com').trim();
+  const projectId = (process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || stored.projectId || 'yalla-center').trim();
+  const appId = (process.env.NEXT_PUBLIC_FIREBASE_APP_ID || stored.appId || '').trim();
 
   if (!apiKey || !authDomain || !projectId || !appId) {
     return null;
@@ -38,10 +46,24 @@ export function getFirebaseWebConfig(): FirebaseWebConfig | null {
     apiKey,
     authDomain,
     projectId,
-    storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET?.trim() || undefined,
-    messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID?.trim() || undefined,
+    storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET?.trim() || stored.storageBucket,
+    messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID?.trim() || stored.messagingSenderId,
     appId,
   };
+}
+
+export function saveFirebaseWebConfig(config: { apiKey: string; appId: string; authDomain?: string; projectId?: string }) {
+  if (typeof window === 'undefined') return;
+  const current = {
+    apiKey: config.apiKey.trim(),
+    appId: config.appId.trim(),
+    authDomain: (config.authDomain || 'yalla-center.firebaseapp.com').trim(),
+    projectId: (config.projectId || 'yalla-center').trim(),
+  };
+  localStorage.setItem('yc-firebase-web-config', JSON.stringify(current));
+  cachedApp = null;
+  cachedAuth = null;
+  cachedDb = null;
 }
 
 export function hasFirebaseWebConfig(): boolean {
