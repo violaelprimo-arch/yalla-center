@@ -24,7 +24,20 @@ export interface FirebaseWebConfig {
   appId: string;
 }
 
+export const DEFAULT_FIREBASE_WEB_CONFIG: FirebaseWebConfig = {
+  apiKey: 'AIzaSyCcKNXipMYZlwaZRYFKYqEFZnAxo1lwsB4',
+  authDomain: 'yalla-center.firebaseapp.com',
+  projectId: 'yalla-center',
+  storageBucket: 'yalla-center.firebasestorage.app',
+  messagingSenderId: '876735697299',
+  appId: '1:876735697299:web:31eff284bfe9d6c8771866',
+};
+
 export function getFirebaseWebConfig(): FirebaseWebConfig | null {
+  if (process.env.NODE_ENV === 'test' && !process.env.NEXT_PUBLIC_FIREBASE_API_KEY) {
+    return null;
+  }
+
   let stored: Partial<FirebaseWebConfig> = {};
   if (typeof window !== 'undefined') {
     try {
@@ -33,10 +46,31 @@ export function getFirebaseWebConfig(): FirebaseWebConfig | null {
     } catch {}
   }
 
-  const apiKey = (process.env.NEXT_PUBLIC_FIREBASE_API_KEY || stored.apiKey || '').trim();
-  const authDomain = (process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || stored.authDomain || 'yalla-center.firebaseapp.com').trim();
-  const projectId = (process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || stored.projectId || 'yalla-center').trim();
-  const appId = (process.env.NEXT_PUBLIC_FIREBASE_APP_ID || stored.appId || '').trim();
+  const rawEnvApiKey = process.env.NEXT_PUBLIC_FIREBASE_API_KEY;
+  if (rawEnvApiKey === '') {
+    return null;
+  }
+
+  const apiKey = (
+    rawEnvApiKey ||
+    stored.apiKey ||
+    DEFAULT_FIREBASE_WEB_CONFIG.apiKey
+  ).trim();
+  const authDomain = (
+    process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN ||
+    stored.authDomain ||
+    DEFAULT_FIREBASE_WEB_CONFIG.authDomain
+  ).trim();
+  const projectId = (
+    process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID ||
+    stored.projectId ||
+    DEFAULT_FIREBASE_WEB_CONFIG.projectId
+  ).trim();
+  const appId = (
+    process.env.NEXT_PUBLIC_FIREBASE_APP_ID ||
+    stored.appId ||
+    DEFAULT_FIREBASE_WEB_CONFIG.appId
+  ).trim();
 
   if (!apiKey || !authDomain || !projectId || !appId) {
     return null;
@@ -46,8 +80,16 @@ export function getFirebaseWebConfig(): FirebaseWebConfig | null {
     apiKey,
     authDomain,
     projectId,
-    storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET?.trim() || stored.storageBucket,
-    messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID?.trim() || stored.messagingSenderId,
+    storageBucket: (
+      process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET ||
+      stored.storageBucket ||
+      DEFAULT_FIREBASE_WEB_CONFIG.storageBucket
+    )?.trim(),
+    messagingSenderId: (
+      process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID ||
+      stored.messagingSenderId ||
+      DEFAULT_FIREBASE_WEB_CONFIG.messagingSenderId
+    )?.trim(),
     appId,
   };
 }

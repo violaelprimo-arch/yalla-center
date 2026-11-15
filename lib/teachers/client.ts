@@ -59,7 +59,7 @@ export function useTeacherContracts(tenantId: string, centerSlug: string, enable
   const configured = hasFirebaseWebConfig();
   useEffect(() => {
     if (!enabled) return;
-    if (!configured) {
+    if (!configured || !idToken) {
       const refresh = () => {
         try {
           setState({ tenantId, idToken, items: readDemoTeacherProfiles(tenantId) });
@@ -72,7 +72,6 @@ export function useTeacherContracts(tenantId: string, centerSlug: string, enable
       window.addEventListener('storage', sync);
       return () => window.removeEventListener('storage', sync);
     }
-    if (!idToken) return;
     const request = new AbortController();
     teacherApi<{ profiles: TeacherContractSummary[] }>(centerSlug, idToken, '?view=contracts', undefined, request.signal)
       .then(data => { if (!request.signal.aborted) setState({ tenantId, idToken, items: data.profiles }); })
