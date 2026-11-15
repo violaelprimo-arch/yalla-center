@@ -13,9 +13,7 @@ export function getDataProvider(): MockDataProvider {
   if (instance) return instance;
 
   instance = createCenterDataProvider();
-  if (typeof window !== 'undefined' && process.env.NODE_ENV !== 'test' &&
-    !(process.env.NEXT_PUBLIC_FIREBASE_API_KEY && process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN &&
-      process.env.NEXT_PUBLIC_FIREBASE_APP_ID)) {
+  if (typeof window !== 'undefined' && process.env.NODE_ENV !== 'test') {
     try {
       attachDemoOperations(instance, window.localStorage);
     } catch {

@@ -10,7 +10,7 @@ rules_version = '2';
 //   - uid: string (required) - Firebase Auth UID
 //   - email: string (optional) - Staff email address
 //   - displayName: string (optional) - Staff display name
-//   - role: string (required) - PLATFORM_OWNER, CENTER_ADMIN, BRANCH_MANAGER, RECEPTIONIST, TEACHER
+//   - role: string (required) - PLATFORM_OWNER, CENTER_ADMIN, BRANCH_MANAGER, RECEPTIONIST, ACCOUNTANT, TEACHER
 //   - tenantId: string (required) - Associated center/tenant identifier
 //   - branchIds: list (optional) - Authorized branch IDs (empty or omitted means all branches)
 //   - teacherId: string (optional) - Link to teacher record if role == 'TEACHER'
@@ -85,6 +85,143 @@ rules_version = '2';
 //   - tenantId, branchId, sessionId, groupId, examId, action, actorUid,
 //     previousScore, newScore, timestamp
 //
+// Collection: center_groups
+// Document ID: {groupId}
+// Fields:
+//   - id: string (required)
+//   - tenantId: string (required, immutable)
+//   - nameAr: string (required)
+//   - branchId: string (optional)
+//   - classroomId: string (optional)
+//   - subjectId: string (optional)
+//   - teacherId: string (optional)
+//
+// Collection: center_classrooms
+// Document ID: {classroomId}
+// Fields:
+//   - id: string (required)
+//   - tenantId: string (required, immutable)
+//   - branchId: string (optional)
+//   - nameAr: string (required)
+//   - capacity: number (optional)
+//
+// Collection: teacher_profiles
+// Document ID: {profileId}
+// Fields:
+//   - id: string (required)
+//   - tenantId: string (required, immutable)
+//   - fullName: string (required)
+//   - active: bool (optional)
+//   - uid: string (optional)
+//
+// Collection: teacher_login_keys
+// Document ID: {keyId}
+// Fields:
+//   - teacherId: string (required)
+//   - tenantId: string (required, immutable)
+//   - uid: string (optional)
+//
+// Collection: center_materials
+// Document ID: {materialId}
+// Fields:
+//   - id: string (required)
+//   - tenantId: string (required, immutable)
+//   - title: string (required)
+//   - teacherId: string (optional)
+//   - subjectId: string (optional)
+//
+// Collection: center_students
+// Document ID: {studentId}
+// Fields:
+//   - id: string (required)
+//   - tenantId: string (required, immutable)
+//   - fullName: string (required)
+//   - studentCode: string (optional)
+//   - studentUid: string (optional)
+//
+// Collection: center_enrollments
+// Document ID: {enrollmentId}
+// Fields:
+//   - id: string (required)
+//   - tenantId: string (required, immutable)
+//   - studentId: string (required)
+//   - groupId: string (required)
+//   - studentUid: string (optional)
+//
+// Collection: center_sessions
+// Document ID: {sessionId}
+// Fields:
+//   - id: string (required)
+//   - tenantId: string (required, immutable)
+//   - groupId: string (required)
+//   - sessionDate: string (required)
+//   - teacherId: string (optional)
+//
+// Collection: center_attendance
+// Document ID: {attendanceId}
+// Fields:
+//   - id: string (required)
+//   - tenantId: string (required, immutable)
+//   - sessionId: string (required)
+//   - studentId: string (required)
+//   - status: string (required)
+//   - studentUid: string (optional)
+//
+// Collection: center_invoices
+// Document ID: {invoiceId}
+// Fields:
+//   - id: string (required)
+//   - tenantId: string (required, immutable)
+//   - studentId: string (required)
+//   - totalAmount: number (required)
+//   - status: string (optional)
+//   - studentUid: string (optional)
+//
+// Collection: center_payments
+// Document ID: {paymentId}
+// Fields:
+//   - id: string (required)
+//   - tenantId: string (required, immutable)
+//   - invoiceId: string (optional)
+//   - studentId: string (optional)
+//   - amountPaid: number (required)
+//   - studentUid: string (optional)
+//
+// Collection: center_expenses
+// Document ID: {expenseId}
+// Fields:
+//   - id: string (required)
+//   - tenantId: string (required, immutable)
+//   - amount: number (required)
+//   - category: string (optional)
+//
+// Collection: center_shifts
+// Document ID: {shiftId}
+// Fields:
+//   - id: string (required)
+//   - tenantId: string (required, immutable)
+//   - cashierUserId: string (required)
+//   - status: string (optional)
+//
+// Collection: comprehensive_exams
+// Document ID: {examId}
+// Fields:
+//   - id: string (required)
+//   - tenantId: string (required, immutable)
+//   - title: string (required)
+//   - groupId: string (optional)
+//   - teacherId: string (optional)
+//
+// Collection: exam_submissions
+// Document ID: {submissionId}
+// Fields:
+//   - id: string (required)
+//   - tenantId: string (required, immutable)
+//   - examId: string (required)
+//   - studentId: string (required)
+//   - studentUid: string (optional)
+//   - status: string (optional)
+//
 // ===============================================================
 
 service cloud.firestore {
@@ -153,11 +290,63 @@ service cloud.firestore {
       return score is number && score >= 0 && score <= totalMarks;
     }
 
+    // Role-based authorization helpers
+    function isStaffMember(tenantId) {
+      return isActiveStaff() && matchesTenant(tenantId);
+    }
+
+    function isCenterAdmin(tenantId) {
+      return isActiveStaff() && (
+        staffRole() == 'PLATFORM_OWNER' ||
+        (staffRole() == 'CENTER_ADMIN' && matchesTenant(tenantId))
+      );
+    }
+
+    function isStudentOpsStaff(tenantId) {
+      return isActiveStaff() && matchesTenant(tenantId) && (
+        staffRole() == 'PLATFORM_OWNER' ||
+        staffRole() == 'CENTER_ADMIN' ||
+        staffRole() == 'BRANCH_MANAGER' ||
+        staffRole() == 'RECEPTIONIST'
+      );
+    }
+
+    function isSessionAllowedRole() {
+      return isActiveStaff() && (
+        staffRole() == 'PLATFORM_OWNER' ||
+        staffRole() == 'CENTER_ADMIN' ||
+        staffRole() == 'BRANCH_MANAGER' ||
+        staffRole() == 'RECEPTIONIST' ||
+        staffRole() == 'TEACHER'
+      );
+    }
+
+    function isFinanceStaff(tenantId) {
+      return isActiveStaff() && matchesTenant(tenantId) && (
+        staffRole() == 'PLATFORM_OWNER' ||
+        staffRole() == 'CENTER_ADMIN' ||
+        staffRole() == 'ACCOUNTANT' ||
+        staffRole() == 'RECEPTIONIST'
+      );
+    }
+
+    function isStudentOwner(data) {
+      return isSignedIn() && (
+        ('studentUid' in data && data.studentUid == request.auth.uid) ||
+        ('studentId' in data && data.studentId == request.auth.uid) ||
+        ('id' in data && data.id == request.auth.uid)
+      );
+    }
+
+    function isValidTenantId(tenantId) {
+      return tenantId is string && tenantId.size() > 0 && tenantId.size() <= 128;
+    }
+
     // ===============================================================
     // Collection Match Rules
     // ===============================================================
 
-    // Staff permission registry: server-managed only (no client privilege escalation)
+    // 1. Staff permission registry: server-managed only (no client privilege escalation)
     match /staff_memberships/{uid} {
       allow read: if isSignedIn() && (
         request.auth.uid == uid ||
@@ -166,7 +355,7 @@ service cloud.firestore {
       allow write: if false;
     }
 
-    // Master data: Educational stages & grades (${tenantId}~${stageId})
+    // 2. Master data: Educational stages & grades (${tenantId}~${stageId})
     match /master_stages/{stageDocId} {
       allow read: if isActiveStaff() && matchesTenant(resource.data.tenantId);
       allow create: if isActiveStaff() &&
@@ -180,7 +369,7 @@ service cloud.firestore {
         (staffRole() == 'PLATFORM_OWNER' || (staffRole() == 'CENTER_ADMIN' && matchesTenant(resource.data.tenantId)));
     }
 
-    // Master data: Educational subjects (${tenantId}~${subjectId})
+    // 3. Master data: Educational subjects (${tenantId}~${subjectId})
     match /master_subjects/{subjectDocId} {
       allow read: if isActiveStaff() && matchesTenant(resource.data.tenantId);
       allow create: if isActiveStaff() &&
@@ -195,7 +384,7 @@ service cloud.firestore {
         (staffRole() == 'PLATFORM_OWNER' || (staffRole() == 'CENTER_ADMIN' && matchesTenant(resource.data.tenantId)));
     }
 
-    // Master data: Center branches (${tenantId}~${branchId})
+    // 4. Master data: Center branches (${tenantId}~${branchId})
     match /master_branches/{branchDocId} {
       allow read: if isActiveStaff() && matchesTenant(resource.data.tenantId);
       allow create: if isActiveStaff() &&
@@ -209,7 +398,7 @@ service cloud.firestore {
         (staffRole() == 'PLATFORM_OWNER' || (staffRole() == 'CENTER_ADMIN' && matchesTenant(resource.data.tenantId)));
     }
 
-    // Lesson exam definitions (totalMarks shared once per exam per session)
+    // 5. Lesson exam definitions (totalMarks shared once per exam per session)
     match /lesson_exams/{examId} {
       allow read: if isActiveStaff() && matchesTenant(resource.data.tenantId) && matchesBranch(resource.data.branchId);
       allow create: if isAuthorizedStaff(
@@ -241,7 +430,7 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // Student lesson grades: unique deterministic key ${examId}_${studentId}
+    // 6. Student lesson grades: unique deterministic key ${examId}_${studentId}
     match /lesson_grades/{gradeId} {
       allow read: if (
         isActiveStaff() &&
@@ -298,7 +487,7 @@ service cloud.firestore {
       );
     }
 
-    // Immutable grade audit trail
+    // 7. Immutable grade audit trail
     match /lesson_grade_audits/{auditId} {
       allow read: if isActiveStaff() &&
         matchesTenant(resource.data.tenantId) &&
@@ -324,7 +513,236 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
-    // Default closed guardrail
+    // 8. Center study groups
+    match /center_groups/{groupId} {
+      allow read: if isStaffMember(resource.data.tenantId);
+      allow create: if isCenterAdmin(request.resource.data.tenantId) &&
+        isValidTenantId(request.resource.data.tenantId) &&
+        request.resource.data.nameAr is string;
+      allow update: if isCenterAdmin(resource.data.tenantId) &&
+        request.resource.data.tenantId == resource.data.tenantId &&
+        request.resource.data.nameAr is string;
+      allow delete: if isCenterAdmin(resource.data.tenantId);
+    }
+
+    // 9. Center classrooms
+    match /center_classrooms/{classroomId} {
+      allow read: if isStaffMember(resource.data.tenantId);
+      allow create: if isCenterAdmin(request.resource.data.tenantId) &&
+        isValidTenantId(request.resource.data.tenantId) &&
+        request.resource.data.nameAr is string;
+      allow update: if isCenterAdmin(resource.data.tenantId) &&
+        request.resource.data.tenantId == resource.data.tenantId &&
+        request.resource.data.nameAr is string;
+      allow delete: if isCenterAdmin(resource.data.tenantId);
+    }
+
+    // 10. Teacher contractual profiles and login keys
+    match /teacher_profiles/{profileId} {
+      allow read: if isStaffMember(resource.data.tenantId) ||
+        (isSignedIn() && (
+          resource.data.id == request.auth.uid ||
+          ('uid' in resource.data && resource.data.uid == request.auth.uid)
+        ));
+      allow create: if isCenterAdmin(request.resource.data.tenantId) &&
+        isValidTenantId(request.resource.data.tenantId) &&
+        request.resource.data.fullName is string;
+      allow update: if isCenterAdmin(resource.data.tenantId) &&
+        request.resource.data.tenantId == resource.data.tenantId &&
+        request.resource.data.fullName is string;
+      allow delete: if isCenterAdmin(resource.data.tenantId);
+    }
+
+    match /teacher_login_keys/{keyId} {
+      allow read: if isStaffMember(resource.data.tenantId) ||
+        (isSignedIn() && (
+          resource.data.teacherId == request.auth.uid ||
+          ('uid' in resource.data && resource.data.uid == request.auth.uid)
+        ));
+      allow create: if isCenterAdmin(request.resource.data.tenantId) &&
+        isValidTenantId(request.resource.data.tenantId) &&
+        request.resource.data.teacherId is string;
+      allow update: if isCenterAdmin(resource.data.tenantId) &&
+        request.resource.data.tenantId == resource.data.tenantId;
+      allow delete: if isCenterAdmin(resource.data.tenantId);
+    }
+
+    // 11. Center educational materials
+    match /center_materials/{materialId} {
+      allow read: if isStaffMember(resource.data.tenantId);
+      allow create: if isCenterAdmin(request.resource.data.tenantId) &&
+        isValidTenantId(request.resource.data.tenantId) &&
+        request.resource.data.title is string;
+      allow update: if isCenterAdmin(resource.data.tenantId) &&
+        request.resource.data.tenantId == resource.data.tenantId;
+      allow delete: if isCenterAdmin(resource.data.tenantId);
+    }
+
+    // 12. Center students directory
+    match /center_students/{studentId} {
+      allow read: if isStaffMember(resource.data.tenantId) || isStudentOwner(resource.data);
+      allow create: if isStudentOpsStaff(request.resource.data.tenantId) &&
+        isValidTenantId(request.resource.data.tenantId) &&
+        request.resource.data.fullName is string;
+      allow update: if isStudentOpsStaff(resource.data.tenantId) &&
+        request.resource.data.tenantId == resource.data.tenantId &&
+        request.resource.data.fullName is string;
+      allow delete: if isCenterAdmin(resource.data.tenantId);
+    }
+
+    // 13. Center student enrollments
+    match /center_enrollments/{enrollmentId} {
+      allow read: if isStaffMember(resource.data.tenantId) || isStudentOwner(resource.data);
+      allow create: if isStudentOpsStaff(request.resource.data.tenantId) &&
+        isValidTenantId(request.resource.data.tenantId) &&
+        request.resource.data.studentId is string &&
+        request.resource.data.groupId is string;
+      allow update: if isStudentOpsStaff(resource.data.tenantId) &&
+        request.resource.data.tenantId == resource.data.tenantId &&
+        request.resource.data.studentId == resource.data.studentId &&
+        request.resource.data.groupId == resource.data.groupId;
+      allow delete: if isCenterAdmin(resource.data.tenantId);
+    }
+
+    // 14. Center class sessions
+    match /center_sessions/{sessionId} {
+      allow read: if isStaffMember(resource.data.tenantId);
+      allow create: if isStaffMember(request.resource.data.tenantId) &&
+        isValidTenantId(request.resource.data.tenantId) &&
+        isSessionAllowedRole() &&
+        request.resource.data.groupId is string &&
+        request.resource.data.sessionDate is string &&
+        (!('teacherId' in request.resource.data) || matchesTeacher(request.resource.data.teacherId));
+      allow update: if isStaffMember(resource.data.tenantId) &&
+        request.resource.data.tenantId == resource.data.tenantId &&
+        isSessionAllowedRole() &&
+        (!('teacherId' in resource.data) || matchesTeacher(resource.data.teacherId));
+      allow delete: if isCenterAdmin(resource.data.tenantId);
+    }
+
+    // 15. Center session attendance
+    match /center_attendance/{attendanceId} {
+      allow read: if isStaffMember(resource.data.tenantId) || isStudentOwner(resource.data);
+      allow create: if isStaffMember(request.resource.data.tenantId) &&
+        isValidTenantId(request.resource.data.tenantId) &&
+        isSessionAllowedRole() &&
+        request.resource.data.sessionId is string &&
+        request.resource.data.studentId is string;
+      allow update: if isStaffMember(resource.data.tenantId) &&
+        request.resource.data.tenantId == resource.data.tenantId &&
+        isSessionAllowedRole() &&
+        request.resource.data.sessionId == resource.data.sessionId &&
+        request.resource.data.studentId == resource.data.studentId;
+      allow delete: if isCenterAdmin(resource.data.tenantId);
+    }
+
+    // 16. Invoices & Payments
+    match /center_invoices/{invoiceId} {
+      allow read: if isStaffMember(resource.data.tenantId) || isStudentOwner(resource.data);
+      allow create: if isFinanceStaff(request.resource.data.tenantId) &&
+        isValidTenantId(request.resource.data.tenantId) &&
+        request.resource.data.studentId is string &&
+        request.resource.data.totalAmount is number;
+      allow update: if isFinanceStaff(resource.data.tenantId) &&
+        request.resource.data.tenantId == resource.data.tenantId &&
+        request.resource.data.studentId == resource.data.studentId;
+      allow delete: if isCenterAdmin(resource.data.tenantId);
+    }
+
+    match /center_payments/{paymentId} {
+      allow read: if isStaffMember(resource.data.tenantId) || isStudentOwner(resource.data);
+      allow create: if isFinanceStaff(request.resource.data.tenantId) &&
+        isValidTenantId(request.resource.data.tenantId) &&
+        request.resource.data.amountPaid is number &&
+        request.resource.data.amountPaid >= 0;
+      allow update: if isFinanceStaff(resource.data.tenantId) &&
+        request.resource.data.tenantId == resource.data.tenantId &&
+        request.resource.data.amountPaid is number &&
+        request.resource.data.amountPaid >= 0;
+      allow delete: if isCenterAdmin(resource.data.tenantId);
+    }
+
+    // 17. Expenses & Cashier Shifts
+    match /center_expenses/{expenseId} {
+      allow read: if isStaffMember(resource.data.tenantId);
+      allow create: if isFinanceStaff(request.resource.data.tenantId) &&
+        isValidTenantId(request.resource.data.tenantId) &&
+        request.resource.data.amount is number &&
+        request.resource.data.amount >= 0;
+      allow update: if isFinanceStaff(resource.data.tenantId) &&
+        request.resource.data.tenantId == resource.data.tenantId &&
+        request.resource.data.amount is number &&
+        request.resource.data.amount >= 0;
+      allow delete: if isCenterAdmin(resource.data.tenantId);
+    }
+
+    match /center_shifts/{shiftId} {
+      allow read: if isStaffMember(resource.data.tenantId);
+      allow create: if isFinanceStaff(request.resource.data.tenantId) &&
+        isValidTenantId(request.resource.data.tenantId) &&
+        request.resource.data.cashierUserId is string;
+      allow update: if isFinanceStaff(resource.data.tenantId) &&
+        request.resource.data.tenantId == resource.data.tenantId;
+      allow delete: if isCenterAdmin(resource.data.tenantId);
+    }
+
+    // 18. Comprehensive Exams & Submissions
+    match /comprehensive_exams/{examId} {
+      allow read: if isStaffMember(resource.data.tenantId);
+      allow create: if isStaffMember(request.resource.data.tenantId) &&
+        isValidTenantId(request.resource.data.tenantId) &&
+        isSessionAllowedRole() &&
+        request.resource.data.title is string;
+      allow update: if isStaffMember(resource.data.tenantId) &&
+        request.resource.data.tenantId == resource.data.tenantId &&
+        isSessionAllowedRole();
+      allow delete: if isCenterAdmin(resource.data.tenantId);
+    }
+
+    match /exam_submissions/{submissionId} {
+      allow read: if isStaffMember(resource.data.tenantId) || isStudentOwner(resource.data);
+      allow create: if (
+          isStaffMember(request.resource.data.tenantId) ||
+          isStudentOwner(request.resource.data)
+        ) &&
+        isValidTenantId(request.resource.data.tenantId) &&
+        request.resource.data.examId is string &&
+        request.resource.data.studentId is string;
+      allow update: if (
+          isStaffMember(resource.data.tenantId) ||
+          isStudentOwner(resource.data)
+        ) &&
+        request.resource.data.tenantId == resource.data.tenantId &&
+        request.resource.data.examId == resource.data.examId &&
+        request.resource.data.studentId == resource.data.studentId;
+      allow delete: if isCenterAdmin(resource.data.tenantId);
+    }
+
+    // Supporting operational revision and request collections
+    match /center_group_revisions/{revisionId} {
+      allow read: if isStaffMember(resource.data.tenantId);
+      allow create: if isCenterAdmin(request.resource.data.tenantId) && isValidTenantId(request.resource.data.tenantId);
+      allow update: if isCenterAdmin(resource.data.tenantId) && request.resource.data.tenantId == resource.data.tenantId;
+      allow delete: if isCenterAdmin(resource.data.tenantId);
+    }
+
+    match /center_material_revisions/{revisionId} {
+      allow read: if isStaffMember(resource.data.tenantId);
+      allow create: if isCenterAdmin(request.resource.data.tenantId) && isValidTenantId(request.resource.data.tenantId);
+      allow update: if isCenterAdmin(resource.data.tenantId) && request.resource.data.tenantId == resource.data.tenantId;
+      allow delete: if isCenterAdmin(resource.data.tenantId);
+    }
+
+    match /teacher_extra_sessions/{requestId} {
+      allow read: if isStaffMember(resource.data.tenantId);
+      allow create: if isStaffMember(request.resource.data.tenantId) &&
+        isValidTenantId(request.resource.data.tenantId) &&
+        isSessionAllowedRole();
+      allow update: if isCenterAdmin(resource.data.tenantId) && request.resource.data.tenantId == resource.data.tenantId;
+      allow delete: if isCenterAdmin(resource.data.tenantId);
+    }
+
+    // 19. Default closed guardrail
     match /{document=**} {
       allow read, write: if false;
     }

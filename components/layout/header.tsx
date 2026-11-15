@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
@@ -9,11 +9,15 @@ import {
   ChevronDown,
   UserCheck,
   Menu,
+  CheckCircle2,
+  CloudOff,
 } from 'lucide-react';
 import { UserRole } from '@/lib/dal/types';
 import { useTenant } from './tenant-provider';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
 import { Badge } from '@/components/ui/badge';
+import { useFirebaseAuthSession } from '@/lib/firebase/client';
+import { CloudSyncModal } from './cloud-sync-modal';
 
 const ALL_ROLES: Array<{ role: UserRole; labelAr: string }> = [
   { role: 'PLATFORM_OWNER', labelAr: 'مدير المنصة (مالك)' },
@@ -38,6 +42,8 @@ export function Header({ onMenuToggle, menuOpen }: { onMenuToggle?: () => void; 
   } = useTenant();
 
   const pathname = usePathname();
+  const auth = useFirebaseAuthSession();
+  const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
 
   return (
     <header
@@ -77,6 +83,27 @@ export function Header({ onMenuToggle, menuOpen }: { onMenuToggle?: () => void; 
 
       {/* Left Section: 1-Click Role Switcher (Demo HUD) & Theme Toggle */}
       <div className="flex items-center gap-2 sm:gap-3">
+        {/* Cloud Sync Status Indicator & Modal Trigger */}
+        <button
+          type="button"
+          onClick={() => setIsSyncModalOpen(true)}
+          className={`flex items-center gap-1.5 p-1 px-2.5 rounded-xl border transition-all ${
+            auth.user
+              ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20'
+              : 'bg-amber-500/10 border-amber-500/30 text-amber-600 dark:text-amber-400 hover:bg-amber-500/20'
+          }`}
+          title="حالة الاتصال السحابي واستيراد البيانات"
+        >
+          {auth.user ? (
+            <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-500" />
+          ) : (
+            <CloudOff className="w-4 h-4 shrink-0 text-amber-500" />
+          )}
+          <span className="text-[11px] font-bold hidden sm:inline">
+            {auth.user ? 'سحابي متصل' : 'مزامنة السحابة'}
+          </span>
+        </button>
+
         {/* Role Switcher Widget */}
         <div className="flex items-center gap-1.5 bg-brand-cyan-500/10 border border-brand-cyan-500/30 p-1 px-2.5 rounded-xl">
           <ShieldCheck className="w-4 h-4 text-brand-cyan-600 dark:text-brand-cyan-400 shrink-0" />
@@ -128,6 +155,9 @@ export function Header({ onMenuToggle, menuOpen }: { onMenuToggle?: () => void; 
             {currentUser.fullName}
           </span>
         </Link>
+
+        {/* Cloud Sync & Import Modal */}
+        <CloudSyncModal isOpen={isSyncModalOpen} onClose={() => setIsSyncModalOpen(false)} />
       </div>
     </header>
   );

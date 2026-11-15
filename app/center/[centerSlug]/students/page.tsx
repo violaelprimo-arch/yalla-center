@@ -48,6 +48,8 @@ import {
 import { calculateDiscount } from '@/lib/finance/discounts';
 import { GROUP_PRICING_LABELS, slotSummary, studentGroupFee } from '@/lib/timetable/group-schedule';
 import { BrandLogo } from '@/components/brand/brand-logo';
+import { getFreshFirebaseIdToken } from '@/lib/firebase/client';
+import { saveCloudStudent, saveCloudEnrollment } from '@/lib/firebase/client-sync';
 
 const DAYS_NAMES: Record<number, string> = {
   0: 'الأحد',
@@ -645,6 +647,7 @@ function StudentRegistrationModal({
   onSuccess: () => void;
   dal: any;
 }) {
+  const { tenant } = useTenant();
   const [fullName, setFullName] = useState('');
   const [studentCode, setStudentCode] = useState('');
   const [phone, setPhone] = useState('');
@@ -728,7 +731,7 @@ function StudentRegistrationModal({
     setErrorMessage(null);
 
     try {
-      await dal.createStudent(tenantId, {
+      const created = await dal.createStudent(tenantId, {
         fullName: fullName.trim(),
         studentCode: studentCode.trim(),
         phone: phone.trim() || undefined,
@@ -741,6 +744,11 @@ function StudentRegistrationModal({
         guardianPhone: guardianPhone.trim(),
         avatarUrl: '/brand/yalla-center-icon.png',
       });
+      getFreshFirebaseIdToken().then((token) => {
+        if (token && tenant?.slug && created) {
+          saveCloudStudent(tenant.slug, token, created).catch(() => null);
+        }
+      }).catch(() => null);
       onSuccess();
     } catch (err: any) {
       setErrorMessage(err.message || 'حدث خطأ أثناء حفظ بيانات الطالب');
@@ -962,6 +970,7 @@ function GroupEnrollmentModal({
   onSuccess: () => void;
   dal: any;
 }) {
+  const { tenant } = useTenant();
   const [selectedSubjectId, setSelectedSubjectId] = useState<string>('all');
   const [selectedGroupId, setSelectedGroupId] = useState<string>(groups[0]?.id || '');
   const [discountType, setDiscountType] = useState<DiscountType>('none');
@@ -1051,6 +1060,11 @@ function GroupEnrollmentModal({
       if (!res.success) {
         setErrorMessage(res.error || 'فشل في تسجيل الاشتراك');
       } else {
+        getFreshFirebaseIdToken().then((token) => {
+          if (token && tenant?.slug && res?.enrollment) {
+            saveCloudEnrollment(tenant.slug, token, res.enrollment).catch(() => null);
+          }
+        }).catch(() => null);
         onSuccess();
       }
     } catch (err: any) {
