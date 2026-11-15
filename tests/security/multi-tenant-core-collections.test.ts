@@ -13,6 +13,7 @@ describe('Multi-Tenant Core Collections Security Rules Invariants', () => {
 
   it('declares all mandatory collection blocks', () => {
     const requiredCollections = [
+      'tenants',
       'staff_memberships',
       'master_stages',
       'master_subjects',
@@ -40,6 +41,20 @@ describe('Multi-Tenant Core Collections Security Rules Invariants', () => {
     for (const col of requiredCollections) {
       expect(rules).toContain(`match /${col}/`);
     }
+  });
+
+  it('declares tenants and staff_memberships rules with platform owner & center admin RBAC', () => {
+    expect(rules).toMatch(/match \/tenants\/\{tenantId\}\s*\{/);
+    expect(rules).toMatch(/allow read:\s*if true;/);
+    expect(rules).toMatch(/allow create, delete:\s*if isPlatformOwner\(\);/);
+    expect(rules).toContain('isCenterAdmin(tenantId)');
+    expect(rules).toContain('request.resource.data.id == resource.data.id');
+
+    expect(rules).toMatch(/match \/staff_memberships\/\{uid\}\s*\{/);
+    expect(rules).toMatch(/allow read:\s*if isSignedIn\(\) && \(\s*request\.auth\.uid == uid \|\|\s*isPlatformOwner\(\) \|\|\s*\(isCenterAdmin\(resource\.data\.tenantId\)\)\s*\);/);
+    expect(rules).toMatch(/allow create:\s*if isSignedIn\(\) && \(\s*isPlatformOwner\(\) \|\|\s*request\.auth\.uid == uid \|\|\s*isCenterAdmin\(request\.resource\.data\.tenantId\)\s*\);/);
+    expect(rules).toMatch(/allow update:\s*if isPlatformOwner\(\) \|\| \(\s*isCenterAdmin\(resource\.data\.tenantId\) &&\s*request\.resource\.data\.tenantId == resource\.data\.tenantId\s*\);/);
+    expect(rules).toMatch(/allow delete:\s*if isPlatformOwner\(\) \|\| isCenterAdmin\(resource\.data\.tenantId\);/);
   });
 
   it('enforces multi-tenant isolation and immutable tenantId on updates for all core collections', () => {

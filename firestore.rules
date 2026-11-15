@@ -4,6 +4,19 @@ rules_version = '2';
 // Assumed Data Models
 // ===============================================================
 //
+// Collection: tenants
+// Document ID: {tenantId}
+// Fields:
+//   - id: string (required) - Tenant identifier
+//   - slug: string (required) - URL-friendly slug
+//   - nameAr: string (required) - Arabic center name
+//   - nameEn: string (optional) - English center name
+//   - subscriptionPlan: string (optional)
+//   - isActive: bool (required)
+//   - settings: map (optional)
+//   - createdAt: string/timestamp (optional)
+//   - updatedAt: string/timestamp (optional)
+//
 // Collection: staff_memberships
 // Document ID: {uid} (Firebase Auth UID)
 // Fields:
@@ -251,6 +264,14 @@ service cloud.firestore {
       return staffDoc().role;
     }
 
+    function isPlatformOwner() {
+      return isSignedIn() && (
+        ('role' in request.auth.token && request.auth.token.role == 'PLATFORM_OWNER') ||
+        ('isPlatformOwner' in request.auth.token && request.auth.token.isPlatformOwner == true) ||
+        (isActiveStaff() && staffRole() == 'PLATFORM_OWNER')
+      );
+    }
+
     function isGradeAllowedRole() {
       return isActiveStaff() && (
         staffRole() == 'PLATFORM_OWNER' ||
@@ -296,9 +317,10 @@ service cloud.firestore {
     }
 
     function isCenterAdmin(tenantId) {
-      return isActiveStaff() && (
-        staffRole() == 'PLATFORM_OWNER' ||
-        (staffRole() == 'CENTER_ADMIN' && matchesTenant(tenantId))
+      return isPlatformOwner() || (
+        isActiveStaff() && (
+          staffRole() == 'CENTER_ADMIN' && matchesTenant(tenantId)
+        )
       );
     }
 
@@ -346,13 +368,33 @@ service cloud.firestore {
     // Collection Match Rules
     // ===============================================================
 
-    // 1. Staff permission registry: server-managed only (no client privilege escalation)
+    // 1. Multi-tenant center tenants: public read for tenant resolution, managed by platform owner / center admin
+    match /tenants/{tenantId} {
+      allow read: if true;
+      allow create, delete: if isPlatformOwner();
+      allow update: if isPlatformOwner() || (
+        isCenterAdmin(tenantId) &&
+        request.resource.data.id == resource.data.id
+      );
+    }
+
+    // 2. Staff memberships registry: tenant isolation & administrative management
     match /staff_memberships/{uid} {
       allow read: if isSignedIn() && (
         request.auth.uid == uid ||
-        (isActiveStaff() && (staffRole() == 'PLATFORM_OWNER' || (staffRole() == 'CENTER_ADMIN' && resource.data.tenantId == staffDoc().tenantId)))
+        isPlatformOwner() ||
+        (isCenterAdmin(resource.data.tenantId))
       );
-      allow write: if false;
+      allow create: if isSignedIn() && (
+        isPlatformOwner() ||
+        request.auth.uid == uid ||
+        isCenterAdmin(request.resource.data.tenantId)
+      );
+      allow update: if isPlatformOwner() || (
+        isCenterAdmin(resource.data.tenantId) &&
+        request.resource.data.tenantId == resource.data.tenantId
+      );
+      allow delete: if isPlatformOwner() || isCenterAdmin(resource.data.tenantId);
     }
 
     // 2. Master data: Educational stages & grades (${tenantId}~${stageId})
@@ -742,7 +784,13 @@ service cloud.firestore {
       allow delete: if isCenterAdmin(resource.data.tenantId);
     }
 
-    // 19. Default closed guardrail
+    // 19. System metadata & read-only collections (writes restricted to Firebase Admin SDK)
+    match /system_metadata/{docId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    // 20. Default closed guardrail
     match /{document=**} {
       allow read, write: if false;
     }

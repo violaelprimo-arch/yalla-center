@@ -201,7 +201,15 @@ export default function OwnerDashboardPage() {
             <Building2 className="w-5 h-5 text-brand-cyan-600" />
             <span>المراكز التعليمية المشتركة</span>
           </h2>
-          <Badge variant="cyan">2 مراكز نشطة</Badge>
+          <div className="flex items-center gap-3">
+            <Link
+              href="/owner/centers"
+              className="text-xs font-bold text-brand-cyan-600 dark:text-brand-cyan-400 hover:underline"
+            >
+              إدارة وتعيين المديرين ←
+            </Link>
+            <Badge variant="cyan">2 مراكز نشطة</Badge>
+          </div>
         </div>
 
         <div className="overflow-x-auto">
@@ -254,7 +262,15 @@ export default function OwnerDashboardPage() {
             <CreditCard className="w-5 h-5 text-brand-cyan-600" />
             <span>باقات الاشتراكات السحابية لمنصة يلا سنتر</span>
           </h2>
-          <Badge variant="navy">خطط التسعير</Badge>
+          <div className="flex items-center gap-3">
+            <Link
+              href="/owner/subscriptions"
+              className="text-xs font-bold text-brand-cyan-600 dark:text-brand-cyan-400 hover:underline"
+            >
+              تفاصيل وتخصيص الباقات ←
+            </Link>
+            <Badge variant="navy">خطط التسعير</Badge>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">

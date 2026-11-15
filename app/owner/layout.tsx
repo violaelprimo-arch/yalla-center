@@ -57,10 +57,30 @@ export default function OwnerLayout({
           </Link>
 
           <Link
-            href="/center/al-maher"
+            href="/owner/centers"
             className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-slate-300 hover:text-white hover:bg-[#111A38]/60 transition-colors"
           >
             <Building2 className="w-5 h-5 text-slate-400" />
+            <span>إدارة المراكز والسناتر</span>
+          </Link>
+
+          <Link
+            href="/owner/subscriptions"
+            className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-slate-300 hover:text-white hover:bg-[#111A38]/60 transition-colors"
+          >
+            <CreditCard className="w-5 h-5 text-slate-400" />
+            <span>باقات واشتراكات السحابة</span>
+          </Link>
+
+          <div className="pt-3 pb-1 px-3 text-[11px] font-bold text-slate-400 border-t border-[#1C2541] mt-3">
+            المراكز النشطة المباشرة
+          </div>
+
+          <Link
+            href="/center/al-maher"
+            className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-slate-300 hover:text-white hover:bg-[#111A38]/60 transition-colors"
+          >
+            <Building2 className="w-4 h-4 text-slate-400" />
             <span>سنتر الماهر النموذجي</span>
             <RTLIcon icon={ExternalLink} className="w-3.5 h-3.5 text-slate-500 mr-auto" />
           </Link>
@@ -69,7 +89,7 @@ export default function OwnerLayout({
             href="/center/al-rowad"
             className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-slate-300 hover:text-white hover:bg-[#111A38]/60 transition-colors"
           >
-            <Building2 className="w-5 h-5 text-slate-400" />
+            <Building2 className="w-4 h-4 text-slate-400" />
             <span>سنتر الرواد التعليمي</span>
             <RTLIcon icon={ExternalLink} className="w-3.5 h-3.5 text-slate-500 mr-auto" />
           </Link>

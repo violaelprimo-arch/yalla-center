@@ -12,11 +12,13 @@ import type { NextRequest } from 'next/server';
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Skip static files, Next.js internal routes, and public brand assets
+  // Skip static files, Next.js internal routes, login page, and public brand assets
   if (
     pathname.startsWith('/_next') ||
     pathname.startsWith('/brand') ||
-    pathname.startsWith('/favicon.ico')
+    pathname.startsWith('/favicon.ico') ||
+    pathname.startsWith('/login') ||
+    pathname.startsWith('/api/auth')
   ) {
     return NextResponse.next();
   }

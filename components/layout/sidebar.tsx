@@ -20,6 +20,7 @@ import {
   Layers,
   ChevronDown,
   BookOpen,
+  Users,
 } from 'lucide-react';
 import { UserRole } from '@/lib/dal/types';
 import { useTenant } from './tenant-provider';
@@ -52,6 +53,30 @@ export const CENTER_NAV_ITEMS: CenterNavItem[] = [
       'STUDENT',
       'PARENT',
     ],
+  },
+  {
+    id: 'student-portal',
+    titleAr: 'بوابة الطالب',
+    href: (slug) => `/center/${slug}/student-portal`,
+    icon: GraduationCap,
+    roles: ['PLATFORM_OWNER', 'STUDENT'],
+    badge: 'طالب',
+  },
+  {
+    id: 'parent-portal',
+    titleAr: 'بوابة ولي الأمر',
+    href: (slug) => `/center/${slug}/parent-portal`,
+    icon: Users,
+    roles: ['PLATFORM_OWNER', 'PARENT'],
+    badge: 'متابعة',
+  },
+  {
+    id: 'teacher-portal',
+    titleAr: 'بوابة المعلم',
+    href: (slug) => `/teacher/${slug}`,
+    icon: Briefcase,
+    roles: ['PLATFORM_OWNER', 'TEACHER'],
+    badge: 'معلم',
   },
   {
     id: 'students',

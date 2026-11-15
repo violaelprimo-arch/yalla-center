@@ -1,10 +1,11 @@
 'use client';
 
-import React, { createContext, useContext, useState, useMemo } from 'react';
+import React, { createContext, useContext, useState, useMemo, useEffect } from 'react';
 import { Tenant, Branch, User, UserRole } from '@/lib/dal/types';
 import { useMasterDataCatalog } from '@/lib/dal/master-data-client';
 import { useCenterGroups } from '@/lib/timetable/group-client';
 import { getDataProvider } from '@/lib/dal/factory';
+import { useFirebaseAuthSession } from '@/lib/firebase/client';
 
 export interface TenantContextType {
   tenant: Tenant;
@@ -62,6 +63,39 @@ export function TenantProvider({
 
   const [currentUser, setCurrentUser] = useState<User>(defaultAdmin);
   const [isOwnerMode, setIsOwnerMode] = useState<boolean>(false);
+  const authSession = useFirebaseAuthSession();
+
+  // If user is authenticated via Firebase Auth, synchronize their live verified profile & role
+  useEffect(() => {
+    if (!authSession.user || !authSession.idToken) return;
+    let active = true;
+
+    fetch('/api/auth/me', {
+      headers: {
+        Authorization: `Bearer ${authSession.idToken}`,
+      },
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!active || !data?.authenticated || !data.user) return;
+        const verifiedRole = data.user.role as UserRole;
+        if (verifiedRole === 'PLATFORM_OWNER') {
+          setIsOwnerMode(true);
+        }
+        setCurrentUser((prev) => ({
+          ...prev,
+          id: data.user.uid,
+          role: verifiedRole,
+          fullName: data.user.displayName || prev.fullName,
+          email: data.user.email || prev.email,
+        }));
+      })
+      .catch(() => {});
+
+    return () => {
+      active = false;
+    };
+  }, [authSession.user, authSession.idToken]);
   const masterData = useMasterDataCatalog(tenant,
     currentUser.role === 'CENTER_ADMIN' || currentUser.role === 'PLATFORM_OWNER');
   const groupData = useCenterGroups(tenant, masterData.data, masterData.auth, currentUser.role);

@@ -15,7 +15,13 @@ export default function HomePage() {
           <BrandLogo width={180} height={44} priority />
         </div>
         <div className="flex items-center gap-3 text-sm text-muted-foreground font-medium">
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-brand-cyan-500/10 text-brand-cyan-600 dark:text-brand-cyan-400 border border-brand-cyan-500/20">
+          <Link
+            href="/login"
+            className="px-4 py-1.5 rounded-xl bg-brand-cyan-600 hover:bg-brand-cyan-500 text-white font-bold text-xs transition-colors shadow-soft-sm"
+          >
+            تسجيل الدخول الموحد
+          </Link>
+          <span className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-brand-cyan-500/10 text-brand-cyan-600 dark:text-brand-cyan-400 border border-brand-cyan-500/20">
             <span className="w-2 h-2 rounded-full bg-brand-cyan-500 animate-pulse" />
             نظام سحابي متكامل
           </span>
