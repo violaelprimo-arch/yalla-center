@@ -132,6 +132,7 @@ export function LessonExamScorePanel({
   // Fast Student Code -> Score Entry State
   const [studentCodeInput, setStudentCodeInput] = useState('');
   const [lookupError, setLookupError] = useState<string | null>(null);
+  const [saveSuccessMsg, setSaveSuccessMsg] = useState<string | null>(null);
   const [selectedStudent, setSelectedStudent] = useState<User | null>(null);
   const [scoreDraftsByKey, setScoreDraftsByKey] = useState<Record<string, string>>({});
   const [validationErrorByKey, setValidationErrorByKey] = useState<Record<string, string | null>>({});
@@ -155,6 +156,7 @@ export function LessonExamScorePanel({
     setSelectedStudent(null);
     setStudentCodeInput('');
     setLookupError(null);
+    setSaveSuccessMsg(null);
     setMaxMarksError(null);
     setMaxMarksSavedMsg(null);
     setIsEditingMaxMarks(false);
@@ -193,29 +195,38 @@ export function LessonExamScorePanel({
   })();
 
   const focusScoreInputSoon = useCallback(() => {
+    scoreInputRef.current?.focus();
+    scoreInputRef.current?.select();
     if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
       window.requestAnimationFrame(() => {
         scoreInputRef.current?.focus();
         scoreInputRef.current?.select();
       });
-    } else {
-      scoreInputRef.current?.focus();
     }
   }, []);
 
   const focusCodeInputSoon = useCallback(() => {
+    codeInputRef.current?.focus();
     if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
       window.requestAnimationFrame(() => {
         codeInputRef.current?.focus();
       });
-    } else {
-      codeInputRef.current?.focus();
     }
   }, []);
+
+  const prevModeRef = useRef(mode);
+  // Auto-focus student code input immediately when opening Grade Entry Mode
+  useEffect(() => {
+    if (prevModeRef.current !== 'grades' && mode === 'grades' && !selectedStudent) {
+      focusCodeInputSoon();
+    }
+    prevModeRef.current = mode;
+  }, [mode, focusCodeInputSoon, selectedStudent]);
 
   // Select student cleanly by barcode or code in Grade Entry Mode ONLY (never records attendance)
   const handleSelectStudentByCode = useCallback(
     (rawCode: string) => {
+      if (saveSuccessMsg) setSaveSuccessMsg(null);
       const code = rawCode.trim();
       if (!code) {
         setLookupError('اكتب كود الطالب أو امسح الباركود أولاً');
@@ -271,6 +282,7 @@ export function LessonExamScorePanel({
       focusScoreInputSoon,
       gradesForActiveExamByStudent,
       onModeChange,
+      saveSuccessMsg,
     ]
   );
 
@@ -342,8 +354,9 @@ export function LessonExamScorePanel({
           delete next[key];
           return next;
         });
-        // Clear scan input cleanly and move focus back for rapid sequential scanning if still on the same selection
+        setSaveSuccessMsg(`تم حفظ درجة الطالب (${parsed.value} / ${formatCleanNumber(ctx.totalMarks)})`);
         setStudentCodeInput('');
+        setSelectedStudent(null);
         focusCodeInputSoon();
         return true;
       }
@@ -353,14 +366,91 @@ export function LessonExamScorePanel({
     [focusCodeInputSoon, onSaveScore]
   );
 
+  const handleCommitScore = useCallback(async () => {
+    if (!activeExam) return;
+    let student = selectedStudent;
+    if (!student && studentCodeInput.trim()) {
+      const code = studentCodeInput.trim();
+      const lowered = code.toLowerCase();
+      const enrolledMatch = enrolledStudents.find(
+        (s) => s.id === code || (s.studentCode && s.studentCode.toLowerCase() === lowered)
+      );
+      if (enrolledMatch) {
+        student = enrolledMatch;
+        setSelectedStudent(enrolledMatch);
+      } else {
+        const otherGroupStudent = allTenantUsers.find(
+          (u) => u.role === 'STUDENT' && (u.id === code || (u.studentCode && u.studentCode.toLowerCase() === lowered))
+        );
+        if (otherGroupStudent) {
+          setLookupError(
+            `الطالب (${otherGroupStudent.fullName}) غير مقيد في هذه المجموعة أو تابع لمجموعة أخرى`
+          );
+        } else {
+          setLookupError(`لم يتم العثور على طالب مسجل بالكود (${code})`);
+        }
+        return;
+      }
+    }
+
+    if (!student) {
+      setLookupError('اكتب كود الطالب أو امسح الباركود أولاً');
+      focusCodeInputSoon();
+      return;
+    }
+
+    const currentScore = displayedScoreValue;
+    if (!currentScore.trim()) {
+      const key = lessonGradeDocId(activeExam.id, student.id);
+      setValidationErrorByKey((prev) => ({ ...prev, [key]: 'أدخل درجة الطالب قبل الحفظ' }));
+      return;
+    }
+
+    const ok = await executeScoreSave({
+      sessionId: session.id,
+      examId: activeExam.id,
+      totalMarks: activeExam.totalMarks,
+      studentId: student.id,
+      studentIdOrCode: student.studentCode || student.id,
+      rawScore: currentScore,
+    });
+
+    if (ok) {
+      setSaveSuccessMsg(`تم حفظ درجة الطالب ${student.fullName} (${currentScore} / ${formatCleanNumber(activeExam.totalMarks)})`);
+    }
+  }, [
+    activeExam,
+    allTenantUsers,
+    displayedScoreValue,
+    enrolledStudents,
+    executeScoreSave,
+    focusCodeInputSoon,
+    selectedStudent,
+    session.id,
+    studentCodeInput,
+  ]);
+
   const handleScoreChange = (rawValue: string) => {
-    if (!activeExam || !selectedStudent) return;
+    if (saveSuccessMsg) setSaveSuccessMsg(null);
+    let student = selectedStudent;
+    if (!student && studentCodeInput.trim()) {
+      const code = studentCodeInput.trim();
+      const lowered = code.toLowerCase();
+      const enrolledMatch = enrolledStudents.find(
+        (s) => s.id === code || (s.studentCode && s.studentCode.toLowerCase() === lowered)
+      );
+      if (enrolledMatch) {
+        student = enrolledMatch;
+        setSelectedStudent(enrolledMatch);
+      }
+    }
+    if (!activeExam || !student) return;
     const captured = {
       sessionId: session.id,
       examId: activeExam.id,
       totalMarks: activeExam.totalMarks,
-      studentId: selectedStudent.id,
-      studentIdOrCode: selectedStudent.studentCode || selectedStudent.id,
+      studentId: student.id,
+      studentIdOrCode: student.studentCode || student.id,
       rawScore: rawValue,
     };
     const key = lessonGradeDocId(captured.examId, captured.studentId);
@@ -384,9 +474,6 @@ export function LessonExamScorePanel({
     }
 
     setValidationErrorByKey((prev) => ({ ...prev, [key]: null }));
-    debounceTimerRef.current = setTimeout(() => {
-      void executeScoreSave(captured);
-    }, 450);
   };
 
   const handleScoreBlur = () => {
@@ -715,131 +802,143 @@ export function LessonExamScorePanel({
         )}
       </div>
 
-      {/* Rapid Barcode / Student Code Input */}
+      {/* Rapid Barcode & Score Side-by-Side Entry Form */}
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          handleSelectStudentByCode(studentCodeInput);
+          if (selectedStudent) {
+            void handleCommitScore();
+          } else {
+            handleSelectStudentByCode(studentCodeInput);
+          }
         }}
-        className="space-y-2"
+        className="space-y-3"
       >
-        <label htmlFor="grade-student-code-input" className="block text-xs font-bold text-foreground">
-          اكتب كود الطالب أو امسح الباركود
-        </label>
-        <div className="flex items-center gap-2">
-          <div className="relative flex-1">
-            <Barcode className="w-4 h-4 text-brand-cyan-500 absolute right-3 top-2.5" />
-            <input
-              id="grade-student-code-input"
-              ref={codeInputRef}
-              type="text"
-              placeholder="مثال: STD-1001"
-              value={studentCodeInput}
-              onFocus={() => onModeChange('grades')}
-              onChange={(e) => {
-                setStudentCodeInput(e.target.value);
-                if (lookupError) setLookupError(null);
-              }}
-              className="w-full h-9 pr-9 pl-3 rounded-xl border border-border bg-background text-xs font-mono font-bold text-foreground focus:outline-none focus:ring-2 focus:ring-brand-cyan-500"
-            />
-          </div>
-          <Button type="submit" size="sm" variant="outline" className="h-9 text-xs font-bold shrink-0">
-            اختيار
-          </Button>
-        </div>
-        <p className="text-[10px] text-muted-foreground">
-          المسح هنا يختار الطالب لرصد الدرجة فقط دون تسجيل حضور إضافي.
-        </p>
-        {lookupError && (
-          <p role="alert" className="text-xs font-bold text-rose-600 dark:text-rose-400">
-            {lookupError}
-          </p>
-        )}
-      </form>
-
-      {/* Selected Student & Auto-Focused Score Field */}
-      {selectedStudent && activeExam && (
-        <div className="rounded-2xl border border-brand-cyan-500/40 bg-brand-cyan-500/5 p-3.5 space-y-2.5">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <div className="text-xs font-black text-foreground">{selectedStudent.fullName}</div>
-              <div className="text-[11px] font-mono text-muted-foreground">
-                {selectedStudent.studentCode || selectedStudent.id}
-              </div>
-            </div>
-            <Badge
-              variant={activeSavedGrade !== undefined ? 'cyan' : 'outline'}
-              dir="ltr"
-              className="font-mono font-bold"
-            >
-              {formatLessonScoreFraction(activeSavedGrade, activeExam.totalMarks)}
-            </Badge>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <label htmlFor="lesson-score-value-input" className="text-xs font-bold text-foreground shrink-0">
-              الدرجة:
+        <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-end">
+          {/* 1. Student Code / Barcode Input */}
+          <div className="sm:col-span-7 space-y-1">
+            <label htmlFor="grade-student-code-input" className="block text-xs font-bold text-foreground">
+              اكتب كود الطالب أو امسح الباركود
             </label>
-            <div className="flex items-center flex-1 rounded-xl border border-border bg-background px-3 h-10 focus-within:ring-2 focus-within:ring-brand-cyan-500" dir="ltr">
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1">
+                <Barcode className="w-4 h-4 text-brand-cyan-500 absolute right-3 top-3" />
+                <input
+                  id="grade-student-code-input"
+                  ref={codeInputRef}
+                  type="text"
+                  placeholder="مثال: STD-1001"
+                  aria-label="اكتب كود الطالب أو امسح الباركود"
+                  value={studentCodeInput}
+                  onFocus={() => onModeChange('grades')}
+                  onChange={(e) => {
+                    setStudentCodeInput(e.target.value);
+                    if (lookupError) setLookupError(null);
+                    if (saveSuccessMsg) setSaveSuccessMsg(null);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleSelectStudentByCode(studentCodeInput);
+                    }
+                  }}
+                  className="w-full h-10 pr-9 pl-3 rounded-xl border border-border bg-background text-xs font-mono font-bold text-foreground focus:outline-none focus:ring-2 focus:ring-brand-cyan-500"
+                />
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => handleSelectStudentByCode(studentCodeInput)}
+                className="h-10 text-xs font-bold shrink-0 px-3"
+              >
+                اختيار
+              </Button>
+            </div>
+          </div>
+
+          {/* 2. Student Score Input (Side-by-Side) */}
+          <div className="sm:col-span-5 space-y-1">
+            <div className="flex items-center justify-between">
+              <label htmlFor="lesson-score-value-input" className="block text-xs font-bold text-foreground">
+                درجة الطالب
+              </label>
+              {activeExam && (
+                <span className="text-[10px] text-muted-foreground font-mono">
+                  النهاية: {formatCleanNumber(activeExam.totalMarks)}
+                </span>
+              )}
+            </div>
+            <div className="flex items-center rounded-xl border border-border bg-background px-3 h-10 focus-within:ring-2 focus-within:ring-brand-cyan-500" dir="ltr">
               <input
                 id="lesson-score-value-input"
                 ref={scoreInputRef}
                 type="text"
                 inputMode="decimal"
                 aria-label="درجة الطالب"
-                placeholder="0"
+                placeholder={activeExam ? `0` : '—'}
                 value={displayedScoreValue}
                 onChange={(e) => handleScoreChange(e.target.value)}
                 onBlur={handleScoreBlur}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
                     e.preventDefault();
-                    void executeScoreSave({
-                      sessionId: session.id,
-                      examId: activeExam.id,
-                      totalMarks: activeExam.totalMarks,
-                      studentId: selectedStudent.id,
-                      studentIdOrCode: selectedStudent.studentCode || selectedStudent.id,
-                      rawScore: displayedScoreValue,
-                    });
+                    void handleCommitScore();
                   }
                 }}
                 className="w-full bg-transparent text-sm font-mono font-black text-foreground text-center focus:outline-none"
               />
               <span className="text-xs font-mono font-bold text-muted-foreground shrink-0 pl-2 border-l border-border">
-                / {formatCleanNumber(activeExam.totalMarks)}
+                / {activeExam ? formatCleanNumber(activeExam.totalMarks) : '—'}
               </span>
             </div>
           </div>
+        </div>
 
-          {/* Save Lifecycle Feedback & Retry */}
-          <div className="flex flex-wrap items-center justify-between gap-2 min-h-[24px]">
-            <div className="text-[11px] font-bold" role="status">
-              {activeValidationError ? (
-                <span className="text-rose-600 dark:text-rose-400">{activeValidationError}</span>
-              ) : activeSaveState?.status === 'saving' ? (
-                <span className="text-brand-cyan-600 dark:text-brand-cyan-400 inline-flex items-center gap-1">
-                  <Loader2 className="w-3 h-3 animate-spin" />
-                  <span>جارٍ الحفظ</span>
-                </span>
-              ) : activeSaveState?.status === 'saved' ? (
-                <span className="text-emerald-600 dark:text-emerald-400 inline-flex items-center gap-1">
-                  <CheckCircle2 className="w-3 h-3" />
-                  <span>تم الحفظ</span>
-                </span>
-              ) : activeSaveState?.status === 'error' ? (
-                <span className="text-rose-600 dark:text-rose-400 inline-flex items-center gap-1">
-                  <AlertTriangle className="w-3 h-3" />
-                  <span>{activeSaveState.message}</span>
-                </span>
-              ) : (
-                <span className="text-muted-foreground font-normal">
-                  يحفظ تلقائياً عند الضغط على Enter أو الخروج من الحقل
-                </span>
-              )}
+        {/* Selected Student Banner (shows name & existing grade if recorded) */}
+        {selectedStudent && activeExam && (
+          <div className="rounded-2xl border border-brand-cyan-500/40 bg-brand-cyan-500/10 p-3 flex flex-wrap items-center justify-between gap-2 text-xs animate-in fade-in duration-150">
+            <div className="min-w-0">
+              <div className="font-black text-foreground text-sm truncate">{selectedStudent.fullName}</div>
+              <div className="text-[11px] font-mono text-muted-foreground">
+                كود: <span className="font-bold text-foreground">{selectedStudent.studentCode || selectedStudent.id}</span>
+              </div>
             </div>
+            {activeSavedGrade !== undefined ? (
+              <Badge variant="cyan" dir="ltr" className="font-mono font-bold text-xs py-1 px-2.5">
+                مسجل سابقًا: {formatLessonScoreFraction(activeSavedGrade, activeExam.totalMarks)}
+              </Badge>
+            ) : (
+              <Badge variant="outline" className="text-xs font-medium">
+                لم تُرصد بعد
+              </Badge>
+            )}
+          </div>
+        )}
 
-            {activeSaveState?.status === 'error' && activeSaveState.lastAttempt && (
+        <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+          <span>المسح هنا يرصد الدرجة فقط دون تسجيل حضور إضافي.</span>
+          <span className="font-medium text-foreground/70">اضغط Enter بعد الكود ثم Enter بعد الدرجة</span>
+        </div>
+
+        {/* Save & Validation Messages */}
+        {lookupError && (
+          <p role="alert" className="text-xs font-bold text-rose-600 dark:text-rose-400">
+            {lookupError}
+          </p>
+        )}
+        {activeValidationError && (
+          <p role="alert" className="text-xs font-bold text-rose-600 dark:text-rose-400">
+            {activeValidationError}
+          </p>
+        )}
+        {activeSaveState?.status === 'error' && (
+          <div className="flex items-center justify-between gap-2 p-2.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-600 dark:text-rose-400 text-xs font-bold" role="alert">
+            <span className="flex items-center gap-1.5">
+              <AlertTriangle className="w-4 h-4 shrink-0" />
+              <span>{activeSaveState.message}</span>
+            </span>
+            {activeSaveState.lastAttempt && (
               <Button
                 type="button"
                 size="sm"
@@ -849,21 +948,32 @@ export function LessonExamScorePanel({
                   void executeScoreSave({
                     sessionId: attempt.sessionId,
                     examId: attempt.examId,
-                    totalMarks: activeExam.totalMarks,
+                    totalMarks: activeExam?.totalMarks ?? 20,
                     studentId: attempt.studentId,
                     studentIdOrCode: attempt.studentIdOrCode,
                     rawScore: attempt.rawScore,
                   });
                 }}
-                className="h-7 px-2.5 text-[11px] border-rose-500/40 text-rose-600 dark:text-rose-400"
+                className="h-7 px-2 text-[11px] border-rose-500/40 text-rose-600 dark:text-rose-400"
               >
-                <RefreshCw className="w-3 h-3" />
-                <span>إعادة المحاولة</span>
+                إعادة المحاولة
               </Button>
             )}
           </div>
-        </div>
-      )}
+        )}
+        {activeSaveState?.status === 'saving' && (
+          <p role="status" className="text-xs font-bold text-brand-cyan-600 dark:text-brand-cyan-400 flex items-center gap-1.5">
+            <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
+            <span>جارٍ الحفظ</span>
+          </p>
+        )}
+        {saveSuccessMsg && (
+          <p role="status" className="text-xs font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5 bg-emerald-500/10 border border-emerald-500/30 p-2.5 rounded-xl">
+            <CheckCircle2 className="w-4 h-4 shrink-0" />
+            <span>{saveSuccessMsg}</span>
+          </p>
+        )}
+      </form>
 
       {/* Existing LocalStorage Demo Grades Review Banner & Import Drawer */}
       {pendingLocalCount > 0 && (

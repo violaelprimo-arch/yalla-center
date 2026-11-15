@@ -26,7 +26,9 @@ describe('Reception student follow-up', () => {
     const dal = getReceptionDataProvider(clock);
     const session = (await dal.getSessionById(tenantId, 'reception-demo-2026-11-11'))!;
     expect(receptionSessionState(session, clock)).toBe('current');
-    expect(receptionSessionState(session, '2026-11-10T23:59')).toBe('upcoming');
+    expect(receptionSessionState({ ...session, startTime: '16:00', endTime: '18:00' }, '2026-11-11T10:00')).toBe('upcoming');
+    expect(receptionSessionState(session, '2026-11-10T23:59')).toBeNull();
+    expect(receptionSessionState({ ...session, sessionDate: '2026-11-17' }, '2026-11-15T15:00')).toBeNull();
     expect(receptionSessionState(session, '2026-11-11T23:59')).toBeNull();
     expect(receptionSessionState({ ...session, status: 'completed' }, clock)).toBeNull();
   });

@@ -71,8 +71,8 @@ export function SessionSelector({
       {/* Session Pills / Grid */}
       <div className="space-y-2">
         {sessions.length === 0 ? (
-          <div className="text-center py-6 text-xs text-muted-foreground">
-            لا توجد حصص حالية أو قادمة لهذا الفرع.
+          <div className="text-center py-6 text-xs text-muted-foreground font-medium">
+            لا توجد حصص حالية أو قادمة اليوم
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">

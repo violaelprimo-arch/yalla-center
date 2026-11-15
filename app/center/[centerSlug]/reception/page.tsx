@@ -435,22 +435,30 @@ export default function ReceptionScanPage() {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Verification HUD Card (7 cols) */}
         <div className="lg:col-span-7 space-y-4">
-          <VerificationHud
-            data={selectedSession ? hudData : { state: 'idle' }}
-            onQuickPayClick={handleOpenQuickPay}
-            onManualSearchFallback={() => {
-              const el = document.getElementById('manual-search-table');
-              el?.scrollIntoView({ behavior: 'smooth' });
-            }}
-          />
-
-          {canRecordAttendance && hudData.student && selectedSession && hudData.session?.id === selectedSession.id && (
-            <ReceptionStudentCard key={`${tenant.id}:${selectedSession.id}:${hudData.student.id}`}
-              tenantId={tenant.id} centerSlug={tenant.slug} student={hudData.student} session={selectedSession} group={selectedGroup}
+          {canRecordAttendance && hudData.student && selectedSession && hudData.session?.id === selectedSession.id ? (
+            <ReceptionStudentCard
+              key={`${tenant.id}:${selectedSession.id}:${hudData.student.id}`}
+              tenantId={tenant.id}
+              centerSlug={tenant.slug}
+              student={hudData.student}
+              session={selectedSession}
+              group={selectedGroup}
+              hudData={hudData}
+              onQuickPayClick={handleOpenQuickPay}
               remoteExams={lessonScores.sessionExams}
               remoteGradesByKey={lessonScores.gradesByKey}
               onSaveUnifiedGrade={lessonScores.saveStudentScore}
-              onDeleteUnifiedGrade={lessonScores.deleteStudentScore} />
+              onDeleteUnifiedGrade={lessonScores.deleteStudentScore}
+            />
+          ) : (
+            <VerificationHud
+              data={selectedSession ? hudData : { state: 'idle' }}
+              onQuickPayClick={handleOpenQuickPay}
+              onManualSearchFallback={() => {
+                const el = document.getElementById('manual-search-table');
+                el?.scrollIntoView({ behavior: 'smooth' });
+              }}
+            />
           )}
 
           {/* Manual Barcode / Code Fast Input */}
