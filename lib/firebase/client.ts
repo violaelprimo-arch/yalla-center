@@ -12,14 +12,7 @@ import {
   type Auth,
   type User as FirebaseUser,
 } from 'firebase/auth';
-import {
-  collection,
-  getFirestore,
-  onSnapshot,
-  query,
-  where,
-  type Firestore,
-} from 'firebase/firestore';
+import type { Firestore } from 'firebase/firestore';
 import type { LessonExamRecord, LessonGradeRecord } from '@/lib/attendance/lesson-scores';
 
 export interface FirebaseWebConfig {
@@ -62,7 +55,7 @@ let cachedDb: Firestore | null = null;
 export function getFirebaseClientServices(): {
   app: FirebaseApp;
   auth: Auth;
-  db: Firestore;
+  db?: Firestore;
 } | null {
   if (typeof window === 'undefined') return null;
   const config = getFirebaseWebConfig();
@@ -71,11 +64,9 @@ export function getFirebaseClientServices(): {
   try {
     const app = cachedApp ?? (getApps().length > 0 ? getApp() : initializeApp(config));
     const auth = cachedAuth ?? getAuth(app);
-    const db = cachedDb ?? getFirestore(app);
     cachedApp = app;
     cachedAuth = auth;
-    cachedDb = db;
-    return { app, auth, db };
+    return { app, auth, db: cachedDb ?? undefined };
   } catch {
     return null;
   }
@@ -206,47 +197,67 @@ export function subscribeSessionLessonScores(params: {
   onGrades: (grades: LessonGradeRecord[]) => void;
   onError?: (message: string) => void;
 }): () => void {
+  if (typeof window === 'undefined') return () => undefined;
   const services = getFirebaseClientServices();
   if (!services || !services.auth.currentUser) {
     return () => undefined;
   }
 
-  const { db } = services;
-  const examsQuery = query(
-    collection(db, 'lesson_exams'),
-    where('tenantId', '==', params.tenantId),
-    where('sessionId', '==', params.sessionId)
-  );
-  const gradesQuery = query(
-    collection(db, 'lesson_grades'),
-    where('tenantId', '==', params.tenantId),
-    where('sessionId', '==', params.sessionId)
-  );
+  let unsubExams: (() => void) | undefined;
+  let unsubGrades: (() => void) | undefined;
+  let active = true;
 
-  const unsubExams = onSnapshot(
-    examsQuery,
-    (snapshot) => {
-      const exams = snapshot.docs.map((doc) => doc.data() as LessonExamRecord);
-      params.onExams(exams);
-    },
-    (err) => {
-      params.onError?.(err.message || 'تعذّر مزامنة اختبارات الحصة من Firestore');
-    }
-  );
+  void (async () => {
+    try {
+      const { collection, getFirestore, onSnapshot, query, where } = await import('firebase/firestore');
+      if (!active) return;
+      const db = cachedDb ?? getFirestore(services.app);
+      cachedDb = db;
+      const examsQuery = query(
+        collection(db, 'lesson_exams'),
+        where('tenantId', '==', params.tenantId),
+        where('sessionId', '==', params.sessionId)
+      );
+      const gradesQuery = query(
+        collection(db, 'lesson_grades'),
+        where('tenantId', '==', params.tenantId),
+        where('sessionId', '==', params.sessionId)
+      );
 
-  const unsubGrades = onSnapshot(
-    gradesQuery,
-    (snapshot) => {
-      const grades = snapshot.docs.map((doc) => doc.data() as LessonGradeRecord);
-      params.onGrades(grades);
-    },
-    (err) => {
-      params.onError?.(err.message || 'تعذّر مزامنة الدرجات اللحظية من Firestore');
+      unsubExams = onSnapshot(
+        examsQuery,
+        (snapshot) => {
+          if (!active) return;
+          const exams = snapshot.docs.map((doc) => doc.data() as LessonExamRecord);
+          params.onExams(exams);
+        },
+        (err) => {
+          if (!active) return;
+          params.onError?.(err.message || 'تعذّر مزامنة اختبارات الحصة من Firestore');
+        }
+      );
+
+      unsubGrades = onSnapshot(
+        gradesQuery,
+        (snapshot) => {
+          if (!active) return;
+          const grades = snapshot.docs.map((doc) => doc.data() as LessonGradeRecord);
+          params.onGrades(grades);
+        },
+        (err) => {
+          if (!active) return;
+          params.onError?.(err.message || 'تعذّر مزامنة الدرجات اللحظية من Firestore');
+        }
+      );
+    } catch (err) {
+      if (!active) return;
+      params.onError?.(err instanceof Error ? err.message : 'تعذّر الاتصال بـ Firestore');
     }
-  );
+  })();
 
   return () => {
-    unsubExams();
-    unsubGrades();
+    active = false;
+    unsubExams?.();
+    unsubGrades?.();
   };
 }
