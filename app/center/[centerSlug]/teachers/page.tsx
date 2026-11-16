@@ -69,7 +69,7 @@ function TeachersDirectory() {
   const { auth, data: { stages, subjects: centerSubjects } } = masterData;
   const { groups: centerGroups } = groupData;
   const dal = useMemo(getDataProvider, []);
-  const demo = !auth.configured;
+  const demo = !auth.configured || !auth.idToken;
   const mayManageDemo = currentRole === 'PLATFORM_OWNER' || currentRole === 'CENTER_ADMIN';
 
   const [activeTab, setActiveTab] = useState<'directory' | 'accounting'>('directory');
@@ -93,11 +93,11 @@ function TeachersDirectory() {
 
   // Unauthenticated visitor guard: redirect to main login page with safe return URL
   useEffect(() => {
-    if (!demo && !auth.loading && !auth.idToken && typeof window !== 'undefined') {
+    if (!auth.loading && !auth.idToken && !mayManageDemo && typeof window !== 'undefined') {
       const returnUrl = `/center/${encodeURIComponent(tenant.slug)}/teachers`;
       window.location.href = `/login?redirect=${encodeURIComponent(returnUrl)}`;
     }
-  }, [demo, auth.loading, auth.idToken, tenant.slug]);
+  }, [auth.loading, auth.idToken, mayManageDemo, tenant.slug]);
 
   // Load teacher users from DAL
   useEffect(() => {
@@ -388,7 +388,7 @@ function TeachersDirectory() {
       )}
 
       {/* Unauthenticated State Message */}
-      {!demo && !auth.idToken && !auth.loading && (
+      {!auth.idToken && !auth.loading && !mayManageDemo && (
         <div className="card-elevated p-8 rounded-2xl border border-border text-center space-y-3">
           <ShieldCheck className="w-8 h-8 text-brand-cyan-600 mx-auto animate-pulse" />
           <h2 className="text-base font-bold text-foreground">التحقق من صلاحيات إدارة السنتر...</h2>
