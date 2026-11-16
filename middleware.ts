@@ -23,24 +23,25 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Resolve user identity from request headers or cookies (supports demo testing)
+  // Resolve user identity from cookies or development/test headers
+  const isProd = process.env.NODE_ENV === 'production';
   const hasAuth =
-    request.headers.has('x-user-role') ||
-    Boolean(request.cookies.get('yc_role')?.value);
+    Boolean(request.cookies.get('yc_role')?.value) ||
+    (!isProd && request.headers.has('x-user-role'));
 
   const userRole =
-    request.headers.get('x-user-role') ||
     request.cookies.get('yc_role')?.value ||
+    (!isProd ? request.headers.get('x-user-role') : null) ||
     (process.env.NODE_ENV === 'test' ? 'CENTER_ADMIN' : '');
 
   const userTenantSlug =
-    request.headers.get('x-tenant-slug') ||
     request.cookies.get('yc_tenant')?.value ||
+    (!isProd ? request.headers.get('x-tenant-slug') : null) ||
     (process.env.NODE_ENV === 'test' ? 'al-maher' : '');
 
   const userId =
-    request.headers.get('x-user-id') ||
     request.cookies.get('yc_user_id')?.value ||
+    (!isProd ? request.headers.get('x-user-id') : null) ||
     (process.env.NODE_ENV === 'test' ? 'user-admin-maher' : '');
 
   // 1. Platform Owner Portal Guard (/owner)

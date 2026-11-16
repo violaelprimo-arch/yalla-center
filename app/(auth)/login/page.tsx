@@ -322,58 +322,84 @@ function LoginForm() {
           </div>
         </div>
 
-        {/* Right Side: Quick Portal Selector & Demo Accounts */}
+        {/* Right Side: Quick Portal Selector & Demo Accounts (Hidden in Production) */}
         <div className="lg:col-span-5 space-y-4">
-          <div className="card-elevated p-5 rounded-2xl border border-border space-y-3 bg-muted/30">
-            <h2 className="text-sm font-bold text-foreground flex items-center gap-2">
-              <UserCheck className="w-4 h-4 text-brand-cyan-600 dark:text-brand-cyan-400" />
-              <span>الدخول السريع للأدوار التجريبية</span>
-            </h2>
-            <p className="text-[11px] text-muted-foreground leading-relaxed">
-              اختر أحد الأدوار التالية لملء البيانات أو الدخول الفوري وتجربة بوابات المنصة:
-            </p>
-
-            <div className="space-y-2 pt-1">
-              {DEMO_ACCOUNTS.map((acc) => {
-                const IconComponent = acc.icon;
-                return (
-                  <div
-                    key={acc.role}
-                    className="p-3 rounded-xl border border-border bg-card hover:border-brand-cyan-500/50 transition-all flex items-center justify-between gap-3 text-xs"
-                  >
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <div className="w-7 h-7 rounded-lg bg-brand-cyan-500/10 text-brand-cyan-600 dark:text-brand-cyan-400 flex items-center justify-center shrink-0">
-                        <IconComponent className="w-4 h-4" />
-                      </div>
-                      <div className="min-w-0">
-                        <p className="font-bold text-foreground truncate">{acc.label}</p>
-                        <p className="text-[10px] text-muted-foreground font-mono truncate">{acc.email}</p>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => applyDemoPreset(acc)}
-                        className="px-2 py-1 rounded-lg text-[10px] font-bold bg-muted hover:bg-muted/80 text-foreground transition-colors"
-                        title="ملء في النموذج"
-                      >
-                        ملء
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDemoDirectLogin(acc)}
-                        className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-brand-cyan-600 hover:bg-brand-cyan-500 text-white transition-colors"
-                        title="دخول فوري مباشر"
-                      >
-                        دخول
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
+          {process.env.NODE_ENV === 'production' ? (
+            <div className="card-elevated p-6 rounded-2xl border border-border space-y-4 bg-muted/30">
+              <h2 className="text-sm font-bold text-foreground flex items-center gap-2">
+                <ShieldCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                <span>منظومة الدخول السحابية الموثقة</span>
+              </h2>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                يتم التحقق من الهوية والصلاحيات مركزياً عبر Firebase Authentication. يتم توجيه كل مستخدم آلياً إلى بوابته المعتمدة وفقاً لعضويته المعتمدة في السنتر.
+              </p>
+              <div className="p-4 rounded-xl bg-card border border-border text-xs space-y-2.5">
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                  <span>عزل كامل بين بيانات المراكز والسناتر التعليمية</span>
+                </div>
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                  <span>تشفير جلسات العمل وتدقيق الصلاحيات السحابية</span>
+                </div>
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                  <span>دعم تسجيل الدخول عبر Google أو البريد الرسمي</span>
+                </div>
+              </div>
             </div>
-          </div>
+          ) : (
+            <div className="card-elevated p-5 rounded-2xl border border-border space-y-3 bg-muted/30">
+              <h2 className="text-sm font-bold text-foreground flex items-center gap-2">
+                <UserCheck className="w-4 h-4 text-brand-cyan-600 dark:text-brand-cyan-400" />
+                <span>الدخول السريع للأدوار التجريبية (Dev Only)</span>
+              </h2>
+              <p className="text-[11px] text-muted-foreground leading-relaxed">
+                اختر أحد الأدوار التالية لملء البيانات أو الدخول الفوري وتجربة بوابات المنصة:
+              </p>
+
+              <div className="space-y-2 pt-1">
+                {DEMO_ACCOUNTS.map((acc) => {
+                  const IconComponent = acc.icon;
+                  return (
+                    <div
+                      key={acc.role}
+                      className="p-3 rounded-xl border border-border bg-card hover:border-brand-cyan-500/50 transition-all flex items-center justify-between gap-3 text-xs"
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-7 h-7 rounded-lg bg-brand-cyan-500/10 text-brand-cyan-600 dark:text-brand-cyan-400 flex items-center justify-center shrink-0">
+                          <IconComponent className="w-4 h-4" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="font-bold text-foreground truncate">{acc.label}</p>
+                          <p className="text-[10px] text-muted-foreground font-mono truncate">{acc.email}</p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => applyDemoPreset(acc)}
+                          className="px-2 py-1 rounded-lg text-[10px] font-bold bg-muted hover:bg-muted/80 text-foreground transition-colors"
+                          title="ملء في النموذج"
+                        >
+                          ملء
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDemoDirectLogin(acc)}
+                          className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-brand-cyan-600 hover:bg-brand-cyan-500 text-white transition-colors"
+                          title="دخول فوري مباشر"
+                        >
+                          دخول
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       </main>
 

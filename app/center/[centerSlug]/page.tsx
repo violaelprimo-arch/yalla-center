@@ -13,6 +13,8 @@ import {
   QrCode,
   ShieldAlert,
   UserCheck,
+  ShieldCheck,
+  Sparkles,
 } from 'lucide-react';
 import { useTenant } from '@/components/layout/tenant-provider';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
@@ -69,6 +71,22 @@ export default function CenterDashboardPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          {['CENTER_ADMIN', 'PLATFORM_OWNER'].includes(currentRole) && (
+            <Link href={`/center/${tenant.slug}/admin`}>
+              <Button size="sm" variant="outline" className="gap-1.5 border-brand-cyan-500/40">
+                <ShieldCheck className="w-4 h-4 text-brand-cyan-600" />
+                <span>لوحة الإدارة</span>
+              </Button>
+            </Link>
+          )}
+          {['CENTER_ADMIN', 'PLATFORM_OWNER'].includes(currentRole) && (
+            <Link href={`/center/${tenant.slug}/subscription`}>
+              <Button size="sm" variant="outline" className="gap-1.5 border-purple-500/40">
+                <Sparkles className="w-4 h-4 text-purple-500" />
+                <span>الاشتراك السحابي</span>
+              </Button>
+            </Link>
+          )}
           <Link href={`/center/${tenant.slug}/reception`}>
             <Button size="sm" variant="primary" className="gap-1.5 shadow-soft-sm">
               <QrCode className="w-4 h-4" />
