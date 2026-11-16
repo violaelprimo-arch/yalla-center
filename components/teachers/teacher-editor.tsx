@@ -1,21 +1,45 @@
 'use client';
 
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import Link from 'next/link';
-import { Camera, UserRound, X, FileSpreadsheet, ExternalLink } from 'lucide-react';
+import {
+  Camera,
+  UserRound,
+  X,
+  Check,
+  AlertCircle,
+  Briefcase,
+  ShieldCheck,
+  Building2,
+  Calendar,
+  Layers,
+  BookOpen,
+  DollarSign,
+  Percent,
+  Users,
+  Eye,
+  MessageSquare,
+  FileText,
+  Clock,
+  Sparkles,
+  ArrowRight,
+  ArrowLeft,
+  Trash2,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { SessionsGroupsView } from '@/components/sessions/sessions-groups-view';
-import { getGradeNameArabic } from '@/lib/materials/taxonomy';
+import { Badge } from '@/components/ui/badge';
+import { getGradeNameArabic, getStageNameArabic } from '@/lib/materials/taxonomy';
 import type { Subject, EducationalStage } from '@/lib/dal/types';
 import {
   TEACHER_PERMISSIONS,
   TEACHER_TABS,
+  LEGACY_TEACHER_MODELS,
   teacherInputSchema,
   teacherPermissions,
   teacherTabs,
   type TeacherInput,
   type TeacherPermission,
   type TeacherTab,
+  type TeacherContract,
 } from '@/lib/teachers/profile';
 
 interface Props {
@@ -33,9 +57,9 @@ interface Props {
 }
 
 const control =
-  'mt-1 block w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-cyan-500';
+  'mt-1 block w-full rounded-xl border border-border bg-background px-3.5 py-2.5 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-cyan-500 transition-all';
 
-async function thumbnail(file: File) {
+async function thumbnail(file: File): Promise<string> {
   if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 8 * 1024 * 1024) {
     throw new Error('اختر صورة JPG أو PNG أو WebP بحجم 8 ميجابايت أو أقل');
   }
@@ -47,11 +71,11 @@ async function thumbnail(file: File) {
     const context = canvas.getContext('2d');
     if (!context) throw new Error('تعذّر تجهيز الصورة');
     const side = Math.min(image.width, image.height);
-    context.fillStyle = '#f5f7fa';
+    context.fillStyle = '#0B132B';
     context.fillRect(0, 0, 240, 240);
     context.drawImage(image, (image.width - side) / 2, (image.height - side) / 2, side, side, 0, 0, 240, 240);
-    const data = canvas.toDataURL('image/jpeg', 0.82);
-    if (data.length > 90000) throw new Error('حجم الصورة كبير بعد الضغط');
+    const data = canvas.toDataURL('image/jpeg', 0.85);
+    if (data.length > 90000) throw new Error('حجم الصورة كبير بعد الضغط، اختر صورة أصغر');
     return data;
   } finally {
     image.close();
@@ -67,17 +91,57 @@ export function TeacherEditor({
   originalAvatar,
   demo,
   subjects,
+  stages = [],
   onSave,
   onClose,
 }: Props) {
   const dialog = useRef<HTMLDialogElement>(null);
-  const [step, setStep] = useState(1);
-  const [input, setInput] = useState(initial);
+  const [step, setStep] = useState<1 | 2>(1);
+  const [input, setInput] = useState<TeacherInput>(() => ({
+    ...initial,
+    contracts: initial.contracts || [],
+    permissions: initial.permissions || ['viewAccount', 'viewSchedule', 'viewStudents'],
+    tabs: initial.tabs || teacherTabs,
+  }));
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const [processingPhoto, setProcessingPhoto] = useState(false);
   const [showOldPhoto, setShowOldPhoto] = useState(true);
+
+  // Selected stage IDs
+  const [selectedStageIds, setSelectedStageIds] = useState<string[]>(() => {
+    if (input.contracts && input.contracts.length > 0) {
+      return [...new Set(input.contracts.map((c) => c.level))];
+    }
+    return stages.length > 0 ? [stages[0].id] : [];
+  });
+
+  // Stage agreements map: { [stageId]: { model: 'center'|'fixed_session'|'private'|'per_attendee', value: number } }
+  const [stageAgreements, setStageAgreements] = useState<
+    Record<string, { model: 'center' | 'fixed_session' | 'private' | 'per_attendee'; value: number }>
+  >(() => {
+    const map: Record<string, { model: 'center' | 'fixed_session' | 'private' | 'per_attendee'; value: number }> = {};
+    if (input.contracts) {
+      for (const contract of input.contracts) {
+        if ('value' in contract) {
+          map[contract.level] = {
+            model: (contract.model as 'center' | 'fixed_session' | 'private' | 'per_attendee') || 'fixed_session',
+            value: contract.value,
+          };
+        } else if ('model' in contract) {
+          if (contract.model === 'center') {
+            map[contract.level] = { model: 'center', value: (contract as any).teacherRate || 50 };
+          } else if (contract.model === 'private') {
+            map[contract.level] = { model: 'private', value: (contract as any).teacherPercentage || 70 };
+          } else {
+            map[contract.level] = { model: 'fixed_session', value: 200 };
+          }
+        }
+      }
+    }
+    return map;
+  });
 
   useEffect(() => {
     dialog.current?.showModal();
@@ -89,19 +153,83 @@ export function TeacherEditor({
     input.login?.mode === 'username' &&
     (initial.login?.mode !== 'username' ||
       initial.login.username !== input.login.username.trim().toLowerCase());
-  const setField = <K extends keyof TeacherInput>(field: K, value: TeacherInput[K]) =>
-    setInput((previous) => ({ ...previous, [field]: value }));
 
-  function togglePermission(permission: TeacherPermission, checked: boolean) {
+  const setField = <K extends keyof TeacherInput>(field: K, value: TeacherInput[K]) =>
+    setInput((prev) => ({ ...prev, [field]: value }));
+
+  // Stage selection toggle
+  const toggleStage = (stageId: string) => {
+    setSelectedStageIds((prev) => {
+      const next = prev.includes(stageId) ? prev.filter((id) => id !== stageId) : [...prev, stageId];
+      // Initialize default agreement for newly selected stage
+      if (!prev.includes(stageId) && !stageAgreements[stageId]) {
+        setStageAgreements((cur) => ({
+          ...cur,
+          [stageId]: { model: 'fixed_session', value: 200 },
+        }));
+      }
+      return next;
+    });
+  };
+
+  // Stage agreement change
+  const updateStageAgreement = (
+    stageId: string,
+    updates: Partial<{ model: 'center' | 'fixed_session' | 'private' | 'per_attendee'; value: number }>
+  ) => {
+    setStageAgreements((prev) => ({
+      ...prev,
+      [stageId]: {
+        ...(prev[stageId] || { model: 'fixed_session', value: 200 }),
+        ...updates,
+      },
+    }));
+  };
+
+  const togglePermission = (permission: TeacherPermission, checked: boolean) => {
     const next = checked ? [...input.permissions, permission] : input.permissions.filter((item) => item !== permission);
     setField(
       'permissions',
       permission === 'viewStudents' && !checked ? next.filter((item) => item !== 'viewStudentDetails') : next
     );
-  }
+  };
 
-  function toggleTab(tab: TeacherTab, checked: boolean) {
+  const toggleTab = (tab: TeacherTab, checked: boolean) => {
     setField('tabs', checked ? [...input.tabs, tab] : input.tabs.filter((item) => item !== tab));
+  };
+
+  async function handleNextStep() {
+    setError('');
+    if (!input.fullName.trim()) {
+      setError('اسم المعلم مطلوب');
+      return;
+    }
+    if (!input.phone.trim()) {
+      setError('رقم الهاتف (1) مطلوب');
+      return;
+    }
+    if (selectedStageIds.length === 0) {
+      setError('اختر مرحلة تعليمية واحدة على الأقل');
+      return;
+    }
+    if (!input.login) {
+      setError('اختر طريقة تسجيل دخول المعلم');
+      return;
+    }
+    if (input.login.mode === 'username' && !input.login.username.trim()) {
+      setError('اسم المستخدم مطلوب');
+      return;
+    }
+    if (input.login.mode === 'google' && !input.login.email.trim()) {
+      setError('اكتب بريد Google صحيح');
+      return;
+    }
+    if (needsPassword && (!password || password.length < 8)) {
+      setError('كلمة المرور لازم تكون 8 أحرف على الأقل');
+      return;
+    }
+
+    setStep(2);
   }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -109,33 +237,34 @@ export function TeacherEditor({
     if (saving || processingPhoto) return;
     setError('');
 
-    const parsed = teacherInputSchema.safeParse({
-      ...input,
-      contracts: input.contracts || [],
+    // Prepare contracts array from selected stages and their individual agreements
+    const contracts: TeacherContract[] = selectedStageIds.map((stageId) => {
+      const agree = stageAgreements[stageId] || { model: 'fixed_session', value: 200 };
+      return {
+        level: stageId,
+        model: agree.model,
+        value: Number(agree.value) || 0,
+      } as any;
     });
 
+    const payload: TeacherInput = {
+      ...input,
+      contracts,
+    };
+
+    const parsed = teacherInputSchema.safeParse(payload);
     if (!parsed.success) {
       const issue = parsed.error.issues[0];
       setError(issue.message);
       return;
     }
-    if (!editing && !parsed.data.login) {
-      setError('اختر طريقة تسجيل دخول المعلم');
-      return;
-    }
-    if (needsPassword && password.length < 8) {
-      setError('كلمة المرور لازم تكون 8 أحرف على الأقل');
-      return;
-    }
-    if (step === 1) {
-      setStep(2);
-      return;
-    }
+
     setSaving(true);
     try {
       await onSave(parsed.data, needsPassword ? password : undefined);
+      onClose();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'تعذّر حفظ المعلم');
+      setError(cause instanceof Error ? cause.message : 'تعذّر حفظ بيانات المعلم');
     } finally {
       setSaving(false);
     }
@@ -150,131 +279,106 @@ export function TeacherEditor({
         event.preventDefault();
         if (!saving) onClose();
       }}
-      className={`m-auto max-h-[94dvh] overflow-hidden rounded-3xl border border-border bg-card text-foreground shadow-2xl backdrop:bg-black/60 transition-all ${
-        step === 3 ? 'w-[min(96vw,1080px)]' : 'w-[min(94vw,760px)]'
-      }`}
+      className="m-auto max-h-[94dvh] w-[min(94vw,840px)] overflow-hidden rounded-3xl border border-border bg-card text-foreground shadow-2xl backdrop:bg-black/60 transition-all p-0"
     >
       <form onSubmit={submit} noValidate className="flex max-h-[94dvh] flex-col">
-        <header className="flex items-start justify-between gap-4 border-b border-border px-5 py-4">
-          <div>
-            <h2 id="teacher-editor-title" className="text-lg font-black">
-              {editing ? 'الملف الشخصي والمالي للمعلم' : 'إضافة معلم جديد'}
-            </h2>
-            <div className="flex flex-wrap items-center gap-1.5 mt-2">
-              <button
-                type="button"
-                onClick={() => setStep(1)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
-                  step === 1
-                    ? 'bg-brand-cyan-500/20 text-brand-cyan-600 border border-brand-cyan-500/30'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
-                }`}
-              >
-                ١. البيانات الأساسية
-              </button>
-              <button
-                type="button"
-                onClick={() => setStep(2)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
-                  step === 2
-                    ? 'bg-brand-cyan-500/20 text-brand-cyan-600 border border-brand-cyan-500/30'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
-                }`}
-              >
-                ٢. الصلاحيات والدخول
-              </button>
-              {editing && teacherId && (
-                <button
-                  type="button"
-                  onClick={() => setStep(3)}
-                  className={`flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
-                    step === 3
-                      ? 'bg-brand-cyan-500/20 text-brand-cyan-600 border border-brand-cyan-500/30'
-                      : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
-                  }`}
-                >
-                  <FileSpreadsheet size={13} />
-                  <span>٣. الحسابات والمجموعات</span>
-                </button>
-              )}
+        {/* Modal Header */}
+        <header className="border-b border-border px-6 py-4 bg-muted/20 flex flex-col gap-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-xl bg-brand-cyan-500/10 text-brand-cyan-600 dark:text-brand-cyan-400 flex items-center justify-center font-bold">
+                <Briefcase className="w-5 h-5" />
+              </div>
+              <div>
+                <h2 id="teacher-editor-title" className="text-base font-black text-foreground">
+                  {editing ? 'تعديل بيانات المعلم والاتفاقات المالية' : 'إضافة معلم جديد — معالج التسجيل'}
+                </h2>
+                <p className="text-xs text-muted-foreground">
+                  {step === 1 ? 'الخطوة 1: البيانات الأساسية والمراحل والاتفاقات المالية' : 'الخطوة 2: الصلاحيات الممنوحة والتبويبات المتاحة'}
+                </p>
+              </div>
             </div>
+
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              aria-label="إغلاق"
+              onClick={onClose}
+              disabled={saving}
+              className="rounded-xl hover:bg-muted text-muted-foreground"
+            >
+              <X size={18} />
+            </Button>
           </div>
-          <Button type="button" variant="ghost" size="icon" aria-label="إغلاق" onClick={onClose} disabled={saving}>
-            <X size={18} />
-          </Button>
+
+          {/* Stepper Progress Bar */}
+          <div className="grid grid-cols-2 gap-2 pt-1">
+            <button
+              type="button"
+              onClick={() => setStep(1)}
+              className={`flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-bold transition-all border ${
+                step === 1
+                  ? 'bg-brand-cyan-500/15 text-brand-cyan-600 dark:text-brand-cyan-400 border-brand-cyan-500/30 shadow-soft-sm'
+                  : 'bg-muted/40 text-muted-foreground border-transparent hover:bg-muted/70'
+              }`}
+            >
+              <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[11px] ${step === 1 ? 'bg-brand-cyan-600 text-white font-black' : 'bg-muted-foreground/30 text-foreground'}`}>
+                ١
+              </span>
+              <span>بيانات المعلم والاتفاقات المالية</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleNextStep}
+              className={`flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-bold transition-all border ${
+                step === 2
+                  ? 'bg-brand-cyan-500/15 text-brand-cyan-600 dark:text-brand-cyan-400 border-brand-cyan-500/30 shadow-soft-sm'
+                  : 'bg-muted/40 text-muted-foreground border-transparent hover:bg-muted/70'
+              }`}
+            >
+              <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[11px] ${step === 2 ? 'bg-brand-cyan-600 text-white font-black' : 'bg-muted-foreground/30 text-foreground'}`}>
+                ٢
+              </span>
+              <span>صلاحيات المعلم والتبويبات</span>
+            </button>
+          </div>
         </header>
 
-        <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-5">
+        {/* Modal Scrollable Body */}
+        <div className="min-h-0 flex-1 space-y-6 overflow-y-auto p-6 custom-scrollbar">
           {error && (
-            <p
+            <div
               role="alert"
-              className="rounded-xl border border-red-500/25 bg-red-500/10 p-3 text-sm text-red-700 dark:text-red-300"
+              className="rounded-2xl border border-red-500/30 bg-red-500/10 p-3.5 text-xs text-red-600 dark:text-red-400 flex items-center gap-2.5 animate-fadeIn"
             >
-              {error}
-            </p>
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>{error}</span>
+            </div>
           )}
 
-          {step === 3 && teacherId ? (
-            <div className="space-y-4">
-              <SessionsGroupsView
-                initialTeacherId={teacherId}
-                lockTeacherFilter={true}
-                allowGroupManagement={false}
-                isEmbedded={true}
-                title={`حسابات ومجموعات (${input.fullName || 'المعلم'})`}
-                subtitle="نظام الحسابات والمجموعات الأسبوعية المسندة للمعلم وفق جدول الحصص والمجموعات."
-              />
-            </div>
-          ) : step === 1 ? (
+          {step === 1 ? (
             <>
-              <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-4">
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <label className="sm:col-span-2 text-sm font-semibold">
-                    اسم المعلم <span aria-hidden="true">*</span>
-                    <input
-                      className={control}
-                      required
-                      maxLength={100}
-                      value={input.fullName}
-                      onChange={(event) => setField('fullName', event.target.value)}
-                      autoFocus
-                    />
-                  </label>
-                  <label className="text-sm font-semibold">
-                    رقم الهاتف (1) <span aria-hidden="true">*</span>
-                    <input
-                      className={control}
-                      dir="ltr"
-                      type="tel"
-                      required
-                      value={input.phone}
-                      onChange={(event) => setField('phone', event.target.value)}
-                    />
-                  </label>
-                  <label className="text-sm font-semibold">
-                    رقم الهاتف (2) <span className="font-normal text-muted-foreground">اختياري</span>
-                    <input
-                      className={control}
-                      dir="ltr"
-                      type="tel"
-                      value={input.phone2}
-                      onChange={(event) => setField('phone2', event.target.value)}
-                    />
-                  </label>
-                </div>
-
-                <div className="flex w-24 flex-col items-center gap-1 sm:w-28">
-                  <label className="relative grid aspect-square w-full cursor-pointer place-items-center overflow-hidden rounded-2xl border border-border bg-muted text-muted-foreground focus-within:ring-2 focus-within:ring-brand-cyan-500">
+              {/* SECTION: Teacher Photo (TOP-LEFT visual placement) & Primary Details */}
+              <div className="grid grid-cols-1 md:grid-cols-12 gap-5 items-start">
+                {/* Photo Uploader (Visual Top-Left in RTL: placed on secondary col in desktop grid) */}
+                <div className="md:col-span-4 order-1 md:order-2 flex flex-col items-center justify-center p-4 rounded-2xl border border-border bg-muted/20 text-center space-y-2.5">
+                  <span className="text-xs font-bold text-foreground">صورة المعلم الشخصية</span>
+                  <label className="relative grid aspect-square w-28 cursor-pointer place-items-center overflow-hidden rounded-2xl border-2 border-dashed border-border hover:border-brand-cyan-500 bg-background text-muted-foreground focus-within:ring-2 focus-within:ring-brand-cyan-500 transition-all shadow-sm">
                     {avatar ? (
-                      <img src={avatar} alt="" className="absolute inset-0 size-full object-cover" />
+                      <img src={avatar} alt={input.fullName || 'صورة المعلم'} className="absolute inset-0 size-full object-cover" />
                     ) : (
-                      <UserRound size={30} />
+                      <div className="flex flex-col items-center gap-1">
+                        <UserRound size={36} className="text-muted-foreground/60" />
+                        <span className="text-[10px] text-muted-foreground">رفع صورة</span>
+                      </div>
                     )}
-                    <span className="absolute bottom-1.5 left-1.5 grid size-7 place-items-center rounded-lg bg-card text-foreground shadow">
-                      <Camera size={15} />
+                    <span className="absolute bottom-1.5 left-1.5 grid size-7 place-items-center rounded-lg bg-card/90 text-foreground shadow border border-border">
+                      <Camera size={14} />
                     </span>
                     <input
-                      aria-label="صورة المعلم"
+                      aria-label="رفع صورة المعلم"
                       type="file"
                       className="sr-only"
                       accept="image/jpeg,image/png,image/webp"
@@ -284,7 +388,8 @@ export function TeacherEditor({
                         setProcessingPhoto(true);
                         setError('');
                         try {
-                          setField('avatarData', await thumbnail(file));
+                          const dataUrl = await thumbnail(file);
+                          setField('avatarData', dataUrl);
                         } catch (cause) {
                           setError(cause instanceof Error ? cause.message : 'تعذّر قراءة الصورة');
                         } finally {
@@ -293,87 +398,296 @@ export function TeacherEditor({
                       }}
                     />
                   </label>
-                  <span className="text-xs text-muted-foreground">
-                    {processingPhoto ? 'تجهيز الصورة…' : 'صورة المعلم'}
-                  </span>
+                  <p className="text-[11px] text-muted-foreground">
+                    {processingPhoto ? 'جارٍ معالجة وضغط الصورة…' : 'PNG أو JPG بحد أقصى 8MB'}
+                  </p>
                   {input.avatarData && (
                     <button
                       type="button"
-                      className="text-xs text-red-600 underline"
+                      className="text-[11px] text-red-500 hover:text-red-600 flex items-center gap-1 underline transition-colors"
                       onClick={() => {
                         setField('avatarData', null);
                         setShowOldPhoto(false);
                       }}
                     >
-                      إزالة الصورة المرفوعة
+                      <Trash2 size={12} />
+                      <span>إزالة الصورة</span>
                     </button>
                   )}
                 </div>
-              </div>
 
-              {/* Informational Card regarding Single Source of Truth for Groups & Accounting */}
-              <div className="space-y-2 rounded-2xl border border-border bg-muted/20 p-4">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-foreground">طريقة الحساب ومواعيد المجموعات</span>
-                  {tenantSlug && (
-                    <Link
-                      href={`/center/${tenantSlug}/sessions`}
-                      target="_blank"
-                      className="text-xs font-bold text-brand-cyan-600 dark:text-brand-cyan-400 hover:underline flex items-center gap-1"
-                    >
-                      <span>فتح الحصص والمجموعات ↗</span>
-                    </Link>
-                  )}
-                </div>
-                <p className="text-xs text-muted-foreground leading-relaxed">
-                  يتم تحديد نظام المحاسبة (نظام المتوسط، نظام البرايفت بالتحصيص والنسب، أو نظام الدفع بالحصة) ومواعيد
-                  الحصص الأسبوعية والقاعات مباشرةً لكل مجموعة من خلال تبويب <b>الحصص والمجموعات</b>.
-                </p>
-              </div>
+                {/* Teacher Basic Inputs */}
+                <div className="md:col-span-8 order-2 md:order-1 space-y-3.5">
+                  <div>
+                    <label className="text-xs font-bold text-foreground flex items-center gap-1">
+                      <span>اسم المعلم بالكامل</span>
+                      <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      className={control}
+                      aria-label="اسم المعلم"
+                      required
+                      placeholder="أدخل اسم المعلم الثلاثي أو الرباعي"
+                      maxLength={100}
+                      value={input.fullName}
+                      onChange={(e) => setField('fullName', e.target.value)}
+                      autoFocus
+                    />
+                  </div>
 
-              <fieldset className="space-y-2 rounded-2xl border border-border p-3">
-                <legend className="px-1 text-sm font-bold">المواد الدراسية</legend>
-                {subjects.length ? (
-                  <div className="grid max-h-36 gap-2 overflow-y-auto sm:grid-cols-2">
-                    {subjects.map((subject) => (
-                      <label
-                        key={subject.id}
-                        className="flex items-start gap-2 rounded-lg bg-muted/40 p-2 text-xs"
-                      >
-                        <input
-                          type="checkbox"
-                          className="mt-0.5 accent-cyan-600"
-                          checked={input.subjectIds.includes(subject.id)}
-                          onChange={(event) =>
-                            setField(
-                              'subjectIds',
-                              event.target.checked
-                                ? [...input.subjectIds, subject.id]
-                                : input.subjectIds.filter((id) => id !== subject.id)
-                            )
-                          }
-                        />
-                        <span>
-                          {subject.nameAr}
-                          <span className="block text-muted-foreground">
-                            {getGradeNameArabic(subject.grade)}
-                          </span>
-                        </span>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs font-bold text-foreground flex items-center gap-1">
+                        <span>رقم الهاتف (1)</span>
+                        <span className="text-red-500">*</span>
                       </label>
-                    ))}
+                      <input
+                        className={control}
+                        aria-label="رقم الهاتف (1)"
+                        dir="ltr"
+                        type="tel"
+                        required
+                        placeholder="01012345678"
+                        value={input.phone}
+                        onChange={(e) => setField('phone', e.target.value)}
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-bold text-foreground flex items-center gap-1">
+                        <span>رقم الهاتف (2)</span>
+                        <span className="text-[10px] text-muted-foreground font-normal">(اختياري)</span>
+                      </label>
+                      <input
+                        className={control}
+                        aria-label="رقم الهاتف (2)"
+                        dir="ltr"
+                        type="tel"
+                        placeholder="01234567890"
+                        value={input.phone2}
+                        onChange={(e) => setField('phone2', e.target.value)}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* SECTION: Multiple Educational Stages & Independent Financial Agreements */}
+              <div className="space-y-4 pt-2 border-t border-border">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-sm font-bold text-foreground flex items-center gap-2">
+                      <Layers className="w-4 h-4 text-brand-cyan-600 dark:text-brand-cyan-400" />
+                      <span>المراحل التعليمية والاتفاقات المالية</span>
+                    </h3>
+                    <p className="text-xs text-muted-foreground">
+                      اختر المراحل التي يدرس بها المعلم؛ وحدد لكل مرحلة نظام المحاسبة المالي المستقل الخاص بها.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Stage Selection Pills */}
+                {stages.length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {stages.map((stage) => {
+                      const isSelected = selectedStageIds.includes(stage.id);
+                      return (
+                        <button
+                          key={stage.id}
+                          type="button"
+                          onClick={() => toggleStage(stage.id)}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 border ${
+                            isSelected
+                              ? 'bg-brand-cyan-500/20 text-brand-cyan-600 dark:text-brand-cyan-400 border-brand-cyan-500/40 shadow-sm'
+                              : 'bg-muted/40 text-muted-foreground border-border hover:bg-muted/70'
+                          }`}
+                        >
+                          <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] ${isSelected ? 'bg-brand-cyan-600 text-white' : 'border border-muted-foreground/40'}`}>
+                            {isSelected && <Check size={10} />}
+                          </span>
+                          <span>{stage.nameAr}</span>
+                        </button>
+                      );
+                    })}
                   </div>
                 ) : (
-                  <p className="text-xs text-muted-foreground">اختيار المواد هيتاح لما تتضاف مواد لقائمة السنتر.</p>
+                  <p className="text-xs text-muted-foreground">لا توجد مراحل مسجلة في السنتر بعد.</p>
                 )}
-              </fieldset>
 
-              <fieldset className="space-y-2 rounded-2xl border border-border p-3">
-                <legend className="px-1 text-sm font-bold">تسجيل دخول المعلم</legend>
-                <div className="flex flex-wrap gap-4 text-sm">
-                  <label className="flex items-center gap-2">
+                {/* Independent Financial Agreement Card for EACH Selected Stage */}
+                {selectedStageIds.length > 0 && (
+                  <div className="space-y-3 pt-2">
+                    <span className="text-xs font-bold text-foreground block">
+                      أنظمة المحاسبة والاتفاقات المالية لكل مرحلة:
+                    </span>
+
+                    {selectedStageIds.map((stageId) => {
+                      const stage = stages.find((s) => s.id === stageId);
+                      const stageName = stage ? stage.nameAr : getStageNameArabic(stageId);
+                      const agree = stageAgreements[stageId] || { model: 'fixed_session', value: 200 };
+
+                      return (
+                        <div
+                          key={stageId}
+                          className="p-4 rounded-2xl border border-border bg-card shadow-soft-sm space-y-3 relative overflow-hidden"
+                        >
+                          <div className="flex items-center justify-between border-b border-border/70 pb-2.5">
+                            <div className="flex items-center gap-2">
+                              <span className="w-2.5 h-2.5 rounded-full bg-brand-cyan-500" />
+                              <h4 className="text-xs font-black text-foreground">{stageName}</h4>
+                            </div>
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-muted text-muted-foreground border border-border">
+                              اتفاق مالي مستقل
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-center">
+                            {/* Accounting Model Selector */}
+                            <div className="sm:col-span-7">
+                              <label className="text-[11px] font-bold text-muted-foreground block mb-1">
+                                طريقة ونظام المحاسبة:
+                              </label>
+                              <select
+                                value={agree.model}
+                                onChange={(e) =>
+                                  updateStageAgreement(stageId, {
+                                    model: e.target.value as any,
+                                  })
+                                }
+                                className="w-full px-3 py-2 text-xs font-bold bg-background border border-border rounded-xl focus:ring-2 focus:ring-brand-cyan-500"
+                              >
+                                <option value="per_attendee">أجر ثابت لكل طالب حاضر في الحصة (مستحق = حضور × فئة)</option>
+                                <option value="fixed_session">أجر ثابت للحصة (مبلغ مقطوع لكل حصة منعقدة)</option>
+                                <option value="private">نظام البرايفت — نسبة مئوية (حصة المعلم %)</option>
+                                <option value="center">نظام السنتر — متوسط الحضور (متوسط شهري)</option>
+                              </select>
+                            </div>
+
+                            {/* Value / Rate Input */}
+                            <div className="sm:col-span-5">
+                              <label className="text-[11px] font-bold text-muted-foreground block mb-1">
+                                {agree.model === 'per_attendee' && 'قيمة أجر المعلم عن كل طالب حاضر (ج.م):'}
+                                {agree.model === 'fixed_session' && 'قيمة الأجر الثابت للحصة (ج.م):'}
+                                {agree.model === 'private' && 'نسبة المعلم من صافي الإيراد (%):'}
+                                {agree.model === 'center' && 'الفئة المتفق عليها للرأس (ج.م):'}
+                              </label>
+                              <div className="relative">
+                                <input
+                                  type="number"
+                                  min={0}
+                                  max={agree.model === 'private' ? 100 : 100000}
+                                  step="0.5"
+                                  value={agree.value}
+                                  onChange={(e) =>
+                                    updateStageAgreement(stageId, {
+                                      value: parseFloat(e.target.value) || 0,
+                                    })
+                                  }
+                                  className="w-full px-3 py-2 text-xs font-black bg-background border border-border rounded-xl focus:ring-2 focus:ring-brand-cyan-500 pl-8"
+                                />
+                                <span className="absolute left-2.5 top-2 text-[11px] font-bold text-muted-foreground">
+                                  {agree.model === 'private' ? '%' : 'ج.م'}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Dynamic Formula Explanation */}
+                          <div className="text-[11px] text-muted-foreground bg-muted/40 p-2.5 rounded-xl border border-border/50">
+                            {agree.model === 'per_attendee' && (
+                              <p>
+                                💡 <b>معادلة الاحتساب:</b> مستحق المعلم = عدد الطلاب الحاضرين فعلياً × {agree.value} ج.م (مثال: 20 طالب حاضر = {20 * agree.value} ج.م مستحق للحصة).
+                              </p>
+                            )}
+                            {agree.model === 'fixed_session' && (
+                              <p>
+                                💡 <b>معادلة الاحتساب:</b> يستحق المعلم {agree.value} ج.م عن كل حصة تم انعقادها بغض النظر عن عدد الحضور.
+                              </p>
+                            )}
+                            {agree.model === 'private' && (
+                              <p>
+                                💡 <b>معادلة الاحتساب:</b> يحصل المعلم على نسبة {agree.value}% من إيراد الحصة/المجموعة، ويتبقى للسنتر {100 - agree.value}%.
+                              </p>
+                            )}
+                            {agree.model === 'center' && (
+                              <p>
+                                💡 <b>معادلة الاحتساب:</b> مستحق المعلم = متوسط الحضور الشهري للحصص المنعقدة × {agree.value} ج.م.
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* SECTION: Multiple Teaching Subjects */}
+              <div className="space-y-3 pt-2 border-t border-border">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-bold text-foreground flex items-center gap-2">
+                    <BookOpen className="w-4 h-4 text-brand-cyan-600 dark:text-brand-cyan-400" />
+                    <span>المواد الدراسية المسندة للمعلم</span>
+                  </h3>
+                  <span className="text-xs text-muted-foreground">
+                    ({input.subjectIds.length} مادة مختارة)
+                  </span>
+                </div>
+
+                {subjects.length > 0 ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 max-h-44 overflow-y-auto p-1 custom-scrollbar">
+                    {subjects.map((subject) => {
+                      const isChecked = input.subjectIds.includes(subject.id);
+                      return (
+                        <label
+                          key={subject.id}
+                          className={`flex items-start gap-2.5 p-2.5 rounded-xl border text-xs cursor-pointer transition-all ${
+                            isChecked
+                              ? 'bg-brand-cyan-500/10 border-brand-cyan-500/40 text-foreground'
+                              : 'bg-muted/30 border-border text-muted-foreground hover:bg-muted/60'
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            className="mt-0.5 accent-cyan-600 rounded"
+                            checked={isChecked}
+                            onChange={(e) =>
+                              setField(
+                                'subjectIds',
+                                e.target.checked
+                                  ? [...input.subjectIds, subject.id]
+                                  : input.subjectIds.filter((id) => id !== subject.id)
+                              )
+                            }
+                          />
+                          <div className="min-w-0 flex-1">
+                            <span className="font-bold text-foreground block truncate">{subject.nameAr}</span>
+                            <span className="text-[10px] text-muted-foreground block">
+                              {getGradeNameArabic(subject.grade)}
+                            </span>
+                          </div>
+                        </label>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">لا توجد مواد مسجلة في السنتر بعد.</p>
+                )}
+              </div>
+
+              {/* SECTION: Teacher Account Credentials Setup */}
+              <div className="space-y-3 pt-2 border-t border-border">
+                <h3 className="text-sm font-bold text-foreground flex items-center gap-2">
+                  <ShieldCheck className="w-4 h-4 text-brand-cyan-600 dark:text-brand-cyan-400" />
+                  <span>بيانات تسجيل دخول المعلم (الحساب السحابي)</span>
+                </h3>
+
+                <div className="flex flex-wrap gap-4 text-xs font-bold">
+                  <label className="flex items-center gap-2 cursor-pointer">
                     <input
-                      name="teacher-login"
+                      name="teacher-login-mode"
                       type="radio"
+                      className="accent-cyan-600"
                       checked={input.login?.mode === 'username'}
                       onChange={() => {
                         setPassword('');
@@ -384,13 +698,16 @@ export function TeacherEditor({
                             : { mode: 'username', username: '' }
                         );
                       }}
-                    />{' '}
-                    اسم مستخدم وكلمة مرور
+                    />
+                    <span>اسم مستخدم وكلمة مرور</span>
                   </label>
-                  <label className="flex items-center gap-2">
+
+                  <label className="flex items-center gap-2 cursor-pointer">
                     <input
-                      name="teacher-login"
+                      name="teacher-login-mode"
                       type="radio"
+                      aria-label="حساب Google"
+                      className="accent-cyan-600"
                       checked={input.login?.mode === 'google'}
                       onChange={() => {
                         setPassword('');
@@ -401,127 +718,229 @@ export function TeacherEditor({
                             : { mode: 'google', email: '' }
                         );
                       }}
-                    />{' '}
-                    حساب Google
+                    />
+                    <span>البريد الإلكتروني المرتبط بحساب Google</span>
                   </label>
                 </div>
+
                 {input.login?.mode === 'username' && (
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <label className="text-xs font-semibold">
-                      اسم المستخدم
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                    <div>
+                      <label className="text-xs font-semibold text-foreground">اسم المستخدم</label>
                       <input
                         className={control}
+                        aria-label="اسم المستخدم"
                         dir="ltr"
                         autoComplete="off"
                         maxLength={32}
+                        placeholder="teacher_username"
                         value={input.login.username}
-                        onChange={(event) =>
-                          setField('login', { mode: 'username', username: event.target.value })
+                        onChange={(e) =>
+                          setField('login', { mode: 'username', username: e.target.value.toLowerCase() })
                         }
                       />
-                    </label>
+                    </div>
                     {needsPassword && (
-                      <label className="text-xs font-semibold">
-                        كلمة المرور
+                      <div>
+                        <label className="text-xs font-semibold text-foreground">كلمة المرور (مبدئية)</label>
                         <input
                           className={control}
+                          aria-label="كلمة المرور"
                           dir="ltr"
                           type="password"
                           autoComplete="new-password"
                           minLength={8}
                           maxLength={128}
+                          placeholder="••••••••"
                           value={password}
-                          onChange={(event) => setPassword(event.target.value)}
+                          onChange={(e) => setPassword(e.target.value)}
                         />
-                      </label>
+                      </div>
                     )}
                   </div>
                 )}
+
                 {input.login?.mode === 'google' && (
-                  <label className="block text-xs font-semibold">
-                    بريد حساب Google للمعلم
+                  <div className="pt-1">
+                    <label className="text-xs font-semibold text-foreground">البريد الإلكتروني لحساب Google</label>
                     <input
                       className={control}
+                      aria-label="بريد حساب Google للمعلم"
                       dir="ltr"
                       type="email"
-                      value={input.login.email}
+                      placeholder="teacher@gmail.com"
                       maxLength={254}
-                      onChange={(event) =>
-                        setField('login', { mode: 'google', email: event.target.value })
+                      value={input.login.email}
+                      onChange={(e) =>
+                        setField('login', { mode: 'google', email: e.target.value.toLowerCase() })
                       }
                     />
-                  </label>
+                  </div>
                 )}
-                {demo && (
-                  <p className="text-xs text-muted-foreground">
-                    النسخة التجريبية تحفظ إعداد الدخول فقط. تفعيل الحساب يحتاج Firebase.
-                  </p>
-                )}
-              </fieldset>
+              </div>
             </>
           ) : (
             <>
-              <fieldset className="grid gap-2 rounded-2xl border border-border p-3 sm:grid-cols-2">
-                <legend className="px-1 text-sm font-bold">صلاحيات {input.fullName}</legend>
-                {teacherPermissions.map((permission) => (
-                  <label key={permission} className="flex items-start gap-2 rounded-lg bg-muted/40 p-3 text-sm">
-                    <input
-                      type="checkbox"
-                      className="mt-1 accent-cyan-600"
-                      checked={input.permissions.includes(permission)}
-                      disabled={permission === 'viewStudentDetails' && !input.permissions.includes('viewStudents')}
-                      onChange={(event) => togglePermission(permission, event.target.checked)}
-                    />
-                    <span>
-                      {TEACHER_PERMISSIONS[permission]}
-                      {permission === 'publishForum' && (
-                        <small className="block text-muted-foreground">تُستخدم عند إطلاق المنتدى</small>
-                      )}
-                    </span>
-                  </label>
-                ))}
-              </fieldset>
+              {/* STEP 2: Teacher Permissions & Tab Visibility */}
+              <div className="space-y-6">
+                {/* Permissions Toggles */}
+                <div className="space-y-3">
+                  <div>
+                    <h3 className="text-sm font-black text-foreground flex items-center gap-2">
+                      <ShieldCheck className="w-4 h-4 text-brand-cyan-600 dark:text-brand-cyan-400" />
+                      <span>الصلاحيات الممنوحة لـ {input.fullName || 'المعلم'}</span>
+                    </h3>
+                    <p className="text-xs text-muted-foreground">
+                      حدد الصلاحيات الإجرائية المسموح بها لهذا المعلم بشكل مستقل:
+                    </p>
+                  </div>
 
-              <fieldset className="grid gap-2 rounded-2xl border border-border p-3 sm:grid-cols-2">
-                <legend className="px-1 text-sm font-bold">التبويبات المتاحة في بوابة المعلم</legend>
-                {teacherTabs.map((tab) => (
-                  <label key={tab} className="flex items-start gap-2 rounded-lg bg-muted/40 p-3 text-sm">
-                    <input
-                      type="checkbox"
-                      className="mt-1 accent-cyan-600"
-                      checked={input.tabs.includes(tab)}
-                      onChange={(event) => toggleTab(tab, event.target.checked)}
-                    />
-                    <span>{TEACHER_TABS[tab].label}</span>
-                  </label>
-                ))}
-              </fieldset>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {teacherPermissions.map((permission) => {
+                      const isChecked = input.permissions.includes(permission);
+                      const isViewDetails = permission === 'viewStudentDetails';
+                      const isDisabled = isViewDetails && !input.permissions.includes('viewStudents');
+
+                      return (
+                        <label
+                          key={permission}
+                          className={`p-3.5 rounded-2xl border transition-all flex items-start justify-between gap-3 cursor-pointer ${
+                            isChecked
+                              ? 'bg-card border-brand-cyan-500/40 shadow-soft-sm'
+                              : 'bg-muted/30 border-border opacity-85'
+                          } ${isDisabled ? 'opacity-50 cursor-not-allowed pointer-events-none' : ''}`}
+                        >
+                          <div className="min-w-0 flex-1">
+                            <span className="text-xs font-bold text-foreground block">
+                              {TEACHER_PERMISSIONS[permission]}
+                            </span>
+                            <span className="text-[11px] text-muted-foreground block mt-0.5">
+                              {permission === 'viewAccount' && 'عرض المبالغ المستحقة والمسددة وكشف الحساب.'}
+                              {permission === 'publishForum' && 'نشر بوستات وإعلانات في المنتدى الداخلي.'}
+                              {permission === 'viewSchedule' && 'عرض جدول قاعات ومواعيد السنتر بالكامل.'}
+                              {permission === 'requestExtraSession' && 'إمكانية إرسال طلب حصة إضافية للموافقة.'}
+                              {permission === 'viewStudents' && 'عرض قوائم وأسماء الطلاب في مجموعاته فقط.'}
+                              {permission === 'viewStudentDetails' && 'عرض أرقام أولياء الأمور والبيانات التفصيلية.'}
+                            </span>
+                          </div>
+
+                          <input
+                            type="checkbox"
+                            aria-label={TEACHER_PERMISSIONS[permission]}
+                            checked={isChecked}
+                            disabled={isDisabled}
+                            onChange={(e) => togglePermission(permission, e.target.checked)}
+                            className="sr-only"
+                          />
+
+                          <div
+                            aria-hidden="true"
+                            className={`w-11 h-6 rounded-full transition-colors relative shrink-0 p-0.5 border ${
+                              isChecked
+                                ? 'bg-brand-cyan-600 border-brand-cyan-500'
+                                : 'bg-muted border-border'
+                            }`}
+                          >
+                            <span
+                              className={`block w-5 h-5 rounded-full bg-white shadow-md transition-transform ${
+                                isChecked ? '-translate-x-5' : 'translate-x-0'
+                              }`}
+                            />
+                          </div>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Visible Tabs in Teacher Portal */}
+                <div className="space-y-3 pt-2 border-t border-border">
+                  <div>
+                    <h3 className="text-sm font-black text-foreground flex items-center gap-2">
+                      <Layers className="w-4 h-4 text-brand-cyan-600 dark:text-brand-cyan-400" />
+                      <span>التحكم في الصفحات والتبويبات الظاهرة في بوابة المعلم</span>
+                    </h3>
+                    <p className="text-xs text-muted-foreground">
+                      اختر الأقسام التي تظهر في شريط التنقل الخاص بالمعلم عند تسجيل دخوله:
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5">
+                    {teacherTabs.map((tab) => {
+                      const isChecked = input.tabs.includes(tab);
+                      return (
+                        <label
+                          key={tab}
+                          className={`flex items-center gap-2 p-2.5 rounded-xl border text-xs font-bold cursor-pointer transition-all ${
+                            isChecked
+                              ? 'bg-brand-cyan-500/10 border-brand-cyan-500/40 text-foreground'
+                              : 'bg-muted/30 border-border text-muted-foreground hover:bg-muted/60'
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            aria-label={TEACHER_TABS[tab].label}
+                            className="accent-cyan-600 rounded"
+                            checked={isChecked}
+                            onChange={(e) => toggleTab(tab, e.target.checked)}
+                          />
+                          <span className="truncate">{TEACHER_TABS[tab].label}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
             </>
           )}
         </div>
 
-        <footer className="flex items-center justify-between border-t border-border px-5 py-3">
-          {step > 1 && step < 3 && (
-            <Button type="button" variant="outline" onClick={() => setStep(step - 1)}>
-              السابق
+        {/* Modal Footer Controls */}
+        <footer className="border-t border-border px-6 py-4 bg-muted/20 flex items-center justify-between">
+          {step === 2 ? (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setStep(1)}
+              className="rounded-xl flex items-center gap-1.5 text-xs font-bold"
+            >
+              <ArrowRight size={14} />
+              <span>السابق (بيانات المعلم)</span>
             </Button>
-          )}
-          {step === 3 && (
-            <Button type="button" variant="outline" onClick={() => setStep(1)}>
-              العودة للبيانات الأساسية
-            </Button>
-          )}
-          <div className="ms-auto flex items-center gap-2">
-            <Button type="button" variant="ghost" onClick={onClose} disabled={saving}>
+          ) : (
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={onClose}
+              disabled={saving}
+              className="rounded-xl text-xs font-bold text-muted-foreground"
+            >
               إلغاء
             </Button>
-            {step < 2 ? (
-              <Button type="submit">التالي</Button>
-            ) : step === 2 ? (
-              <Button type="submit" disabled={saving}>
-                {saving ? 'جارٍ الحفظ…' : 'حفظ المعلم'}
+          )}
+
+          <div className="ms-auto flex items-center gap-2">
+            {step === 1 ? (
+              <Button
+                type="button"
+                aria-label="التالي"
+                onClick={handleNextStep}
+                className="rounded-xl bg-brand-cyan-600 hover:bg-brand-cyan-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-soft-sm px-5"
+              >
+                <span>التالي</span>
+                <ArrowLeft size={14} />
               </Button>
-            ) : null}
+            ) : (
+              <Button
+                type="submit"
+                aria-label="حفظ المعلم"
+                disabled={saving}
+                className="rounded-xl bg-brand-cyan-600 hover:bg-brand-cyan-500 text-white font-bold text-xs flex items-center gap-2 shadow-soft-sm px-6"
+              >
+                <Check size={16} />
+                <span>{saving ? 'جارٍ الحفظ…' : 'حفظ المعلم'}</span>
+              </Button>
+            )}
           </div>
         </footer>
       </form>

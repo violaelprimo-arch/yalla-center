@@ -18,6 +18,9 @@ export const TEACHER_TABS = {
   students: { label: 'الطلاب', permission: 'viewStudents' },
   extraSession: { label: 'طلب محاضرة إضافية', permission: 'requestExtraSession' },
   forum: { label: 'المنتدى الداخلي', permission: 'publishForum' },
+  materials: { label: 'المذكرات والملازم', permission: 'viewSchedule' },
+  exams: { label: 'الامتحانات', permission: 'viewStudents' },
+  profile: { label: 'الملف الشخصي', permission: 'viewAccount' },
 } as const;
 
 export type TeacherPermission = keyof typeof TEACHER_PERMISSIONS;
@@ -26,8 +29,10 @@ export const teacherPermissions = Object.keys(TEACHER_PERMISSIONS) as TeacherPer
 export const teacherTabs = Object.keys(TEACHER_TABS) as TeacherTab[];
 
 export const LEGACY_TEACHER_MODELS = {
+  center: 'نظام السنتر — متوسط الحضور',
   fixed_session: 'أجر ثابت للحصة',
-  per_attendee: 'مبلغ ثابت لكل طالب حاضر',
+  private: 'نظام البرايفت — نسبة مئوية',
+  per_attendee: 'أجر ثابت لكل طالب حاضر في الحصة',
 } as const;
 
 const usernamePattern = /^[a-z0-9][a-z0-9._-]{2,31}$/;
@@ -43,7 +48,7 @@ const phone = z.string().transform(value => normalizeDigits(value).replace(/[\s(
   .pipe(z.string().regex(/^\+?\d{7,15}$/, 'اكتب رقم هاتف صحيح'));
 
 const legacyPricingSchema = z.object({
-  model: z.enum(['fixed_session', 'private', 'per_attendee']),
+  model: z.enum(['center', 'fixed_session', 'private', 'per_attendee']),
   value: z.number().finite().min(0, 'القيمة لازم تكون صفر أو أكثر').max(1000000)
     .refine(value => Math.abs(value * 100 - Math.round(value * 100)) < 0.000001, 'استخدم رقمًا بمنزلتين عشريتين كحد أقصى'),
 }).refine(contract => contract.model !== 'private' || contract.value <= 100, 'نسبة المعلم من صفر إلى 100');
@@ -70,7 +75,7 @@ export const teacherInputSchema = z.object({
   login: loginSchema.nullable(),
   permissions: z.array(z.enum(['viewAccount', 'publishForum', 'viewSchedule', 'requestExtraSession', 'viewStudents', 'viewStudentDetails'])).max(6)
     .transform(items => [...new Set(items)]),
-  tabs: z.array(z.enum(['account', 'schedule', 'students', 'extraSession', 'forum'])).max(5)
+  tabs: z.array(z.enum(['account', 'schedule', 'students', 'extraSession', 'forum', 'materials', 'exams', 'profile'])).max(10)
     .transform(items => [...new Set(items)]),
 }).superRefine((input, ctx) => {
   if (input.phone2 && input.phone2 === input.phone) {

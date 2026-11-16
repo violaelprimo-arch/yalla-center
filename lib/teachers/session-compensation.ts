@@ -26,6 +26,7 @@ export function calculateTeacherSessionPay(
     if (contract.model === 'per_attendee') teacherCents = attendanceCount * rateCents;
     if (contract.model === 'fixed_session') teacherCents = rateCents;
     if (contract.model === 'private') teacherCents = Math.round(revenueCents * rateCents / 10000);
+    if (contract.model === 'center') teacherCents = attendanceCount * rateCents;
   }
 
   return { teacherDue: teacherCents / 100, centerNet: (revenueCents - teacherCents) / 100 };

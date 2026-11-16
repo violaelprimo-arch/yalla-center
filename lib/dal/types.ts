@@ -294,7 +294,7 @@ export interface TeacherLessonCompensation {
     classroomName?: string;
     groupName: string;
     attendanceCount: number;
-    model: 'fixed_session' | 'per_attendee' | 'per_session';
+    model: 'fixed_session' | 'per_attendee' | 'per_session' | 'center';
     rate: number;
     revenue: number;
     teacherDue: number;
