@@ -16,16 +16,24 @@
 import {
   AiUsageLedgerEntry,
   BillingFrequency,
+  CenterAccountSummaryRow,
   CenterExtended,
+  CenterFinancialMovement,
+  CenterFinancialMovementType,
   CenterStatus,
   CentralAiConfig,
   ComplaintRecord,
   ContactMessage,
   CustomerRequest,
+  DynamicExpenseCategory,
   OwnerAppointment,
+  OwnerAuditLog,
   OwnerExpense,
+  OwnerExpenseRecurrence,
   OwnerInvoice,
   OwnerPayment,
+  OwnerPaymentMethod,
+  PaymentStatus,
   PlatformCommunicationSettings,
   SubscriptionPlan,
   SupportAccessSession,
@@ -725,6 +733,160 @@ export const INITIAL_APPOINTMENTS: OwnerAppointment[] = [
   },
 ];
 
+export const INITIAL_EXPENSE_CATEGORIES: DynamicExpenseCategory[] = [
+  { id: 'cat-cloudflare', key: 'cloudflare', nameAr: 'خوادم وشبكة Cloudflare Workers', descriptionAr: 'تكاليف تشغيل الحوسبة السحابية والتخزين السريع', isCustom: false },
+  { id: 'cat-firebase', key: 'firebase', nameAr: 'قواعد بيانات واستضافة Firebase', descriptionAr: 'قواعد بيانات Firestore والمصادقة والتخزين السحابي', isCustom: false },
+  { id: 'cat-whatsapp', key: 'whatsapp_api', nameAr: 'بوابة رسائل WhatsApp Cloud API', descriptionAr: 'رسائل الإشعارات وأكواد الدخول وأولياء الأمور', isCustom: false },
+  { id: 'cat-ai', key: 'ai_gemini', nameAr: 'خدمات الذكاء الاصطناعي Google Gemini', descriptionAr: 'توليد الاختبارات وفهرسة المذكرات وتصحيح الأسئلة', isCustom: false },
+  { id: 'cat-domains', key: 'domains', nameAr: 'الدومينات وحجز النطاقات', descriptionAr: 'تجديد النطاقات الرسمية وشهادات الأمان SSL', isCustom: false },
+  { id: 'cat-marketing', key: 'marketing', nameAr: 'التسويق والحملات الإعلانية', descriptionAr: 'إعلانات السوشيال ميديا وجذب السناتر الجديدة', isCustom: false },
+  { id: 'cat-salaries', key: 'salaries', nameAr: 'المرتبات والمكافآت', descriptionAr: 'رواتب المطورين وفريق الدعم الفني والمبيعات', isCustom: false },
+  { id: 'cat-other', key: 'other', nameAr: 'مصروفات تشغيلية أخرى', descriptionAr: 'رسوم بنكية، أدوات داخلية، ومصروفات عامة', isCustom: false },
+];
+
+export const INITIAL_PAYMENTS: OwnerPayment[] = [
+  {
+    id: 'pay-2026-001',
+    receiptNumber: 'REC-2026-001',
+    invoiceId: 'inv-2026-001',
+    tenantId: 'tenant-maher-001',
+    tenantNameAr: 'سنتر الماهر النموذجي',
+    amount: 3500,
+    paymentMethod: 'vodafone_cash',
+    referenceNumber: '88291',
+    receivedAt: '2026-11-03T11:30:00.000Z',
+    recordedBy: 'مالك المنصة',
+    notes: 'تم استلام المبلغ بالكامل عبر فودافون كاش كود 88291',
+  },
+  {
+    id: 'pay-2026-002',
+    receiptNumber: 'REC-2026-002',
+    invoiceId: 'inv-2026-002',
+    tenantId: 'tenant-rowad-002',
+    tenantNameAr: 'سنتر الرواد التعليمي',
+    amount: 7000,
+    paymentMethod: 'bank_transfer',
+    referenceNumber: 'TRF-992144',
+    receivedAt: '2026-11-05T15:00:00.000Z',
+    recordedBy: 'مالك المنصة',
+    notes: 'تحويل بنكي رسمي للبنك الأهلي المصري',
+  },
+];
+
+export const INITIAL_MOVEMENTS: CenterFinancialMovement[] = [
+  {
+    id: 'mov-001',
+    movementNumber: 'MOV-2026-001',
+    tenantId: 'tenant-maher-001',
+    tenantSlug: 'al-maher',
+    tenantNameAr: 'سنتر الماهر النموذجي',
+    date: '2026-11-01',
+    type: 'invoice',
+    description: 'إصدار فاتورة اشتراك شهري (باقة المحترفين Pro) لشهر نوفمبر 2026',
+    debit: 3500,
+    credit: 0,
+    balanceAfter: 3500,
+    invoiceId: 'inv-2026-001',
+    status: 'confirmed',
+    recordedBy: 'نظام الفوترة التلقائي',
+    createdAt: '2026-11-01T00:00:00.000Z',
+  },
+  {
+    id: 'mov-002',
+    movementNumber: 'MOV-2026-002',
+    tenantId: 'tenant-maher-001',
+    tenantSlug: 'al-maher',
+    tenantNameAr: 'سنتر الماهر النموذجي',
+    date: '2026-11-03',
+    type: 'full_payment',
+    description: 'سداد كامل لفاتورة اشتراك شهر نوفمبر 2026',
+    debit: 0,
+    credit: 3500,
+    balanceAfter: 0,
+    paymentMethod: 'vodafone_cash',
+    referenceNumber: '88291',
+    invoiceId: 'inv-2026-001',
+    paymentId: 'pay-2026-001',
+    notes: 'تحويل محفظة إلكترونية معتمد',
+    status: 'confirmed',
+    recordedBy: 'مالك المنصة',
+    createdAt: '2026-11-03T11:30:00.000Z',
+  },
+  {
+    id: 'mov-003',
+    movementNumber: 'MOV-2026-003',
+    tenantId: 'tenant-rowad-002',
+    tenantSlug: 'al-rowad',
+    tenantNameAr: 'سنتر الرواد التعليمي',
+    date: '2026-11-01',
+    type: 'invoice',
+    description: 'إصدار فاتورة اشتراك شهري (باقة المؤسسات Enterprise) لشهر نوفمبر 2026',
+    debit: 7500,
+    credit: 0,
+    balanceAfter: 7500,
+    invoiceId: 'inv-2026-002',
+    status: 'confirmed',
+    recordedBy: 'نظام الفوترة التلقائي',
+    createdAt: '2026-11-01T00:00:00.000Z',
+  },
+  {
+    id: 'mov-004',
+    movementNumber: 'MOV-2026-004',
+    tenantId: 'tenant-rowad-002',
+    tenantSlug: 'al-rowad',
+    tenantNameAr: 'سنتر الرواد التعليمي',
+    date: '2026-11-01',
+    type: 'discount',
+    description: 'خصم ولاء السنتر الترويجي على فاتورة نوفمبر',
+    debit: 0,
+    credit: 500,
+    balanceAfter: 7000,
+    invoiceId: 'inv-2026-002',
+    notes: 'خصم معتمد بقرار المالك',
+    status: 'confirmed',
+    recordedBy: 'مالك المنصة',
+    createdAt: '2026-11-01T01:00:00.000Z',
+  },
+  {
+    id: 'mov-005',
+    movementNumber: 'MOV-2026-005',
+    tenantId: 'tenant-rowad-002',
+    tenantSlug: 'al-rowad',
+    tenantNameAr: 'سنتر الرواد التعليمي',
+    date: '2026-11-05',
+    type: 'full_payment',
+    description: 'سداد كامل المبلغ المتبقي لفاتورة اشتراك شهر نوفمبر 2026',
+    debit: 0,
+    credit: 7000,
+    balanceAfter: 0,
+    paymentMethod: 'bank_transfer',
+    referenceNumber: 'TRF-992144',
+    invoiceId: 'inv-2026-002',
+    paymentId: 'pay-2026-002',
+    notes: 'تحويل بنكي - البنك الأهلي المصري',
+    status: 'confirmed',
+    recordedBy: 'مالك المنصة',
+    createdAt: '2026-11-05T15:00:00.000Z',
+  },
+  {
+    id: 'mov-006',
+    movementNumber: 'MOV-2026-006',
+    tenantId: 'tenant-future-003',
+    tenantSlug: 'al-mustaqbal',
+    tenantNameAr: 'أكاديمية المستقبل التعليمية',
+    date: '2026-11-15',
+    type: 'invoice',
+    description: 'فاتورة تفعيل الاشتراك بعد انتهاء الفترة التجريبية (باقة البداية Starter)',
+    debit: 1500,
+    credit: 0,
+    balanceAfter: 1500,
+    invoiceId: 'inv-2026-003',
+    status: 'confirmed',
+    recordedBy: 'نظام الفوترة التلقائي',
+    createdAt: '2026-11-15T00:00:00.000Z',
+  },
+];
+
 // ============================================================================
 // SINGLETON IN-MEMORY & LOCALSTORAGE STATE CONTAINER
 // ============================================================================
@@ -742,7 +904,9 @@ const STORAGE_KEYS = {
   AI_LEDGER: 'yc_saas_ai_ledger_v2',
   INVOICES: 'yc_saas_invoices_v2',
   PAYMENTS: 'yc_saas_payments_v2',
+  MOVEMENTS: 'yc_saas_movements_v2',
   EXPENSES: 'yc_saas_expenses_v2',
+  EXPENSE_CATEGORIES: 'yc_saas_expense_categories_v2',
   APPOINTMENTS: 'yc_saas_appointments_v2',
   SUPPORT_SESSIONS: 'yc_saas_support_sessions_v2',
   AUDIT_LOGS: 'yc_saas_audit_logs_v2',
@@ -779,8 +943,10 @@ let memorySettings = { ...INITIAL_COMMUNICATION_SETTINGS };
 let memoryAiConfig = { ...INITIAL_AI_CONFIG };
 let memoryAiLedger: AiUsageLedgerEntry[] = [];
 let memoryInvoices = [...INITIAL_INVOICES];
-let memoryPayments: OwnerPayment[] = [];
-let memoryExpenses = [...INITIAL_EXPENSES];
+let memoryPayments: OwnerPayment[] = [...INITIAL_PAYMENTS];
+let memoryMovements: CenterFinancialMovement[] = [...INITIAL_MOVEMENTS];
+let memoryExpenses: OwnerExpense[] = [...INITIAL_EXPENSES];
+let memoryExpenseCategories: DynamicExpenseCategory[] = [...INITIAL_EXPENSE_CATEGORIES];
 let memoryAppointments = [...INITIAL_APPOINTMENTS];
 let memorySupportSessions: SupportAccessSession[] = [];
 
@@ -946,7 +1112,8 @@ export class SaasPlatformService {
 
   static setCenterStatus(
     centerId: string,
-    status: CenterStatus
+    status: CenterStatus,
+    _reason?: string
   ): CenterExtended | null {
     return this.updateCenter(centerId, { status });
   }
@@ -1048,21 +1215,50 @@ export class SaasPlatformService {
     return all.find((p) => p.id === id) || null;
   }
 
-  static savePlan(plan: SubscriptionPlan): SubscriptionPlan {
+  static savePlan(plan: Partial<SubscriptionPlan> & { id: string; nameAr: string }): SubscriptionPlan {
     const all = this.getPlans(true);
     const nowIso = new Date().toISOString();
     const idx = all.findIndex((p) => p.id === plan.id);
 
+    const fullPlan: SubscriptionPlan = {
+      tier: 'custom',
+      nameEn: plan.nameAr,
+      descriptionAr: '',
+      monthlyPrice: 0,
+      annualPrice: 0,
+      currency: 'EGP',
+      billingFrequency: 'monthly',
+      trialDays: 14,
+      maxStudents: -1,
+      maxTeachers: -1,
+      maxEmployees: -1,
+      maxBranches: -1,
+      aiUnitAllowance: 100,
+      notificationAllowance: 1000,
+      storageAllowanceMb: 5000,
+      enabledModules: [],
+      features: [],
+      highlighted: false,
+      isPublic: true,
+      displayOrder: all.length + 1,
+      isActive: true,
+      createdAt: nowIso,
+      updatedAt: nowIso,
+      ...plan,
+      id: plan.id,
+      nameAr: plan.nameAr,
+    };
+
     if (idx !== -1) {
-      all[idx] = { ...plan, updatedAt: nowIso };
+      all[idx] = { ...all[idx], ...fullPlan, updatedAt: nowIso };
     } else {
-      all.push({ ...plan, createdAt: nowIso, updatedAt: nowIso });
+      all.push(fullPlan);
     }
 
     all.sort((a, b) => a.displayOrder - b.displayOrder);
     memoryPlans = all;
     writeStorage(STORAGE_KEYS.PLANS, all);
-    return plan;
+    return fullPlan;
   }
 
   static archivePlan(planId: string): void {
@@ -1339,88 +1535,68 @@ export class SaasPlatformService {
   }
 
   // --------------------------------------------------------------------------
-  // 7. Platform Owner SaaS Finance
+  // 7. Platform Owner SaaS Finance & Multi-Tenant Accounting Engine
   // --------------------------------------------------------------------------
-  static getInvoices(): OwnerInvoice[] {
-    return readStorage(STORAGE_KEYS.INVOICES, memoryInvoices);
+  static toPiastres(amount: number): number {
+    return Math.round((Number(amount) || 0) * 100);
   }
 
-  static createInvoice(
-    data: Omit<OwnerInvoice, 'id' | 'invoiceNumber' | 'issuedAt' | 'totalDue' | 'amountPaid'> & {
-      amountPaid?: number;
-    }
-  ): OwnerInvoice {
-    const all = this.getInvoices();
-    const count = all.length + 1;
-    const seq = String(count).padStart(3, '0');
-    const invoiceNumber = `INV-YC-2026-${seq}`;
-    const nowIso = new Date().toISOString();
-    const totalDue = Math.max(0, data.amount - (data.discount || 0));
+  static fromPiastres(piastres: number): number {
+    return Math.round(piastres) / 100;
+  }
 
-    const invoice: OwnerInvoice = {
-      ...data,
-      id: `inv-${Date.now()}`,
-      invoiceNumber,
-      issuedAt: nowIso,
-      totalDue,
-      amountPaid: data.amountPaid ?? (data.status === 'paid' ? totalDue : 0),
+  // --- Dynamic Expense Categories ---
+  static getExpenseCategories(): DynamicExpenseCategory[] {
+    return readStorage(STORAGE_KEYS.EXPENSE_CATEGORIES, memoryExpenseCategories);
+  }
+
+  static createExpenseCategory(cat: {
+    key: string;
+    nameAr: string;
+    descriptionAr?: string;
+  }): DynamicExpenseCategory {
+    const all = this.getExpenseCategories();
+    const sanitizedKey = cat.key.trim().toLowerCase().replace(/[\s-]+/g, '_');
+    const existing = all.find((c) => c.key === sanitizedKey);
+    if (existing) return existing;
+
+    const newCat: DynamicExpenseCategory = {
+      id: `cat-${Date.now()}`,
+      key: sanitizedKey,
+      nameAr: cat.nameAr.trim(),
+      descriptionAr: cat.descriptionAr,
+      isCustom: true,
     };
-
-    const next = [invoice, ...all];
-    memoryInvoices = next;
-    writeStorage(STORAGE_KEYS.INVOICES, next);
-    return invoice;
+    const next = [...all, newCat];
+    memoryExpenseCategories = next;
+    writeStorage(STORAGE_KEYS.EXPENSE_CATEGORIES, next);
+    return newCat;
   }
 
-  static recordPayment(payment: {
-    invoiceId: string;
-    amount: number;
-    paymentMethod: OwnerPayment['paymentMethod'];
-    referenceNumber?: string;
-    recordedBy?: string;
-    notes?: string;
-  }): OwnerPayment | null {
-    const invoices = this.getInvoices();
-    const inv = invoices.find((i) => i.id === payment.invoiceId);
-    if (!inv) return null;
-
-    const receiptNumber = `REC-${Date.now().toString().slice(-6)}`;
-    const nowIso = new Date().toISOString();
-
-    const record: OwnerPayment = {
-      id: `pay-${Date.now()}`,
-      receiptNumber,
-      invoiceId: inv.id,
-      tenantId: inv.tenantId,
-      tenantNameAr: inv.tenantNameAr,
-      amount: payment.amount,
-      paymentMethod: payment.paymentMethod,
-      referenceNumber: payment.referenceNumber,
-      receivedAt: nowIso,
-      recordedBy: payment.recordedBy || 'مالك المنصة',
-      notes: payment.notes,
-    };
-
-    // Update invoice balance
-    inv.amountPaid += payment.amount;
-    if (inv.amountPaid >= inv.totalDue) {
-      inv.status = 'paid';
-      inv.paidAt = nowIso;
-    } else if (inv.amountPaid > 0) {
-      inv.status = 'partially_paid';
-    }
-
-    memoryInvoices = invoices;
-    writeStorage(STORAGE_KEYS.INVOICES, invoices);
-
-    const payments = readStorage(STORAGE_KEYS.PAYMENTS, memoryPayments);
-    const nextPay = [record, ...payments];
-    memoryPayments = nextPay;
-    writeStorage(STORAGE_KEYS.PAYMENTS, nextPay);
-
-    return record;
+  static updateExpenseCategory(
+    id: string,
+    updates: Partial<DynamicExpenseCategory>
+  ): DynamicExpenseCategory | null {
+    const all = this.getExpenseCategories();
+    const idx = all.findIndex((c) => c.id === id);
+    if (idx === -1) return null;
+    const updated = { ...all[idx], ...updates };
+    all[idx] = updated;
+    memoryExpenseCategories = [...all];
+    writeStorage(STORAGE_KEYS.EXPENSE_CATEGORIES, memoryExpenseCategories);
+    return updated;
   }
 
+  static deleteExpenseCategory(id: string): boolean {
+    const all = this.getExpenseCategories();
+    const next = all.filter((c) => c.id !== id);
+    if (next.length === all.length) return false;
+    memoryExpenseCategories = next;
+    writeStorage(STORAGE_KEYS.EXPENSE_CATEGORIES, next);
+    return true;
+  }
+
+  // --- Platform Expenses Management ---
   static getExpenses(): OwnerExpense[] {
     return readStorage(STORAGE_KEYS.EXPENSES, memoryExpenses);
   }
@@ -1431,6 +1607,7 @@ export class SaasPlatformService {
     const expense: OwnerExpense = {
       ...data,
       id: `exp-${Date.now()}`,
+      amount: this.fromPiastres(this.toPiastres(data.amount)),
     };
     const all = this.getExpenses();
     const next = [expense, ...all];
@@ -1439,28 +1616,567 @@ export class SaasPlatformService {
     return expense;
   }
 
+  static deleteExpense(id: string): boolean {
+    const all = this.getExpenses();
+    const next = all.filter((e) => e.id !== id);
+    if (next.length === all.length) return false;
+    memoryExpenses = next;
+    writeStorage(STORAGE_KEYS.EXPENSES, next);
+    return true;
+  }
+
+  // --- Financial Movements Ledger ---
+  static getMovements(tenantId?: string): CenterFinancialMovement[] {
+    const all = readStorage(STORAGE_KEYS.MOVEMENTS, memoryMovements);
+    if (!tenantId) return all;
+    return all.filter((m) => m.tenantId === tenantId || m.tenantSlug === tenantId);
+  }
+
+  static getCenterStatement(tenantIdOrSlug: string): {
+    center: CenterExtended | null;
+    movements: CenterFinancialMovement[];
+    totalDebit: number;
+    totalCredit: number;
+    remainingBalance: number;
+    creditBalance: number;
+    lastPaymentDate?: string;
+    nextDueDate: string;
+    paymentStatus: PaymentStatus;
+  } {
+    const centers = this.getCenters();
+    const center = centers.find((c) => c.id === tenantIdOrSlug || c.slug === tenantIdOrSlug) || null;
+    const tid = center?.id || tenantIdOrSlug;
+
+    const rawMovements = this.getMovements(tid);
+    // Sort chronologically ascending to accurately accumulate running balance
+    const sorted = [...rawMovements].sort(
+      (a, b) =>
+        new Date(a.date).getTime() - new Date(b.date).getTime() ||
+        a.movementNumber.localeCompare(b.movementNumber)
+    );
+
+    let runningPiastres = 0;
+    let totalDebitPiastres = 0;
+    let totalCreditPiastres = 0;
+    let lastPayDate: string | undefined = undefined;
+
+    const computed = sorted.map((mov) => {
+      if (mov.status === 'confirmed') {
+        const debitP = this.toPiastres(mov.debit || 0);
+        const creditP = this.toPiastres(mov.credit || 0);
+        runningPiastres += debitP - creditP;
+        totalDebitPiastres += debitP;
+        totalCreditPiastres += creditP;
+        if (creditP > 0 && mov.date) {
+          lastPayDate = mov.date;
+        }
+      }
+      return {
+        ...mov,
+        balanceAfter: this.fromPiastres(runningPiastres),
+      };
+    });
+
+    const netRemainingPiastres = Math.max(0, runningPiastres);
+    const existingCreditPiastres = this.toPiastres(center?.creditBalance || 0);
+    const excessCreditPiastres = runningPiastres < 0 ? Math.abs(runningPiastres) : 0;
+    const totalCreditBalance = this.fromPiastres(Math.max(existingCreditPiastres, excessCreditPiastres));
+
+    let paymentStatus: PaymentStatus = 'unpaid';
+    const todayIso = new Date().toISOString().slice(0, 10);
+    const dueDate = center?.subscriptionEndDate || todayIso;
+
+    if (netRemainingPiastres === 0 && totalCreditPiastres > 0) {
+      paymentStatus = 'paid';
+    } else if (totalCreditPiastres > 0 && netRemainingPiastres > 0) {
+      paymentStatus = 'partial';
+    } else if (netRemainingPiastres > 0 && dueDate < todayIso) {
+      paymentStatus = 'overdue';
+    }
+
+    return {
+      center,
+      movements: [...computed].reverse(), // descending for table display
+      totalDebit: this.fromPiastres(totalDebitPiastres),
+      totalCredit: this.fromPiastres(totalCreditPiastres),
+      remainingBalance: this.fromPiastres(netRemainingPiastres),
+      creditBalance: totalCreditBalance,
+      lastPaymentDate: lastPayDate,
+      nextDueDate: dueDate,
+      paymentStatus,
+    };
+  }
+
+  static createMovement(data: {
+    tenantId: string;
+    type: CenterFinancialMovementType;
+    description: string;
+    debit: number;
+    credit: number;
+    paymentMethod?: OwnerPaymentMethod | 'none';
+    referenceNumber?: string;
+    invoiceId?: string;
+    paymentId?: string;
+    notes?: string;
+    recordedBy?: string;
+    date?: string;
+  }): CenterFinancialMovement {
+    const centers = this.getCenters();
+    const center = centers.find((c) => c.id === data.tenantId || c.slug === data.tenantId);
+    const all = this.getMovements();
+    const count = all.length + 1;
+    const seq = String(count).padStart(3, '0');
+    const movementNumber = `MOV-2026-${seq}`;
+    const nowIso = new Date().toISOString();
+    const date = data.date || nowIso.slice(0, 10);
+
+    const debitP = this.toPiastres(data.debit);
+    const creditP = this.toPiastres(data.credit);
+
+    // Get current balance before this movement
+    const statement = this.getCenterStatement(data.tenantId);
+    const balanceBeforeP = this.toPiastres(statement.remainingBalance) - this.toPiastres(statement.creditBalance);
+    const balanceAfterP = balanceBeforeP + (debitP - creditP);
+
+    const movement: CenterFinancialMovement = {
+      id: `mov-${Date.now()}`,
+      movementNumber,
+      tenantId: center?.id || data.tenantId,
+      tenantSlug: center?.slug || '',
+      tenantNameAr: center?.nameAr || 'سنتر تعليمي',
+      date,
+      type: data.type,
+      description: data.description,
+      debit: this.fromPiastres(debitP),
+      credit: this.fromPiastres(creditP),
+      balanceAfter: this.fromPiastres(balanceAfterP),
+      paymentMethod: data.paymentMethod || 'none',
+      referenceNumber: data.referenceNumber,
+      invoiceId: data.invoiceId,
+      paymentId: data.paymentId,
+      notes: data.notes,
+      status: 'confirmed',
+      recordedBy: data.recordedBy || 'مالك المنصة',
+      createdAt: nowIso,
+    };
+
+    const next = [movement, ...all];
+    memoryMovements = next;
+    writeStorage(STORAGE_KEYS.MOVEMENTS, next);
+
+    return movement;
+  }
+
+  static reverseMovement(
+    id: string,
+    reason: string,
+    reversedBy = 'مالك المنصة'
+  ): { ok: boolean; error?: string } {
+    const all = this.getMovements();
+    const mov = all.find((m) => m.id === id);
+    if (!mov) return { ok: false, error: 'العملية المالية غير موجودة.' };
+    if (mov.status === 'reversed') return { ok: false, error: 'تم إلغاء هذه العملية مسبقاً.' };
+
+    const nowIso = new Date().toISOString();
+    mov.status = 'reversed';
+    mov.reversedBy = reversedBy;
+    mov.reversedAt = nowIso;
+    mov.reversalReason = reason;
+
+    // Roll back invoice / payment if linked
+    if (mov.paymentId) {
+      const payments = this.getPayments();
+      const nextPayments = payments.filter((p) => p.id !== mov.paymentId);
+      memoryPayments = nextPayments;
+      writeStorage(STORAGE_KEYS.PAYMENTS, nextPayments);
+
+      if (mov.invoiceId) {
+        const invoices = this.getInvoices();
+        const inv = invoices.find((i) => i.id === mov.invoiceId);
+        if (inv) {
+          inv.amountPaid = Math.max(0, inv.amountPaid - mov.credit);
+          if (inv.amountPaid === 0) {
+            inv.status = 'issued';
+          } else if (inv.amountPaid < inv.totalDue) {
+            inv.status = 'partially_paid';
+          }
+          memoryInvoices = invoices;
+          writeStorage(STORAGE_KEYS.INVOICES, invoices);
+        }
+      }
+    }
+
+    memoryMovements = all;
+    writeStorage(STORAGE_KEYS.MOVEMENTS, all);
+
+    this.recordAuditLog({
+      action: 'REVERSE_FINANCIAL_MOVEMENT',
+      entityType: 'financial_movement',
+      entityId: id,
+      actorEmail: reversedBy,
+      details: {
+        movementNumber: mov.movementNumber,
+        reason,
+        debit: mov.debit,
+        credit: mov.credit,
+        tenantId: mov.tenantId,
+      },
+    });
+
+    return { ok: true };
+  }
+
+  // --- Invoices & Subscription Billing ---
+  static getInvoices(): OwnerInvoice[] {
+    return readStorage(STORAGE_KEYS.INVOICES, memoryInvoices);
+  }
+
+  static createInvoice(
+    data: Omit<
+      OwnerInvoice,
+      'id' | 'invoiceNumber' | 'issuedAt' | 'totalDue' | 'amountPaid' | 'periodStart' | 'periodEnd' | 'dueDate'
+    > & {
+      amountPaid?: number;
+      periodStart?: string;
+      periodEnd?: string;
+      dueDate?: string;
+    }
+  ): OwnerInvoice {
+    const all = this.getInvoices();
+    const count = all.length + 1;
+    const seq = String(count).padStart(3, '0');
+    const invoiceNumber = `INV-YC-2026-${seq}`;
+    const nowIso = new Date().toISOString();
+    const periodStart = data.periodStart || nowIso.slice(0, 10);
+    const periodEnd =
+      data.periodEnd || new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
+    const dueDate =
+      data.dueDate || new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
+
+    const amountP = this.toPiastres(data.amount);
+    const discountP = this.toPiastres(data.discount || 0);
+    const totalDueP = Math.max(0, amountP - discountP);
+    const totalDue = this.fromPiastres(totalDueP);
+    const amountPaid = data.amountPaid ?? (data.status === 'paid' ? totalDue : 0);
+
+    const invoice: OwnerInvoice = {
+      ...data,
+      id: `inv-${Date.now()}`,
+      invoiceNumber,
+      issuedAt: nowIso,
+      periodStart,
+      periodEnd,
+      dueDate,
+      amount: this.fromPiastres(amountP),
+      discount: this.fromPiastres(discountP),
+      totalDue,
+      amountPaid,
+    };
+
+    const next = [invoice, ...all];
+    memoryInvoices = next;
+    writeStorage(STORAGE_KEYS.INVOICES, next);
+
+    // Automatically record debit movement in center ledger
+    this.createMovement({
+      tenantId: data.tenantId,
+      type: 'invoice',
+      description: `إصدار فاتورة اشتراك #${invoiceNumber} (${data.planNameAr})`,
+      debit: totalDue,
+      credit: 0,
+      invoiceId: invoice.id,
+      notes: data.notes,
+      date: data.periodStart || nowIso.slice(0, 10),
+    });
+
+    // If marked paid on creation, record credit movement
+    if (amountPaid > 0) {
+      this.createMovement({
+        tenantId: data.tenantId,
+        type: amountPaid >= totalDue ? 'full_payment' : 'partial_payment',
+        description: `سداد فاتورة اشتراك #${invoiceNumber}`,
+        debit: 0,
+        credit: amountPaid,
+        invoiceId: invoice.id,
+        notes: 'سداد فوري عند الإصدار',
+        date: data.periodStart || nowIso.slice(0, 10),
+      });
+    }
+
+    return invoice;
+  }
+
+  // --- Payments & Collections ---
+  static getPayments(): OwnerPayment[] {
+    return readStorage(STORAGE_KEYS.PAYMENTS, memoryPayments);
+  }
+
+  static recordPayment(payment: {
+    invoiceId: string;
+    amount: number;
+    paymentMethod: OwnerPaymentMethod;
+    referenceNumber?: string;
+    recordedBy?: string;
+    notes?: string;
+    receivedAt?: string;
+  }): { payment: OwnerPayment; movement: CenterFinancialMovement } | null {
+    const invoices = this.getInvoices();
+    const inv = invoices.find((i) => i.id === payment.invoiceId);
+    if (!inv) return null;
+
+    const receiptNumber = `REC-${Date.now().toString().slice(-6)}`;
+    const nowIso = new Date().toISOString();
+    const receivedAt = payment.receivedAt || nowIso;
+
+    const paymentAmountP = this.toPiastres(payment.amount);
+    const paymentAmount = this.fromPiastres(paymentAmountP);
+
+    const record: OwnerPayment = {
+      id: `pay-${Date.now()}`,
+      receiptNumber,
+      invoiceId: inv.id,
+      tenantId: inv.tenantId,
+      tenantNameAr: inv.tenantNameAr,
+      amount: paymentAmount,
+      paymentMethod: payment.paymentMethod,
+      referenceNumber: payment.referenceNumber,
+      receivedAt,
+      recordedBy: payment.recordedBy || 'مالك المنصة',
+      notes: payment.notes,
+    };
+
+    // Update invoice balance
+    const currentPaidP = this.toPiastres(inv.amountPaid);
+    const totalDueP = this.toPiastres(inv.totalDue);
+    const nextPaidP = currentPaidP + paymentAmountP;
+
+    inv.amountPaid = this.fromPiastres(Math.min(nextPaidP, totalDueP));
+    if (nextPaidP >= totalDueP) {
+      inv.status = 'paid';
+      inv.paidAt = receivedAt;
+    } else if (nextPaidP > 0) {
+      inv.status = 'partially_paid';
+    }
+
+    // Check for overpayment / credit balance surplus
+    if (nextPaidP > totalDueP) {
+      const surplusP = nextPaidP - totalDueP;
+      const surplus = this.fromPiastres(surplusP);
+      const centers = this.getCenters();
+      const center = centers.find((c) => c.id === inv.tenantId);
+      if (center) {
+        center.creditBalance = this.fromPiastres(
+          this.toPiastres(center.creditBalance || 0) + surplusP
+        );
+        memoryCenters = centers;
+        writeStorage(STORAGE_KEYS.CENTERS, centers);
+      }
+    }
+
+    memoryInvoices = invoices;
+    writeStorage(STORAGE_KEYS.INVOICES, invoices);
+
+    const payments = this.getPayments();
+    const nextPay = [record, ...payments];
+    memoryPayments = nextPay;
+    writeStorage(STORAGE_KEYS.PAYMENTS, nextPay);
+
+    // Record credit movement in center ledger
+    const movement = this.createMovement({
+      tenantId: inv.tenantId,
+      type: nextPaidP >= totalDueP ? 'full_payment' : 'partial_payment',
+      description: `سداد لفاتورة اشتراك #${inv.invoiceNumber} (${payment.paymentMethod})`,
+      debit: 0,
+      credit: paymentAmount,
+      paymentMethod: payment.paymentMethod,
+      referenceNumber: payment.referenceNumber,
+      invoiceId: inv.id,
+      paymentId: record.id,
+      notes: payment.notes,
+      recordedBy: payment.recordedBy,
+      date: receivedAt.slice(0, 10),
+    });
+
+    return { payment: record, movement };
+  }
+
+  // --- Adjustments, Discounts & Credits ---
+  static addAdjustmentOrDiscount(data: {
+    tenantId: string;
+    type: 'discount' | 'credit_added' | 'refund' | 'adjustment';
+    amount: number;
+    description: string;
+    reason: string;
+    invoiceId?: string;
+    recordedBy?: string;
+  }): CenterFinancialMovement {
+    const isCreditOperation = data.type === 'discount' || data.type === 'credit_added';
+    const isDebitOperation = data.type === 'refund';
+
+    const movement = this.createMovement({
+      tenantId: data.tenantId,
+      type: data.type,
+      description: data.description,
+      debit: isDebitOperation ? data.amount : 0,
+      credit: isCreditOperation ? data.amount : 0,
+      invoiceId: data.invoiceId,
+      notes: `السبب: ${data.reason}`,
+      recordedBy: data.recordedBy || 'مالك المنصة',
+    });
+
+    return movement;
+  }
+
+  // --- Interactive Center Accounts Sheet (19 Columns) ---
+  static getCenterAccountsSheet(): CenterAccountSummaryRow[] {
+    const centers = this.getCenters();
+    const invoices = this.getInvoices();
+    const todayIso = new Date().toISOString().slice(0, 10);
+
+    return centers.map((center, index) => {
+      const statement = this.getCenterStatement(center.id);
+      const centerInvoices = invoices.filter(
+        (i) => i.tenantId === center.id && i.status !== 'cancelled'
+      );
+
+      const totalInvoicedP = centerInvoices.reduce(
+        (sum, inv) => sum + this.toPiastres(inv.amount),
+        0
+      );
+      const totalDiscountsP = centerInvoices.reduce(
+        (sum, inv) => sum + this.toPiastres(inv.discount || 0),
+        0
+      );
+      const netDueP = Math.max(0, totalInvoicedP - totalDiscountsP);
+      const totalPaidP = this.toPiastres(statement.totalCredit);
+      const remainingBalanceP = Math.max(0, netDueP - totalPaidP);
+
+      let paymentStatus: PaymentStatus = 'unpaid';
+      if (remainingBalanceP === 0 && totalPaidP > 0) {
+        paymentStatus = 'paid';
+      } else if (totalPaidP > 0 && remainingBalanceP > 0) {
+        paymentStatus = 'partial';
+      } else if (remainingBalanceP > 0 && center.subscriptionEndDate < todayIso) {
+        paymentStatus = 'overdue';
+      }
+
+      return {
+        seq: index + 1,
+        tenantId: center.id,
+        slug: center.slug,
+        centerNameAr: center.nameAr,
+        adminName: center.adminName,
+        adminPhone: center.adminPhone,
+        planNameAr: center.planNameAr,
+        planTier: (center.subscriptionPlanId.replace('plan-', '') as any) || 'pro',
+        billingFrequency: center.billingFrequency,
+        subscriptionStartDate: center.subscriptionStartDate.slice(0, 10),
+        subscriptionEndDate: center.subscriptionEndDate.slice(0, 10),
+        totalInvoiced: this.fromPiastres(totalInvoicedP),
+        totalDiscounts: this.fromPiastres(totalDiscountsP),
+        netDue: this.fromPiastres(netDueP),
+        totalPaid: this.fromPiastres(totalPaidP),
+        remainingBalance: this.fromPiastres(remainingBalanceP),
+        creditBalance: statement.creditBalance,
+        lastPaymentDate: statement.lastPaymentDate,
+        nextDueDate: center.subscriptionEndDate.slice(0, 10),
+        paymentStatus,
+        subscriptionStatus: center.status,
+      };
+    });
+  }
+
+  // --- Upcoming Renewals & Alerts (7-day, 30-day, overdue) ---
+  static getUpcomingRenewals(): {
+    expiring7Days: CenterAccountSummaryRow[];
+    expiring30Days: CenterAccountSummaryRow[];
+    overdueAccounts: CenterAccountSummaryRow[];
+    dueToday: CenterAccountSummaryRow[];
+  } {
+    const sheet = this.getCenterAccountsSheet();
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const msPerDay = 86400000;
+    const todayIso = today.toISOString().slice(0, 10);
+
+    const expiring7Days: CenterAccountSummaryRow[] = [];
+    const expiring30Days: CenterAccountSummaryRow[] = [];
+    const overdueAccounts: CenterAccountSummaryRow[] = [];
+    const dueToday: CenterAccountSummaryRow[] = [];
+
+    sheet.forEach((row) => {
+      const endDate = new Date(row.subscriptionEndDate);
+      endDate.setHours(0, 0, 0, 0);
+      const diffDays = Math.round((endDate.getTime() - today.getTime()) / msPerDay);
+
+      if (row.remainingBalance > 0 && diffDays < 0) {
+        overdueAccounts.push(row);
+      } else if (diffDays === 0) {
+        dueToday.push(row);
+      } else if (diffDays > 0 && diffDays <= 7) {
+        expiring7Days.push(row);
+      } else if (diffDays > 7 && diffDays <= 30) {
+        expiring30Days.push(row);
+      }
+    });
+
+    return {
+      expiring7Days,
+      expiring30Days,
+      overdueAccounts,
+      dueToday,
+    };
+  }
+
+  // --- Financial Summary Metrics ---
   static getFinancialSummary(): {
     totalRevenueInvoiced: number;
     totalCollections: number;
     outstandingReceivables: number;
     totalExpenses: number;
     netProfit: number;
+    totalDiscounts: number;
+    activeCentersCount: number;
+    overdueCount: number;
   } {
-    const invoices = this.getInvoices();
+    const sheet = this.getCenterAccountsSheet();
     const expenses = this.getExpenses();
 
-    const totalRevenueInvoiced = invoices.reduce((sum, inv) => sum + inv.totalDue, 0);
-    const totalCollections = invoices.reduce((sum, inv) => sum + inv.amountPaid, 0);
-    const outstandingReceivables = Math.max(0, totalRevenueInvoiced - totalCollections);
-    const totalExpenses = expenses.reduce((sum, exp) => sum + exp.amount, 0);
-    const netProfit = totalCollections - totalExpenses;
+    const totalRevenueInvoicedP = sheet.reduce(
+      (sum, row) => sum + this.toPiastres(row.totalInvoiced),
+      0
+    );
+    const totalDiscountsP = sheet.reduce(
+      (sum, row) => sum + this.toPiastres(row.totalDiscounts),
+      0
+    );
+    const totalCollectionsP = sheet.reduce(
+      (sum, row) => sum + this.toPiastres(row.totalPaid),
+      0
+    );
+    const outstandingReceivablesP = sheet.reduce(
+      (sum, row) => sum + this.toPiastres(row.remainingBalance),
+      0
+    );
+    const totalExpensesP = expenses.reduce(
+      (sum, exp) => sum + this.toPiastres(exp.amount),
+      0
+    );
+    const netProfitP = totalCollectionsP - totalExpensesP;
+
+    const overdueCount = sheet.filter((r) => r.paymentStatus === 'overdue').length;
+    const activeCentersCount = sheet.filter((r) => r.subscriptionStatus === 'active').length;
 
     return {
-      totalRevenueInvoiced,
-      totalCollections,
-      outstandingReceivables,
-      totalExpenses,
-      netProfit,
+      totalRevenueInvoiced: this.fromPiastres(totalRevenueInvoicedP),
+      totalCollections: this.fromPiastres(totalCollectionsP),
+      outstandingReceivables: this.fromPiastres(outstandingReceivablesP),
+      totalExpenses: this.fromPiastres(totalExpensesP),
+      netProfit: this.fromPiastres(netProfitP),
+      totalDiscounts: this.fromPiastres(totalDiscountsP),
+      activeCentersCount,
+      overdueCount,
     };
   }
 
@@ -1515,5 +2231,26 @@ export class SaasPlatformService {
     memorySettings = updated;
     writeStorage(STORAGE_KEYS.SETTINGS, updated);
     return updated;
+  }
+
+  // --------------------------------------------------------------------------
+  // 10. Audit Logs
+  // --------------------------------------------------------------------------
+  static getAuditLogs(): OwnerAuditLog[] {
+    return readStorage(STORAGE_KEYS.AUDIT_LOGS, []);
+  }
+
+  static recordAuditLog(
+    log: Omit<OwnerAuditLog, 'id' | 'timestamp'>
+  ): OwnerAuditLog {
+    const entry: OwnerAuditLog = {
+      ...log,
+      id: `audit-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      timestamp: new Date().toISOString(),
+    };
+    const all = this.getAuditLogs();
+    const next = [entry, ...all];
+    writeStorage(STORAGE_KEYS.AUDIT_LOGS, next);
+    return entry;
   }
 }

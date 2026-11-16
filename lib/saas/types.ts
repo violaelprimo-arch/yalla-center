@@ -15,7 +15,7 @@
 export type SubscriptionPlanTier = 'starter' | 'pro' | 'enterprise' | 'custom';
 export type CenterStatus = 'active' | 'trial' | 'suspended' | 'expired';
 export type BillingFrequency = 'monthly' | 'annual';
-export type PaymentStatus = 'paid' | 'pending' | 'overdue';
+export type PaymentStatus = 'paid' | 'partial' | 'pending' | 'unpaid' | 'overdue';
 
 export interface CenterExtended {
   id: string;
@@ -42,6 +42,7 @@ export interface CenterExtended {
   billingFrequency: BillingFrequency;
   paymentStatus: PaymentStatus;
   customPricing?: number | null;
+  creditBalance?: number; // Previous credit / overpayment balance in EGP
 
   // Operational Counts
   branchesCount: number;
@@ -350,11 +351,13 @@ export interface OwnerInvoice {
 }
 
 export type OwnerPaymentMethod =
-  | 'bank_transfer'
   | 'cash'
+  | 'instapay'
   | 'vodafone_cash'
+  | 'bank_transfer'
   | 'card'
-  | 'cheque';
+  | 'cheque'
+  | 'other';
 
 export interface OwnerPayment {
   id: string;
@@ -370,23 +373,88 @@ export interface OwnerPayment {
   notes?: string;
 }
 
-export type OwnerExpenseCategory =
-  | 'hosting'
-  | 'ai_services'
-  | 'sms_whatsapp'
-  | 'marketing'
-  | 'salaries'
-  | 'licenses'
-  | 'other';
+export type CenterFinancialMovementType =
+  | 'invoice' // إصدار فاتورة اشتراك
+  | 'renewal' // تجديد اشتراك
+  | 'upgrade' // ترقية الباقة
+  | 'full_payment' // دفع اشتراك كامل
+  | 'partial_payment' // دفع جزء من الاشتراك
+  | 'discount' // خصم
+  | 'credit_added' // إضافة رصيد سابق
+  | 'refund' // استرداد مبلغ
+  | 'adjustment'; // تعديل أو تسوية مالية
+
+export interface CenterFinancialMovement {
+  id: string;
+  movementNumber: string; // e.g. MOV-2026-001
+  tenantId: string;
+  tenantSlug: string;
+  tenantNameAr: string;
+  date: string; // YYYY-MM-DD
+  type: CenterFinancialMovementType;
+  description: string;
+  debit: number; // مدين (يزيد المستحق على السنتر)
+  credit: number; // دائن (يسدد أو يخصم من المستحق)
+  balanceAfter: number; // الرصيد المتبقي بعد الحركة
+  paymentMethod?: OwnerPaymentMethod | 'none';
+  referenceNumber?: string;
+  invoiceId?: string;
+  paymentId?: string;
+  notes?: string;
+  status: 'confirmed' | 'reversed';
+  reversedBy?: string;
+  reversedAt?: string;
+  reversalReason?: string;
+  recordedBy: string;
+  createdAt: string;
+}
+
+export interface DynamicExpenseCategory {
+  id: string;
+  key: string;
+  nameAr: string;
+  descriptionAr?: string;
+  isCustom?: boolean;
+}
+
+export type OwnerExpenseRecurrence = 'one_time' | 'monthly' | 'annual';
 
 export interface OwnerExpense {
   id: string;
-  category: OwnerExpenseCategory;
+  category: string; // Dynamic category key
+  categoryNameAr?: string;
   titleAr: string;
   amount: number;
-  date: string;
+  date: string; // YYYY-MM-DD
   paidTo: string;
+  paymentMethod?: OwnerPaymentMethod;
+  referenceNumber?: string;
+  recurrence?: OwnerExpenseRecurrence;
   notes?: string;
+}
+
+export interface CenterAccountSummaryRow {
+  seq: number;
+  tenantId: string;
+  slug: string;
+  centerNameAr: string;
+  adminName: string;
+  adminPhone: string;
+  planNameAr: string;
+  planTier: SubscriptionPlanTier;
+  billingFrequency: BillingFrequency;
+  subscriptionStartDate: string;
+  subscriptionEndDate: string;
+  totalInvoiced: number; // إجمالي قيمة الفواتير
+  totalDiscounts: number; // إجمالي الخصومات
+  netDue: number; // صافي المستحق = الفواتير - الخصومات
+  totalPaid: number; // إجمالي المدفوع
+  remainingBalance: number; // المتبقي
+  creditBalance: number; // الرصيد الدائن إن وجد
+  lastPaymentDate?: string; // آخر دفعة
+  nextDueDate: string; // موعد الاستحقاق القادم
+  paymentStatus: PaymentStatus; // حالة الدفع
+  subscriptionStatus: CenterStatus; // حالة الاشتراك
 }
 
 export type OwnerAppointmentType =

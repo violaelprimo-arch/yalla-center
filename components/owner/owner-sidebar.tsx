@@ -17,9 +17,27 @@ import {
   Menu,
   X,
   LogOut,
+  FileSpreadsheet,
+  Receipt,
+  CreditCard,
+  ArrowUpRight,
+  TrendingUp,
+  Download,
+  Calendar,
 } from 'lucide-react';
 import { BrandLogo } from '@/components/brand/brand-logo';
 import { RTLIcon } from '@/components/ui/rtl-icon';
+
+export const FINANCE_SUB_TABS = [
+  { id: 'overview', title: 'نظرة عامة', href: '/owner/finance?tab=overview', icon: Wallet },
+  { id: 'sheet', title: 'شيت حسابات السناتر', href: '/owner/finance?tab=sheet', icon: FileSpreadsheet },
+  { id: 'invoices', title: 'فواتير الاشتراكات', href: '/owner/finance?tab=invoices', icon: Receipt },
+  { id: 'payments', title: 'التحصيلات والمدفوعات', href: '/owner/finance?tab=payments', icon: CreditCard },
+  { id: 'expenses', title: 'المصروفات', href: '/owner/finance?tab=expenses', icon: ArrowUpRight },
+  { id: 'reports', title: 'الأرباح والتقارير المالية', href: '/owner/finance?tab=reports', icon: TrendingUp },
+  { id: 'calendar', title: 'تقويم المواعيد والتجديدات', href: '/owner/finance?tab=calendar', icon: Calendar },
+  { id: 'export', title: 'النسخ والتصدير', href: '/owner/finance?tab=export', icon: Download },
+];
 
 export const OWNER_NAV_TABS = [
   {
@@ -141,43 +159,65 @@ export function OwnerSidebar({
           {OWNER_NAV_TABS.map((tab) => {
             const active = isTabActive(tab.href, tab.exact);
             const Icon = tab.icon;
+            const isFinanceTab = tab.href === '/owner/finance';
 
             return (
-              <Link
-                key={tab.href}
-                href={tab.href}
-                onClick={onClose}
-                className={`flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-bold transition-all relative ${
-                  active
-                    ? 'bg-[#111A38] text-brand-cyan-400 shadow-soft-sm ring-1 ring-brand-cyan-500/30'
-                    : 'text-slate-300 hover:text-white hover:bg-[#111A38]/60'
-                }`}
-              >
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <Icon
-                    className={`w-4 h-4 shrink-0 ${
-                      active ? 'text-brand-cyan-400' : 'text-slate-400'
-                    }`}
-                  />
-                  <span className="truncate">{tab.title}</span>
-                </div>
+              <div key={tab.href} className="space-y-1">
+                <Link
+                  href={tab.href}
+                  onClick={onClose}
+                  className={`flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-bold transition-all relative ${
+                    active
+                      ? 'bg-[#111A38] text-brand-cyan-400 shadow-soft-sm ring-1 ring-brand-cyan-500/30'
+                      : 'text-slate-300 hover:text-white hover:bg-[#111A38]/60'
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <Icon
+                      className={`w-4 h-4 shrink-0 ${
+                        active ? 'text-brand-cyan-400' : 'text-slate-400'
+                      }`}
+                    />
+                    <span className="truncate">{tab.title}</span>
+                  </div>
 
-                {tab.badge && (
-                  <span
-                    className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold ${
-                      active
-                        ? 'bg-brand-cyan-500/20 text-brand-cyan-300 border border-brand-cyan-500/30'
-                        : 'bg-slate-800 text-slate-400 border border-slate-700'
-                    }`}
-                  >
-                    {tab.badge}
-                  </span>
-                )}
+                  {tab.badge && (
+                    <span
+                      className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold ${
+                        active
+                          ? 'bg-brand-cyan-500/20 text-brand-cyan-300 border border-brand-cyan-500/30'
+                          : 'bg-slate-800 text-slate-400 border border-slate-700'
+                      }`}
+                    >
+                      {tab.badge}
+                    </span>
+                  )}
 
-                {active && (
-                  <span className="absolute right-0 top-1/2 -translate-y-1/2 w-1.5 h-6 bg-brand-cyan-500 rounded-l-full shadow-[0_0_12px_#00E5FF]" />
+                  {active && (
+                    <span className="absolute right-0 top-1/2 -translate-y-1/2 w-1.5 h-6 bg-brand-cyan-500 rounded-l-full shadow-[0_0_12px_#00E5FF]" />
+                  )}
+                </Link>
+
+                {/* Sub-menu for the 8 financial tabs under 'الحسابات والمواعيد' */}
+                {isFinanceTab && active && (
+                  <div className="pr-5 pl-2 py-1 space-y-1 border-r border-[#1C2541] mr-3 my-1">
+                    {FINANCE_SUB_TABS.map((sub) => {
+                      const SubIcon = sub.icon;
+                      return (
+                        <Link
+                          key={sub.id}
+                          href={sub.href}
+                          onClick={onClose}
+                          className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[11px] font-medium text-slate-400 hover:text-white hover:bg-[#111A38]/40 transition-colors"
+                        >
+                          <SubIcon className="w-3 h-3 text-brand-cyan-400/70 shrink-0" />
+                          <span className="truncate">{sub.title}</span>
+                        </Link>
+                      );
+                    })}
+                  </div>
                 )}
-              </Link>
+              </div>
             );
           })}
 

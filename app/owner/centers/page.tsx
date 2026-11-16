@@ -33,6 +33,7 @@ import {
   RefreshCw,
   Clock,
   ChevronDown,
+  Wallet,
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -40,6 +41,7 @@ import { Badge } from '@/components/ui/badge';
 import { RTLIcon } from '@/components/ui/rtl-icon';
 import { SaasPlatformService } from '@/lib/saas/service';
 import { CenterExtended, CenterStatus, BillingFrequency, SubscriptionPlan } from '@/lib/saas/types';
+import { CenterFinancialModal } from '@/components/owner/center-financial-modal';
 
 export default function OwnerCentersPage() {
   const [centers, setCenters] = useState<CenterExtended[]>([]);
@@ -53,6 +55,7 @@ export default function OwnerCentersPage() {
 
   // Selected center for details/actions modal
   const [selectedCenter, setSelectedCenter] = useState<CenterExtended | null>(null);
+  const [financialCenter, setFinancialCenter] = useState<CenterExtended | null>(null);
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'info' | 'subscription' | 'limits' | 'ai' | 'support'>('info');
 
@@ -409,20 +412,34 @@ export default function OwnerCentersPage() {
               </div>
 
               {/* Action Buttons Footer */}
-              <div className="mt-4 pt-3 border-t border-border flex items-center justify-between gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    setSelectedCenter(center);
-                    setIsDetailsOpen(true);
-                  }}
-                  className="h-8 text-xs font-bold px-2.5 gap-1"
-                >
-                  <Sliders className="w-3.5 h-3.5" />
-                  <span>إدارة وتحكم</span>
-                </Button>
+              <div className="mt-4 pt-3 border-t border-border flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setSelectedCenter(center);
+                      setIsDetailsOpen(true);
+                    }}
+                    className="h-8 text-xs font-bold px-2.5 gap-1"
+                  >
+                    <Sliders className="w-3.5 h-3.5" />
+                    <span>إدارة وتحكم</span>
+                  </Button>
+
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setFinancialCenter(center)}
+                    className="h-8 text-xs font-bold px-2.5 gap-1 border-brand-cyan-500/30 text-brand-cyan-600 dark:text-brand-cyan-400 hover:bg-brand-cyan-500/10"
+                    title="عرض كشف حساب السنتر والفواتير والتحصيلات"
+                  >
+                    <Wallet className="w-3.5 h-3.5" />
+                    <span>الحسابات وكشف الحساب</span>
+                  </Button>
+                </div>
 
                 <div className="flex items-center gap-1.5">
                   <Button
@@ -1193,6 +1210,15 @@ export default function OwnerCentersPage() {
             </div>
           </div>
         </div>
+      )}
+      {/* Center Detailed Statement & Financial Ledger Modal */}
+      {financialCenter && (
+        <CenterFinancialModal
+          center={financialCenter}
+          isOpen={true}
+          onClose={() => setFinancialCenter(null)}
+          onDataChanged={reloadData}
+        />
       )}
     </div>
   );

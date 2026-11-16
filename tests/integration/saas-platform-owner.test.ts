@@ -27,15 +27,15 @@ describe('Yalla Center — Complete Platform Owner & SaaS Integration Test Suite
 
   // 3. Non-owner Role Barrier
   it('3. Non-owner (CENTER_ADMIN) attempting to access /owner is rejected', () => {
-    const role = 'CENTER_ADMIN';
+    const role: string = 'CENTER_ADMIN';
     const canAccessOwner = role === 'PLATFORM_OWNER';
     expect(canAccessOwner).toBe(false);
   });
 
   // 4. Tenant Isolation Barrier
   it('4. Cross-tenant barrier prevents al-maher user from accessing al-rowad', () => {
-    const userTenant = 'al-maher';
-    const requestedTenant = 'al-rowad';
+    const userTenant: string = 'al-maher';
+    const requestedTenant: string = 'al-rowad';
     const isOwner = false;
     const isAllowed = isOwner || userTenant === requestedTenant;
     expect(isAllowed).toBe(false);
