@@ -74,9 +74,9 @@ async function requestGroups<T>(slug: string, token: string, input?: object, sig
 }
 
 export function useCenterGroups(tenant: Tenant, catalog: MasterData, auth: FirebaseAuthSessionState, role: UserRole) {
-  const demo = !auth.configured;
   const token = auth.idToken;
-  const account = auth.user?.uid ?? token;
+  const demo = !auth.configured || !token;
+  const account = auth.user?.uid ?? token ?? (demo ? 'demo' : null);
   const { id: tenantId, slug } = tenant;
   const key = `yc-center-groups-v1:${tenantId}`;
   const roomsKey = `yc-center-classrooms-v1:${tenantId}`;
@@ -86,17 +86,11 @@ export function useCenterGroups(tenant: Tenant, catalog: MasterData, auth: Fireb
   const managedGroups = useRef<Group[]>([]);
   const managedClassrooms = useRef<Classroom[]>([]);
   const request = useRef(0);
-  const current = state?.tenantId === tenantId && state.account === account && (demo || token) ? state : undefined;
+  const current = state?.tenantId === tenantId && (demo || token) ? state : undefined;
   const canEdit = Boolean(current && !current.error && (demo
     ? ['CENTER_ADMIN', 'PLATFORM_OWNER'].includes(role) : token && current.canEdit));
 
   useEffect(() => {
-    if (!demo && !token) {
-      getDataProvider().setManagedGroups(tenantId, []);
-      getDataProvider().setManagedClassrooms(tenantId, []);
-      return;
-    }
-
     const controller = new AbortController();
     async function load() {
       const sequence = ++request.current;
@@ -132,7 +126,7 @@ export function useCenterGroups(tenant: Tenant, catalog: MasterData, auth: Fireb
       controller.abort();
       if (demo) window.removeEventListener('storage', sync);
     };
-  }, [account, demo, key, revision, roomsKey, slug, tenantId, token]);
+  }, [account, auth.loading, demo, key, revision, roomsKey, slug, tenantId, token]);
 
   async function applyGroups(records: Group[]) {
     request.current += 1;

@@ -21,7 +21,9 @@ import {
   ChevronDown,
   BookOpen,
   Users,
+  LogIn,
 } from 'lucide-react';
+import { useFirebaseAuthSession } from '@/lib/firebase/client';
 import { UserRole } from '@/lib/dal/types';
 import { useTenant } from './tenant-provider';
 import { BrandLogo } from '@/components/brand/brand-logo';
@@ -194,6 +196,7 @@ const ROLE_LABELS: Record<UserRole, { label: string; color: string }> = {
 
 export function Sidebar({ mobileOpen = false, onNavigate }: { mobileOpen?: boolean; onNavigate?: () => void }) {
   const { tenant, currentRole, currentUser, isOwnerMode } = useTenant();
+  const auth = useFirebaseAuthSession();
   const pathname = usePathname();
 
   const isMasterDataActive =
@@ -383,51 +386,61 @@ export function Sidebar({ mobileOpen = false, onNavigate }: { mobileOpen?: boole
 
       {/* User Card Footer */}
       <div className="p-3 border-t border-[#1C2541] bg-[#070B19]/50">
-        <Link
-          href={`/center/${tenant.slug}/profile`}
-          className="flex items-center gap-3 p-2 rounded-xl hover:bg-[#111A38] transition-colors group"
-        >
-          <div className="relative w-9 h-9 rounded-full overflow-hidden border border-brand-cyan-500/40 bg-slate-800 shrink-0">
-            {currentUser.avatarUrl ? (
-              /* eslint-disable-next-line @next/next/no-img-element */
-              <img
-                src={currentUser.avatarUrl}
-                alt={currentUser.fullName}
-                className="w-full h-full object-cover"
-                onError={(e) => {
-                  (e.target as any).src =
-                    'https://images.unsplash.com/photo-1534528741775-53994a69daeb';
-                }}
-              />
-            ) : (
-              <div className="w-full h-full flex items-center justify-center text-xs font-bold text-slate-300">
-                {currentUser.fullName.charAt(0)}
-              </div>
-            )}
-            <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 border border-[#0B132B]" />
-          </div>
-
-          <div className="flex-1 min-w-0">
-            <p className="text-xs font-bold text-white truncate group-hover:text-brand-cyan-400 transition-colors">
-              {currentUser.fullName}
-            </p>
-            <div className="flex items-center gap-1.5 mt-0.5">
-              <span
-                className={cn(
-                  'text-[10px] px-1.5 py-0.2 rounded border font-medium truncate',
-                  roleMeta.color
-                )}
-              >
-                {roleMeta.label}
-              </span>
+        {auth.user ? (
+          <Link
+            href={`/center/${tenant.slug}/profile`}
+            className="flex items-center gap-3 p-2 rounded-xl hover:bg-[#111A38] transition-colors group"
+          >
+            <div className="relative w-9 h-9 rounded-full overflow-hidden border border-brand-cyan-500/40 bg-slate-800 shrink-0">
+              {currentUser.avatarUrl ? (
+                /* eslint-disable-next-line @next/next/no-img-element */
+                <img
+                  src={currentUser.avatarUrl}
+                  alt={currentUser.fullName}
+                  className="w-full h-full object-cover"
+                  onError={(e) => {
+                    (e.target as any).src =
+                      'https://images.unsplash.com/photo-1534528741775-53994a69daeb';
+                  }}
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-xs font-bold text-slate-300">
+                  {currentUser.fullName ? currentUser.fullName.charAt(0) : '?'}
+                </div>
+              )}
+              <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 border border-[#0B132B]" />
             </div>
-          </div>
 
-          <RTLIcon
-            icon={ExternalLink}
-            className="w-3.5 h-3.5 text-slate-500 group-hover:text-slate-300"
-          />
-        </Link>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-bold text-white truncate group-hover:text-brand-cyan-400 transition-colors">
+                {currentUser.fullName}
+              </p>
+              <div className="flex items-center gap-1.5 mt-0.5">
+                <span
+                  className={cn(
+                    'text-[10px] px-1.5 py-0.2 rounded border font-medium truncate',
+                    roleMeta.color
+                  )}
+                >
+                  {roleMeta.label}
+                </span>
+              </div>
+            </div>
+
+            <RTLIcon
+              icon={ExternalLink}
+              className="w-3.5 h-3.5 text-slate-500 group-hover:text-slate-300"
+            />
+          </Link>
+        ) : (
+          <Link
+            href="/login"
+            className="flex items-center justify-center gap-2 p-2.5 rounded-xl bg-brand-cyan-600/20 text-brand-cyan-300 hover:bg-brand-cyan-600/30 border border-brand-cyan-500/30 text-xs font-bold transition-colors w-full"
+          >
+            <LogIn className="w-4 h-4 text-brand-cyan-400" />
+            <span>تسجيل الدخول</span>
+          </Link>
+        )}
       </div>
     </aside>
   );

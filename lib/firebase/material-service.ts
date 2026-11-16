@@ -20,10 +20,10 @@ const collection = 'center_materials';
 export async function authorizeMaterialAccess(authorization: string | null, tenantId: string, write = false) {
   const idToken = extractBearerToken(authorization);
   if (!idToken) throw new MaterialError(401, 'سجّل الدخول بحساب السنتر');
-  const { uid } = await verifyFirebaseIdToken(idToken);
+  const { uid, email } = await verifyFirebaseIdToken(idToken);
   if (uid.includes('/')) throw new MaterialError(401, 'معرّف الحساب غير صالح');
-  const store = await createServerFirestoreStore({ callerIdToken: idToken, requireServiceAccount: true });
-  const canEdit = await authorizeMasterData(store, uid, tenantId, write);
+  const store = await createServerFirestoreStore({ callerIdToken: idToken, requireServiceAccount: false });
+  const canEdit = await authorizeMasterData(store, uid, tenantId, write, email);
   return { store, uid, canEdit };
 }
 

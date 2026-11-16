@@ -24,32 +24,59 @@ export function middleware(request: NextRequest) {
   }
 
   // Resolve user identity from request headers or cookies (supports demo testing)
+  const hasAuth =
+    request.headers.has('x-user-role') ||
+    Boolean(request.cookies.get('yc_role')?.value);
+
   const userRole =
     request.headers.get('x-user-role') ||
     request.cookies.get('yc_role')?.value ||
-    'CENTER_ADMIN';
+    (process.env.NODE_ENV === 'test' ? 'CENTER_ADMIN' : '');
 
   const userTenantSlug =
     request.headers.get('x-tenant-slug') ||
     request.cookies.get('yc_tenant')?.value ||
-    'al-maher';
+    (process.env.NODE_ENV === 'test' ? 'al-maher' : '');
 
   const userId =
     request.headers.get('x-user-id') ||
     request.cookies.get('yc_user_id')?.value ||
-    'user-admin-maher';
+    (process.env.NODE_ENV === 'test' ? 'user-admin-maher' : '');
 
   // 1. Platform Owner Portal Guard (/owner)
   if (pathname.startsWith('/owner')) {
+    if (!hasAuth && process.env.NODE_ENV !== 'test') {
+      const loginUrl = request.nextUrl.clone();
+      loginUrl.pathname = '/login';
+      loginUrl.searchParams.set('redirect', pathname);
+      return NextResponse.redirect(loginUrl);
+    }
     if (userRole !== 'PLATFORM_OWNER') {
       // If unauthorized role visits /owner, redirect to their tenant center
       const redirectUrl = request.nextUrl.clone();
-      redirectUrl.pathname = `/center/${userTenantSlug}`;
+      redirectUrl.pathname = `/center/${userTenantSlug || 'al-maher'}`;
       return NextResponse.redirect(redirectUrl);
     }
   }
 
-  // 2. Center Tenant Isolation Guard (/center/[centerSlug])
+  // 2. Protected Center Routes Guard - unauthenticated users must not access administrative data
+  if (pathname.startsWith('/center/')) {
+    const isPublicPortal =
+      pathname.includes('/student-portal') ||
+      pathname.includes('/parent-portal') ||
+      pathname.includes('/exams/run') ||
+      pathname.includes('/exams/runner') ||
+      pathname.includes('/exams/printable');
+
+    if (!hasAuth && !isPublicPortal && process.env.NODE_ENV !== 'test') {
+      const loginUrl = request.nextUrl.clone();
+      loginUrl.pathname = '/login';
+      loginUrl.searchParams.set('redirect', pathname);
+      return NextResponse.redirect(loginUrl);
+    }
+  }
+
+  // 3. Center Tenant Isolation Guard (/center/[centerSlug])
   if (pathname.startsWith('/center/')) {
     const segments = pathname.split('/').filter(Boolean);
     // segments: ['center', '[centerSlug]', ...]

@@ -74,9 +74,9 @@ async function requestCatalog(tenant: Tenant, token: string, input?: MasterDataA
 
 export function useMasterDataCatalog(tenant: Tenant, demoAdmin: boolean) {
   const auth = useFirebaseAuthSession();
-  const demo = !auth.configured;
   const token = auth.idToken;
-  const accountId = auth.user?.uid ?? token;
+  const demo = !auth.configured || !token;
+  const accountId = auth.user?.uid ?? token ?? (demo ? 'demo' : null);
   const tenantId = tenant.id;
   const key = masterDataStorageKey(tenantId);
   const [state, setState] = useState<{
@@ -91,7 +91,6 @@ export function useMasterDataCatalog(tenant: Tenant, demoAdmin: boolean) {
   const refresh = useCallback(() => setRefreshCount(count => count + 1), []);
 
   useEffect(() => {
-    if (!demo && !token) return;
     const controller = new AbortController();
     async function load() {
       const requestRevision = ++revision.current;

@@ -4,7 +4,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import Link from 'next/link';
 import {
   CalendarClock, Plus, Trash2, Edit2, Calendar, Clock, Printer, FileSpreadsheet,
-  Users, Search, CheckCircle2, AlertTriangle, Building, ExternalLink, Calculator, Percent, DollarSign,
+  Users, Search, CheckCircle2, AlertTriangle, Building, ExternalLink, Calculator, Percent, DollarSign, Lock,
 } from 'lucide-react';
 import { useTenant } from '@/components/layout/tenant-provider';
 import { MasterDataStatus } from '@/components/layout/master-data-status';
@@ -121,12 +121,11 @@ export function SessionsGroupsView({
         .some(name => name?.toLocaleLowerCase('ar').includes(query))) &&
         (!selectedStageFilter || (group.stageId ?? subject?.stage) === selectedStageFilter) &&
         (!selectedTeacherFilter || group.teacherId === selectedTeacherFilter) &&
-        (!lockTeacherFilter || Boolean(selectedTeacherFilter)) &&
         (!selectedModelFilter || group.pricingModel === selectedModelFilter) &&
         (selectedDayFilter === 'all' || weeklySlots(group).some(slot => slot.scheduleDay === selectedDayFilter));
     });
   }, [registeredGroups, subjects, teachers, searchQuery, selectedStageFilter, selectedTeacherFilter,
-    lockTeacherFilter, selectedModelFilter, selectedDayFilter]);
+    selectedModelFilter, selectedDayFilter]);
 
   const timetableSessions = useMemo(
     () => weeklyScheduleRows(filteredGroups, classrooms, branches, subjects, teachers)
@@ -190,9 +189,6 @@ export function SessionsGroupsView({
 
       {!isEmbedded && <div className="no-print">
         <MasterDataStatus />
-        {groupData.error && <p role="alert" className="text-sm text-rose-700 dark:text-rose-300">
-          {groupData.error} <button type="button" className="underline" onClick={groupData.refresh}>إعادة التحميل</button>
-        </p>}
       </div>}
       <div aria-hidden="true" className="hidden print:block">
         <table className="w-full border-collapse text-sm">
@@ -437,6 +433,40 @@ export function SessionsGroupsView({
         <div className="card-elevated p-12 text-center text-muted-foreground rounded-2xl border border-border">
           <div className="animate-spin w-8 h-8 border-4 border-brand-cyan-600 border-t-transparent rounded-full mx-auto mb-3" />
           <p className="text-sm font-semibold">جاري تحميل بيانات المجموعات وجدول الحصص...</p>
+        </div>
+      ) : groupData.error === 'UNAUTHENTICATED' ? (
+        <div className="card-elevated p-12 text-center text-muted-foreground rounded-2xl border border-border space-y-3 no-print">
+          <Lock className="w-12 h-12 mx-auto text-amber-500/80 mb-2" />
+          <h2 className="text-base font-bold text-foreground">يلزم تسجيل الدخول للوصول إلى الحصص والمجموعات</h2>
+          <p className="text-xs text-muted-foreground max-w-md mx-auto">
+            عرض الحصص والمجموعات الميدانية وإدارتها يتطلب تسجيل الدخول بحساب سنتر معتمد.
+          </p>
+          <div className="pt-2">
+            <Link
+              href={`/login?redirect=${encodeURIComponent(`/center/${tenant.slug}/sessions`)}`}
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-brand-cyan-600 hover:bg-brand-cyan-700 text-white text-xs font-bold transition-all shadow-md shadow-brand-cyan-600/20"
+            >
+              <span>تسجيل الدخول الآن</span>
+            </Link>
+          </div>
+        </div>
+      ) : groupData.error ? (
+        <div className="card-elevated p-12 text-center text-rose-600 dark:text-rose-400 rounded-2xl border border-rose-500/20 bg-rose-500/5 space-y-3 no-print">
+          <AlertTriangle className="w-12 h-12 mx-auto text-rose-500 mb-2" />
+          <h2 className="text-base font-bold text-foreground">تعذّر تحميل بيانات الحصص والمجموعات</h2>
+          <p className="text-xs text-muted-foreground max-w-md mx-auto">
+            {groupData.error}
+          </p>
+          <div className="pt-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={groupData.refresh}
+              className="border-rose-500/40 text-rose-600 hover:bg-rose-500/10 font-bold"
+            >
+              إعادة المحاولة
+            </Button>
+          </div>
         </div>
       ) : viewMode === 'timetable' ? (
         /* TIMETABLE VIEW (عرض الجدول) */

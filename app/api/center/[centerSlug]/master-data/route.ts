@@ -31,11 +31,11 @@ async function resolveContext(req: NextRequest, centerSlug: string, requireAdmin
 
   const bearer = extractBearerToken(req.headers.get('authorization'));
   if (!bearer) throw new MasterDataError(401, 'سجّل الدخول بحساب إدارة السنتر للمتابعة');
-  const { uid } = await verifyFirebaseIdToken(bearer);
+  const { uid, email } = await verifyFirebaseIdToken(bearer);
   if (uid.includes('/')) throw new MasterDataError(401, 'معرّف الحساب غير صالح');
 
   const store = await createServerFirestoreStore({ callerIdToken: bearer, requireServiceAccount });
-  const canEdit = await authorizeMasterData(store, uid, tenant.id, requireAdmin);
+  const canEdit = await authorizeMasterData(store, uid, tenant.id, requireAdmin, email);
   return { tenant, store, dal, canEdit };
 }
 

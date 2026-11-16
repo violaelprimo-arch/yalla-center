@@ -119,7 +119,7 @@ export function Header({ onMenuToggle, menuOpen }: { onMenuToggle?: () => void; 
           </Link>
         )}
 
-        {/* Role Display: Authentic Role for Logged-In, or Switcher in Demo Mode */}
+        {/* Role Display: Authentic Role for Logged-In, or Switcher in Demo/Dev Mode Only */}
         {auth.user ? (
           <div className="flex items-center gap-1.5 bg-brand-cyan-500/10 border border-brand-cyan-500/30 py-1 px-2.5 rounded-xl">
             <ShieldCheck className="w-4 h-4 text-brand-cyan-600 dark:text-brand-cyan-400 shrink-0" />
@@ -127,7 +127,7 @@ export function Header({ onMenuToggle, menuOpen }: { onMenuToggle?: () => void; 
               {ALL_ROLES.find((r) => r.role === currentRole)?.labelAr || currentRole}
             </span>
           </div>
-        ) : (
+        ) : process.env.NODE_ENV !== 'production' ? (
           <div className="flex items-center gap-1.5 bg-brand-cyan-500/10 border border-brand-cyan-500/30 p-1 px-2.5 rounded-xl">
             <ShieldCheck className="w-4 h-4 text-brand-cyan-600 dark:text-brand-cyan-400 shrink-0" />
             <span className="text-[11px] font-bold text-brand-cyan-700 dark:text-brand-cyan-300 hidden sm:inline">
@@ -146,39 +146,41 @@ export function Header({ onMenuToggle, menuOpen }: { onMenuToggle?: () => void; 
               ))}
             </select>
           </div>
-        )}
+        ) : null}
 
         {/* Theme Toggle */}
         <ThemeToggle />
 
-        {/* Profile Link or User Avatar */}
-        <Link
-          href={`/center/${tenant.slug}/profile`}
-          className="flex items-center gap-2 p-1.5 px-2 rounded-xl hover:bg-muted border border-transparent hover:border-border transition-all"
-          title="عرض الملف الشخصي"
-        >
-          <div className="w-7 h-7 rounded-full overflow-hidden bg-muted border border-border flex items-center justify-center">
-            {currentUser.avatarUrl ? (
-              /* eslint-disable-next-line @next/next/no-img-element */
-              <img
-                src={currentUser.avatarUrl}
-                alt={currentUser.fullName}
-                className="w-full h-full object-cover"
-                onError={(e) => {
-                  (e.target as any).src =
-                    'https://images.unsplash.com/photo-1534528741775-53994a69daeb';
-                }}
-              />
-            ) : (
-              <span className="text-xs font-bold text-foreground">
-                {currentUser.fullName ? currentUser.fullName.charAt(0) : <User className="w-3.5 h-3.5" />}
-              </span>
-            )}
-          </div>
-          <span className="text-xs font-semibold text-foreground hidden lg:inline max-w-[120px] truncate">
-            {currentUser.fullName}
-          </span>
-        </Link>
+        {/* Profile Link or User Avatar (Only when Authenticated) */}
+        {auth.user ? (
+          <Link
+            href={`/center/${tenant.slug}/profile`}
+            className="flex items-center gap-2 p-1.5 px-2 rounded-xl hover:bg-muted border border-transparent hover:border-border transition-all"
+            title="عرض الملف الشخصي"
+          >
+            <div className="w-7 h-7 rounded-full overflow-hidden bg-muted border border-border flex items-center justify-center">
+              {currentUser.avatarUrl ? (
+                /* eslint-disable-next-line @next/next/no-img-element */
+                <img
+                  src={currentUser.avatarUrl}
+                  alt={currentUser.fullName}
+                  className="w-full h-full object-cover"
+                  onError={(e) => {
+                    (e.target as any).src =
+                      'https://images.unsplash.com/photo-1534528741775-53994a69daeb';
+                  }}
+                />
+              ) : (
+                <span className="text-xs font-bold text-foreground">
+                  {currentUser.fullName ? currentUser.fullName.charAt(0) : <User className="w-3.5 h-3.5" />}
+                </span>
+              )}
+            </div>
+            <span className="text-xs font-semibold text-foreground hidden lg:inline max-w-[120px] truncate">
+              {currentUser.fullName}
+            </span>
+          </Link>
+        ) : null}
 
         {/* Sign Out Button (When Authenticated) */}
         {auth.user && (
