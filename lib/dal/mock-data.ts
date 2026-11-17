@@ -2324,12 +2324,59 @@ export class MockDataProvider implements IDataProvider {
       const legacyModel = group.legacyBilling?.model ?? (!group.pricing ? group.pricingModel : undefined);
       const averageSessions = new Map<number, typeof sessions>();
       for (const session of sessions) {
-        const pricing = session.pricing;
+        let pricing = session.pricing;
+        if (!pricing && group.scheduleHistory && group.scheduleHistory.length > 0) {
+          const matchPeriod = group.scheduleHistory.find(
+            (p) => p.teacherId === session.teacherId &&
+                   session.sessionDate >= p.startsAt.slice(0, 10) &&
+                   (!p.endsAt || session.sessionDate <= p.endsAt.slice(0, 10))
+          );
+          if (matchPeriod?.pricing) pricing = matchPeriod.pricing;
+        }
+        if (!pricing) pricing = group.pricing;
         const attendanceCount = countTeacherSessionAttendance(this.attendance, session);
         if (pricing?.model === 'center') {
           const entries = averageSessions.get(pricing.teacherRate) ?? [];
           entries.push(session);
           averageSessions.set(pricing.teacherRate, entries);
+        } else if (pricing?.model === 'fixed_session' && session.status === 'completed') {
+          const teacherDue = moneyAmount(pricing.sessionFee);
+          const tickets = monthlyInvoices.filter(invoice => invoice.sessionId === session.id);
+          const revenue = tickets.length > 0
+            ? moneyAmount(tickets.reduce((sum, inv) => sum + inv.netAmount, 0))
+            : teacherDue;
+          lessonRows.push({
+            sessionId: session.id,
+            sessionDate: session.sessionDate,
+            groupName: group.nameAr,
+            ...sessionDetails(session),
+            attendanceCount,
+            model: 'fixed_session',
+            rate: pricing.sessionFee,
+            revenue,
+            teacherDue,
+            centerNet: moneyAmount(Math.max(0, revenue - teacherDue)),
+            teacherCollected: teacherDue,
+          });
+        } else if (pricing?.model === 'per_attendee' && session.status === 'completed') {
+          const teacherDue = moneyAmount(attendanceCount * pricing.ratePerStudent);
+          const tickets = monthlyInvoices.filter(invoice => invoice.sessionId === session.id);
+          const revenue = tickets.length > 0
+            ? moneyAmount(tickets.reduce((sum, inv) => sum + inv.netAmount, 0))
+            : moneyAmount(attendanceCount * (pricing.studentFee || pricing.ratePerStudent));
+          lessonRows.push({
+            sessionId: session.id,
+            sessionDate: session.sessionDate,
+            groupName: group.nameAr,
+            ...sessionDetails(session),
+            attendanceCount,
+            model: 'per_attendee',
+            rate: pricing.ratePerStudent,
+            revenue,
+            teacherDue,
+            centerNet: moneyAmount(Math.max(0, revenue - teacherDue)),
+            teacherCollected: teacherDue,
+          });
         } else if (pricing?.model === 'per_session' && session.status === 'completed') {
           const tickets = monthlyInvoices.filter(invoice => invoice.sessionId === session.id);
           lessonRows.push({

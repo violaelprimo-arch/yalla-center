@@ -117,32 +117,6 @@ export function TeacherEditor({
     return stages.length > 0 ? [stages[0].id] : [];
   });
 
-  // Stage agreements map: { [stageId]: { model: 'center'|'fixed_session'|'private'|'per_attendee', value: number } }
-  const [stageAgreements, setStageAgreements] = useState<
-    Record<string, { model: 'center' | 'fixed_session' | 'private' | 'per_attendee'; value: number }>
-  >(() => {
-    const map: Record<string, { model: 'center' | 'fixed_session' | 'private' | 'per_attendee'; value: number }> = {};
-    if (input.contracts) {
-      for (const contract of input.contracts) {
-        if ('value' in contract) {
-          map[contract.level] = {
-            model: (contract.model as 'center' | 'fixed_session' | 'private' | 'per_attendee') || 'fixed_session',
-            value: contract.value,
-          };
-        } else if ('model' in contract) {
-          if (contract.model === 'center') {
-            map[contract.level] = { model: 'center', value: (contract as any).teacherRate || 50 };
-          } else if (contract.model === 'private') {
-            map[contract.level] = { model: 'private', value: (contract as any).teacherPercentage || 70 };
-          } else {
-            map[contract.level] = { model: 'fixed_session', value: 200 };
-          }
-        }
-      }
-    }
-    return map;
-  });
-
   useEffect(() => {
     dialog.current?.showModal();
   }, []);
@@ -159,31 +133,9 @@ export function TeacherEditor({
 
   // Stage selection toggle
   const toggleStage = (stageId: string) => {
-    setSelectedStageIds((prev) => {
-      const next = prev.includes(stageId) ? prev.filter((id) => id !== stageId) : [...prev, stageId];
-      // Initialize default agreement for newly selected stage
-      if (!prev.includes(stageId) && !stageAgreements[stageId]) {
-        setStageAgreements((cur) => ({
-          ...cur,
-          [stageId]: { model: 'fixed_session', value: 200 },
-        }));
-      }
-      return next;
-    });
-  };
-
-  // Stage agreement change
-  const updateStageAgreement = (
-    stageId: string,
-    updates: Partial<{ model: 'center' | 'fixed_session' | 'private' | 'per_attendee'; value: number }>
-  ) => {
-    setStageAgreements((prev) => ({
-      ...prev,
-      [stageId]: {
-        ...(prev[stageId] || { model: 'fixed_session', value: 200 }),
-        ...updates,
-      },
-    }));
+    setSelectedStageIds((prev) =>
+      prev.includes(stageId) ? prev.filter((id) => id !== stageId) : [...prev, stageId]
+    );
   };
 
   const togglePermission = (permission: TeacherPermission, checked: boolean) => {
@@ -237,15 +189,12 @@ export function TeacherEditor({
     if (saving || processingPhoto) return;
     setError('');
 
-    // Prepare contracts array from selected stages and their individual agreements
-    const contracts: TeacherContract[] = selectedStageIds.map((stageId) => {
-      const agree = stageAgreements[stageId] || { model: 'fixed_session', value: 200 };
-      return {
-        level: stageId,
-        model: agree.model,
-        value: Number(agree.value) || 0,
-      } as any;
-    });
+    // Prepare contracts array from selected stages without financial agreements
+    const contracts: TeacherContract[] = selectedStageIds.map((stageId) => ({
+      level: stageId,
+      model: 'fixed_session',
+      value: 0,
+    } as any));
 
     const payload: TeacherInput = {
       ...input,
@@ -326,7 +275,7 @@ export function TeacherEditor({
               <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[11px] ${step === 1 ? 'bg-brand-cyan-600 text-white font-black' : 'bg-muted-foreground/30 text-foreground'}`}>
                 ١
               </span>
-              <span>بيانات المعلم والاتفاقات المالية</span>
+              <span>بيانات المعلم والمراحل والمواد</span>
             </button>
 
             <button
@@ -472,16 +421,16 @@ export function TeacherEditor({
                 </div>
               </div>
 
-              {/* SECTION: Multiple Educational Stages & Independent Financial Agreements */}
+              {/* SECTION: Multiple Educational Stages */}
               <div className="space-y-4 pt-2 border-t border-border">
                 <div className="flex items-center justify-between">
                   <div>
                     <h3 className="text-sm font-bold text-foreground flex items-center gap-2">
                       <Layers className="w-4 h-4 text-brand-cyan-600 dark:text-brand-cyan-400" />
-                      <span>المراحل التعليمية والاتفاقات المالية</span>
+                      <span>المراحل التعليمية</span>
                     </h3>
                     <p className="text-xs text-muted-foreground">
-                      اختر المراحل التي يدرس بها المعلم؛ وحدد لكل مرحلة نظام المحاسبة المالي المستقل الخاص بها.
+                      اختر المراحل التعليمية المتاحة للمعلم.
                     </p>
                   </div>
                 </div>
@@ -512,113 +461,6 @@ export function TeacherEditor({
                   </div>
                 ) : (
                   <p className="text-xs text-muted-foreground">لا توجد مراحل مسجلة في السنتر بعد.</p>
-                )}
-
-                {/* Independent Financial Agreement Card for EACH Selected Stage */}
-                {selectedStageIds.length > 0 && (
-                  <div className="space-y-3 pt-2">
-                    <span className="text-xs font-bold text-foreground block">
-                      أنظمة المحاسبة والاتفاقات المالية لكل مرحلة:
-                    </span>
-
-                    {selectedStageIds.map((stageId) => {
-                      const stage = stages.find((s) => s.id === stageId);
-                      const stageName = stage ? stage.nameAr : getStageNameArabic(stageId);
-                      const agree = stageAgreements[stageId] || { model: 'fixed_session', value: 200 };
-
-                      return (
-                        <div
-                          key={stageId}
-                          className="p-4 rounded-2xl border border-border bg-card shadow-soft-sm space-y-3 relative overflow-hidden"
-                        >
-                          <div className="flex items-center justify-between border-b border-border/70 pb-2.5">
-                            <div className="flex items-center gap-2">
-                              <span className="w-2.5 h-2.5 rounded-full bg-brand-cyan-500" />
-                              <h4 className="text-xs font-black text-foreground">{stageName}</h4>
-                            </div>
-                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-muted text-muted-foreground border border-border">
-                              اتفاق مالي مستقل
-                            </span>
-                          </div>
-
-                          <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-center">
-                            {/* Accounting Model Selector */}
-                            <div className="sm:col-span-7">
-                              <label className="text-[11px] font-bold text-muted-foreground block mb-1">
-                                طريقة ونظام المحاسبة:
-                              </label>
-                              <select
-                                value={agree.model}
-                                onChange={(e) =>
-                                  updateStageAgreement(stageId, {
-                                    model: e.target.value as any,
-                                  })
-                                }
-                                className="w-full px-3 py-2 text-xs font-bold bg-background border border-border rounded-xl focus:ring-2 focus:ring-brand-cyan-500"
-                              >
-                                <option value="per_attendee">أجر ثابت لكل طالب حاضر في الحصة (مستحق = حضور × فئة)</option>
-                                <option value="fixed_session">أجر ثابت للحصة (مبلغ مقطوع لكل حصة منعقدة)</option>
-                                <option value="private">نظام البرايفت — نسبة مئوية (حصة المعلم %)</option>
-                                <option value="center">نظام السنتر — متوسط الحضور (متوسط شهري)</option>
-                              </select>
-                            </div>
-
-                            {/* Value / Rate Input */}
-                            <div className="sm:col-span-5">
-                              <label className="text-[11px] font-bold text-muted-foreground block mb-1">
-                                {agree.model === 'per_attendee' && 'قيمة أجر المعلم عن كل طالب حاضر (ج.م):'}
-                                {agree.model === 'fixed_session' && 'قيمة الأجر الثابت للحصة (ج.م):'}
-                                {agree.model === 'private' && 'نسبة المعلم من صافي الإيراد (%):'}
-                                {agree.model === 'center' && 'الفئة المتفق عليها للرأس (ج.م):'}
-                              </label>
-                              <div className="relative">
-                                <input
-                                  type="number"
-                                  min={0}
-                                  max={agree.model === 'private' ? 100 : 100000}
-                                  step="0.5"
-                                  value={agree.value}
-                                  onChange={(e) =>
-                                    updateStageAgreement(stageId, {
-                                      value: parseFloat(e.target.value) || 0,
-                                    })
-                                  }
-                                  className="w-full px-3 py-2 text-xs font-black bg-background border border-border rounded-xl focus:ring-2 focus:ring-brand-cyan-500 pl-8"
-                                />
-                                <span className="absolute left-2.5 top-2 text-[11px] font-bold text-muted-foreground">
-                                  {agree.model === 'private' ? '%' : 'ج.م'}
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* Dynamic Formula Explanation */}
-                          <div className="text-[11px] text-muted-foreground bg-muted/40 p-2.5 rounded-xl border border-border/50">
-                            {agree.model === 'per_attendee' && (
-                              <p>
-                                💡 <b>معادلة الاحتساب:</b> مستحق المعلم = عدد الطلاب الحاضرين فعلياً × {agree.value} ج.م (مثال: 20 طالب حاضر = {20 * agree.value} ج.م مستحق للحصة).
-                              </p>
-                            )}
-                            {agree.model === 'fixed_session' && (
-                              <p>
-                                💡 <b>معادلة الاحتساب:</b> يستحق المعلم {agree.value} ج.م عن كل حصة تم انعقادها بغض النظر عن عدد الحضور.
-                              </p>
-                            )}
-                            {agree.model === 'private' && (
-                              <p>
-                                💡 <b>معادلة الاحتساب:</b> يحصل المعلم على نسبة {agree.value}% من إيراد الحصة/المجموعة، ويتبقى للسنتر {100 - agree.value}%.
-                              </p>
-                            )}
-                            {agree.model === 'center' && (
-                              <p>
-                                💡 <b>معادلة الاحتساب:</b> مستحق المعلم = متوسط الحضور الشهري للحصص المنعقدة × {agree.value} ج.م.
-                              </p>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
                 )}
               </div>
 

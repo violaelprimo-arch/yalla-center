@@ -19,6 +19,7 @@ import {
   UserRound,
   ExternalLink,
   Edit3,
+  FileSpreadsheet,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -40,6 +41,7 @@ interface Props {
   subjects: Subject[];
   groups: Group[];
   onEdit: () => void;
+  onViewAccounting?: () => void;
   onClose: () => void;
 }
 
@@ -50,6 +52,7 @@ export function TeacherProfileModal({
   subjects,
   groups,
   onEdit,
+  onViewAccounting,
   onClose,
 }: Props) {
   const avatar = profile?.avatarData || teacher.avatarUrl;
@@ -152,6 +155,17 @@ export function TeacherProfileModal({
                 </a>
               </>
             )}
+            {onViewAccounting && (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={onViewAccounting}
+                className="px-3 py-1.5 rounded-xl border-brand-cyan-500/30 bg-brand-cyan-500/10 hover:bg-brand-cyan-500/20 text-xs font-bold text-brand-cyan-600 dark:text-brand-cyan-400 flex items-center gap-1.5 transition-colors"
+              >
+                <FileSpreadsheet size={13} />
+                <span>كشف الحساب والمستحقات</span>
+              </Button>
+            )}
             <Button
               type="button"
               onClick={onEdit}
@@ -162,53 +176,33 @@ export function TeacherProfileModal({
             </Button>
           </div>
 
-          {/* Section: Educational Stages & Stage Financial Agreements */}
+          {/* Section: Educational Stages */}
           <div className="space-y-3">
             <h3 className="text-xs font-black text-foreground uppercase tracking-wider flex items-center gap-2">
               <Layers size={14} className="text-brand-cyan-600" />
-              <span>المراحل التعليمية والاتفاقات المالية</span>
+              <span>المراحل التعليمية</span>
             </h3>
 
             {profile?.contracts && profile.contracts.length > 0 ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="flex flex-wrap gap-2">
                 {profile.contracts.map((contract) => {
                   const stage = stages.find((s) => s.id === contract.level);
                   const stageName = stage ? stage.nameAr : getStageNameArabic(contract.level);
-                  const modelKey = 'model' in contract ? contract.model : 'fixed_session';
-                  const modelTitle =
-                    LEGACY_TEACHER_MODELS[modelKey as keyof typeof LEGACY_TEACHER_MODELS] || modelKey;
-                  const value = 'value' in contract ? contract.value : 0;
 
                   return (
-                    <div
+                    <span
                       key={contract.level}
-                      className="p-3.5 rounded-2xl border border-border bg-muted/20 space-y-1.5"
+                      className="px-3 py-1.5 rounded-xl text-xs font-bold bg-brand-cyan-500/10 border border-brand-cyan-500/25 text-brand-cyan-700 dark:text-brand-cyan-300 flex items-center gap-1.5"
                     >
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-foreground">{stageName}</span>
-                        <Badge variant="cyan" className="text-[10px]">
-                          {modelKey === 'per_attendee' && 'أجر لكل طالب'}
-                          {modelKey === 'fixed_session' && 'أجر ثابت للحصة'}
-                          {modelKey === 'private' && 'نسبة مئوية'}
-                          {modelKey === 'center' && 'متوسط الحضور'}
-                        </Badge>
-                      </div>
-                      <p className="text-xs font-semibold text-brand-cyan-600 dark:text-brand-cyan-400">
-                        {modelTitle}
-                      </p>
-                      <div className="text-[11px] text-muted-foreground flex items-center justify-between pt-1 border-t border-border/50">
-                        <span>القيمة المتفق عليها:</span>
-                        <b className="font-mono text-foreground font-black">
-                          {value} {modelKey === 'private' ? '%' : 'ج.م'}
-                        </b>
-                      </div>
-                    </div>
+                      <span className="w-2 h-2 rounded-full bg-brand-cyan-500" />
+                      <span>{stageName}</span>
+                    </span>
                   );
                 })}
               </div>
             ) : (
               <div className="p-3 rounded-xl bg-muted/30 border border-border text-xs text-muted-foreground">
-                لم يتم إعداد اتفاقات مالية محددة للمراحل بعد؛ يعتمد نظام الحساب على إعدادات المجموعات.
+                لم يتم تحديد مراحل تعليمية مسجلة للمعلم بعد.
               </div>
             )}
           </div>
@@ -262,10 +256,16 @@ export function TeacherProfileModal({
                         <span>{group.scheduleDay || 'موعد أسبوعي'}</span>
                       </span>
                       <Badge variant="outline" className="text-[9px]">
-                        {group.pricingModel === 'per_session'
+                        {group.pricing?.model === 'center'
+                          ? 'نظام السنتر (متوسط)'
+                          : group.pricing?.model === 'fixed_session'
+                          ? 'أجر ثابت للحصة'
+                          : group.pricing?.model === 'private'
+                          ? 'برايفت (نسبة)'
+                          : group.pricing?.model === 'per_attendee'
+                          ? 'أجر لكل طالب'
+                          : group.pricingModel === 'per_session'
                           ? 'دفع بالحصة'
-                          : group.pricingModel === 'private'
-                          ? 'برايفت'
                           : 'نظام السنتر'}
                       </Badge>
                     </div>

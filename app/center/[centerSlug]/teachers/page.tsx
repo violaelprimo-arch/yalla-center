@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useCallback } from 'react';
 import Link from 'next/link';
 import {
   AlertTriangle,
@@ -28,11 +28,12 @@ import {
 import { useTenant } from '@/components/layout/tenant-provider';
 import { TeacherEditor } from '@/components/teachers/teacher-editor';
 import { TeacherProfileModal } from '@/components/teachers/teacher-profile-modal';
+import { TeacherAccountingView } from '@/components/teachers/teacher-accounting-view';
 import { SessionsGroupsView } from '@/components/sessions/sessions-groups-view';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { getDataProvider } from '@/lib/dal/factory';
-import type { User, Group, Subject } from '@/lib/dal/types';
+import type { User, Group, Subject, TeacherMonthlyStatement } from '@/lib/dal/types';
 import { demoTeacherKey, readDemoTeacherProfiles, teacherApi, writeDemoTeacherProfile } from '@/lib/teachers/client';
 import {
   teacherInputFrom,
@@ -73,6 +74,7 @@ function TeachersDirectory() {
   const mayManageDemo = currentRole === 'PLATFORM_OWNER' || currentRole === 'CENTER_ADMIN';
 
   const [activeTab, setActiveTab] = useState<'directory' | 'accounting'>('directory');
+  const [accountingSubTab, setAccountingSubTab] = useState<'groups' | 'statement'>('groups');
   const [selectedTeacherForAccounting, setSelectedTeacherForAccounting] = useState<string>('');
   const [baseTeachers, setBaseTeachers] = useState<User[]>();
   const [directory, setDirectory] = useState<{ token: string | null; data: DirectoryData }>();
@@ -163,6 +165,45 @@ function TeachersDirectory() {
     }
     return [...byId.values()];
   }, [baseTeachers, data.profiles, authorized]);
+
+  const [statement, setStatement] = useState<TeacherMonthlyStatement | null>(null);
+  const [loadingStatement, setLoadingStatement] = useState(false);
+  const [statementPeriod, setStatementPeriod] = useState(() => {
+    const now = new Date();
+    return { month: now.getMonth() + 1, year: now.getFullYear() };
+  });
+
+  const loadStatement = useCallback(async (teacherId: string, month: number, year: number) => {
+    if (!teacherId) return;
+    setLoadingStatement(true);
+    try {
+      const activeTeacherObj = allTeachers.find((t) => t.teacher.id === teacherId);
+      const res = await dal.calculateMonthlyTeacherPayroll({
+        tenantId: tenant.id,
+        teacherId,
+        month,
+        year,
+        teacherProfile: activeTeacherObj?.profile,
+      });
+      setStatement(res);
+      setStatementPeriod({ month, year });
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoadingStatement(false);
+    }
+  }, [dal, tenant.id, allTeachers]);
+
+  // Sync statement on activeTab === 'accounting'
+  useEffect(() => {
+    if (activeTab === 'accounting') {
+      const targetId = selectedTeacherForAccounting || allTeachers[0]?.teacher.id;
+      if (targetId && (!statement || statement.teacherId !== targetId)) {
+        if (!selectedTeacherForAccounting) setSelectedTeacherForAccounting(targetId);
+        loadStatement(targetId, statementPeriod.month, statementPeriod.year);
+      }
+    }
+  }, [activeTab, selectedTeacherForAccounting, allTeachers, statement, loadStatement, statementPeriod.month, statementPeriod.year]);
 
   // KPI Statistics
   const totalTeachersCount = allTeachers.length;
@@ -421,7 +462,12 @@ function TeachersDirectory() {
                 </label>
                 <select
                   value={selectedTeacherForAccounting || visibleTeachers[0]?.teacher.id || ''}
-                  onChange={(e) => setSelectedTeacherForAccounting(e.target.value)}
+                  onChange={(e) => {
+                    setSelectedTeacherForAccounting(e.target.value);
+                    if (accountingSubTab === 'statement') {
+                      loadStatement(e.target.value, statementPeriod.month, statementPeriod.year);
+                    }
+                  }}
                   className="px-3 py-1.5 text-xs font-bold bg-background border border-border rounded-xl focus:ring-2 focus:ring-brand-cyan-500"
                 >
                   {visibleTeachers.map(({ teacher }) => {
@@ -433,7 +479,37 @@ function TeachersDirectory() {
                     );
                   })}
                 </select>
+
+                <div className="flex items-center gap-1 bg-muted/60 p-1 rounded-xl border border-border">
+                  <button
+                    type="button"
+                    onClick={() => setAccountingSubTab('groups')}
+                    className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+                      accountingSubTab === 'groups'
+                        ? 'bg-card text-foreground shadow-sm'
+                        : 'text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    مجموعات وحصص المعلم
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAccountingSubTab('statement');
+                      const targetId = selectedTeacherForAccounting || visibleTeachers[0]?.teacher.id;
+                      if (targetId) loadStatement(targetId, statementPeriod.month, statementPeriod.year);
+                    }}
+                    className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+                      accountingSubTab === 'statement'
+                        ? 'bg-card text-brand-cyan-600 dark:text-brand-cyan-400 shadow-sm border border-brand-cyan-500/30'
+                        : 'text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    كشف الحساب والمستحقات المجمعة
+                  </button>
+                </div>
               </div>
+
               <Link
                 href={`/center/${tenant.slug}/sessions`}
                 className="text-xs font-bold text-brand-cyan-600 dark:text-brand-cyan-400 hover:underline flex items-center gap-1 self-end sm:self-auto"
@@ -442,15 +518,39 @@ function TeachersDirectory() {
               </Link>
             </div>
 
-            {/* Same Component as Sessions & Groups View, Filtered by Teacher */}
-            <SessionsGroupsView
-              key={selectedTeacherForAccounting || visibleTeachers[0]?.teacher.id}
-              initialTeacherId={selectedTeacherForAccounting || visibleTeachers[0]?.teacher.id}
-              lockTeacherFilter={true}
-              allowGroupManagement={false}
-              title="نظام حسابات الحصص والمجموعات للمعلم"
-              subtitle="استعراض مجموعات المعلم، المواعيد الأسبوعية، وطريقة الحساب المعتمدة من الحصص والمجموعات."
-            />
+            {accountingSubTab === 'statement' ? (
+              statement ? (
+                <TeacherAccountingView
+                  tenantSlug={tenant.slug}
+                  statement={statement}
+                  teachers={allTeachers.map((t) => t.teacher)}
+                  groups={centerGroups}
+                  isLoading={loadingStatement}
+                  onLoad={(teacherId, month, year) => {
+                    setSelectedTeacherForAccounting(teacherId);
+                    loadStatement(teacherId, month, year);
+                  }}
+                  onClose={() => setActiveTab('directory')}
+                />
+              ) : (
+                <div className="card-elevated p-12 text-center text-muted-foreground rounded-2xl border border-border">
+                  {loadingStatement ? (
+                    <p className="text-sm font-bold">جارٍ تجميع وحساب كشف الحساب والمستحقات…</p>
+                  ) : (
+                    <p className="text-sm font-bold">اختر معلماً لعرض كشف الحساب والمستحقات الخاصة به.</p>
+                  )}
+                </div>
+              )
+            ) : (
+              <SessionsGroupsView
+                key={selectedTeacherForAccounting || visibleTeachers[0]?.teacher.id}
+                initialTeacherId={selectedTeacherForAccounting || visibleTeachers[0]?.teacher.id}
+                lockTeacherFilter={true}
+                allowGroupManagement={false}
+                title="نظام حسابات الحصص والمجموعات للمعلم"
+                subtitle="استعراض مجموعات المعلم، المواعيد الأسبوعية، وطريقة الحساب المعتمدة من الحصص والمجموعات."
+              />
+            )}
           </div>
         ) : (
           <div className="space-y-5">
@@ -771,6 +871,7 @@ function TeachersDirectory() {
                               aria-label={`الحسابات والمجموعات (${teacherGroups.length})`}
                               onClick={() => {
                                 setSelectedTeacherForAccounting(teacher.id);
+                                setAccountingSubTab('groups');
                                 setActiveTab('accounting');
                               }}
                               className="px-2 py-1 rounded-lg bg-muted/60 hover:bg-muted border border-border text-[11px] font-bold text-foreground transition-colors"
@@ -800,6 +901,21 @@ function TeachersDirectory() {
                           {/* 9. Actions */}
                           <td className="p-3.5">
                             <div className="flex items-center gap-1.5">
+                              {/* View Statement & Accounting */}
+                              <button
+                                type="button"
+                                title="كشف الحساب والمستحقات"
+                                onClick={() => {
+                                  setSelectedTeacherForAccounting(teacher.id);
+                                  setAccountingSubTab('statement');
+                                  setActiveTab('accounting');
+                                  loadStatement(teacher.id, statementPeriod.month, statementPeriod.year);
+                                }}
+                                className="p-1.5 rounded-lg text-muted-foreground hover:text-brand-cyan-600 hover:bg-muted transition-colors"
+                              >
+                                <FileSpreadsheet size={15} />
+                              </button>
+
                               {/* View Profile */}
                               <button
                                 type="button"
@@ -900,6 +1016,14 @@ function TeachersDirectory() {
             const current = viewingProfile;
             setViewingProfile(null);
             setEditor({ id: current.teacher.id, teacher: current.teacher, profile: current.profile });
+          }}
+          onViewAccounting={() => {
+            const current = viewingProfile;
+            setViewingProfile(null);
+            setSelectedTeacherForAccounting(current.teacher.id);
+            setAccountingSubTab('statement');
+            setActiveTab('accounting');
+            loadStatement(current.teacher.id, statementPeriod.month, statementPeriod.year);
           }}
           onClose={() => setViewingProfile(null)}
         />

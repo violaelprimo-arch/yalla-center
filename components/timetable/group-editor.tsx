@@ -14,6 +14,8 @@ export interface ScheduleTeacher {
   id: string;
   fullName: string;
   isActive: boolean;
+  stageIds?: string[];
+  subjectIds?: string[];
 }
 
 const control = 'w-full min-w-0 rounded-lg border border-border bg-background px-2.5 py-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-cyan-500';
@@ -55,6 +57,12 @@ export function GroupEditor({ group, classrooms, teachers, onClose, onSaved }: {
   const matchingSubjects = subjects.filter(subject => subject.stage === stageId && subject.grade === gradeId);
   const rooms = classrooms.filter(room => room.branchId === branchId);
   const activeTeachers = teachers.filter(teacher => teacher.isActive);
+  const qualifiedTeachers = activeTeachers.filter(teacher => {
+    const matchesStage = !stageId || !teacher.stageIds || teacher.stageIds.length === 0 || teacher.stageIds.includes(stageId);
+    const matchesSubject = !subjectId || !teacher.subjectIds || teacher.subjectIds.length === 0 || teacher.subjectIds.includes(subjectId);
+    return matchesStage && matchesSubject;
+  });
+  const displayTeachers = qualifiedTeachers.length > 0 ? qualifiedTeachers : activeTeachers;
   const activeBranches = branches.filter(branch => branch.isActive);
 
   useEffect(() => {
@@ -118,9 +126,9 @@ export function GroupEditor({ group, classrooms, teachers, onClose, onSaved }: {
           <option value="">{gradeId && !matchingSubjects.length ? 'مفيش مواد مضافة للصف ده' : 'اختر المادة'}</option>
           {matchingSubjects.map(subject => <option key={subject.id} value={subject.id}>{subject.nameAr}</option>)}
         </select></Field>
-        <Field title="المعلم"><select className={control} value={teacherId} required onChange={event => setTeacher(event.target.value)}>
-          <option value="">اختر المعلم</option>
-          {activeTeachers.map(teacher => <option key={teacher.id} value={teacher.id}>{teacher.fullName}</option>)}
+        <Field title="المعلم"><select aria-label="المعلم" className={control} value={teacherId} required onChange={event => setTeacher(event.target.value)}>
+          <option value="">اختر المعلم المسؤول</option>
+          {displayTeachers.map(teacher => <option key={teacher.id} value={teacher.id}>{teacher.fullName}</option>)}
         </select></Field>
         <Field title="الفرع"><select className={control} value={branchId} required onChange={event => {
           setBranch(event.target.value);
@@ -164,10 +172,38 @@ export function GroupEditor({ group, classrooms, teachers, onClose, onSaved }: {
       </section>
 
       <section className="space-y-3 border-t border-border pt-4">
-        <h3 className="font-bold">طريقة الحساب</h3>
-        <PricingFields model={model} values={values} control={control} label="نظام المجموعة" required
-          onModel={setModel} onAmount={(field, value) => setValues(previous => ({ ...previous, [field]: value }))} />
-        {group?.pricing && <p className="text-xs text-muted-foreground">تطبق تغييرات المواعيد والأسعار على الحصص والفواتير الجديدة.</p>}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="w-2.5 h-2.5 rounded-full bg-brand-cyan-500" />
+            <h3 className="font-bold text-foreground">نظام محاسبة المعلم</h3>
+          </div>
+          <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-brand-cyan-500/10 text-brand-cyan-600 dark:text-brand-cyan-400 border border-brand-cyan-500/20">
+            اتفاق مالي مستقل على مستوى المجموعة
+          </span>
+        </div>
+
+        {teacherId ? (
+          <>
+            <PricingFields
+              model={model}
+              values={values}
+              control={control}
+              label="طريقة حساب مستحقات المعلم"
+              required
+              onModel={setModel}
+              onAmount={(field, value) => setValues(previous => ({ ...previous, [field]: value }))}
+            />
+            {group?.pricing && (
+              <p className="text-xs text-muted-foreground">
+                تطبق تغييرات المواعيد والأسعار على الحصص والفواتير الجديدة، ولا تتأثر الحصص المنتهية بالفعل.
+              </p>
+            )}
+          </>
+        ) : (
+          <div className="rounded-xl border border-dashed border-border p-4 text-center text-xs text-muted-foreground bg-muted/20">
+            اختر المعلم المسؤول أولاً لعرض وتحديد نظام المحاسبة المالي لهذه المجموعة.
+          </div>
+        )}
       </section>
       <div className="flex justify-end gap-2 border-t border-border pt-3">
         <Button type="button" variant="outline" disabled={saving} onClick={onClose}>إلغاء</Button>

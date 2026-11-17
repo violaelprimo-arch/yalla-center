@@ -10,7 +10,7 @@ export type UserRole =
   | 'PARENT'
   | 'STUDENT';
 
-export type PricingModel = 'center' | 'private' | 'per_session';
+export type PricingModel = 'center' | 'fixed_session' | 'private' | 'per_attendee' | 'per_session';
 export type DiscountType = 'none' | 'percentage' | 'fixed' | 'free_100';
 export type SessionStatus = 'scheduled' | 'in_progress' | 'completed' | 'canceled' | 'postponed';
 export type AttendanceStatus = 'present' | 'absent' | 'late' | 'excused';

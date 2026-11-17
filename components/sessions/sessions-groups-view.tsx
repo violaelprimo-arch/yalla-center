@@ -48,7 +48,13 @@ export function SessionsGroupsView({
   const teachers = useMemo(() => {
     const records = new Map(baseTeachers.map(teacher => [teacher.id, teacher]));
     for (const profile of directory.profiles) {
-      records.set(profile.id, { id: profile.id, fullName: profile.fullName, isActive: profile.active });
+      records.set(profile.id, {
+        id: profile.id,
+        fullName: profile.fullName,
+        isActive: profile.active,
+        stageIds: profile.contracts?.map(c => c.level) || [],
+        subjectIds: profile.subjectIds || [],
+      });
     }
     return [...records.values()].filter(teacher => teacher.isActive);
   }, [baseTeachers, directory.profiles]);

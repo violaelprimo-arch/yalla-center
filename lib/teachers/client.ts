@@ -50,7 +50,7 @@ export async function teacherApi<T>(centerSlug: string, idToken: string, query =
   return result;
 }
 
-export type TeacherContractSummary = Pick<TeacherProfile, 'id' | 'tenantId' | 'fullName' | 'phone' | 'active' | 'contracts'>;
+export type TeacherContractSummary = Pick<TeacherProfile, 'id' | 'tenantId' | 'fullName' | 'phone' | 'active' | 'contracts' | 'subjectIds'>;
 
 const noContracts: TeacherContractSummary[] = [];
 

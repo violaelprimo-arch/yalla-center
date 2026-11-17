@@ -56,7 +56,7 @@ it('reports storage failure and does not overwrite a previous catalog', async ()
   await saveDemoMasterData(tenantId, { action: 'saveBranch', branch: { nameAr: 'فرع محفوظ' } });
   const key = masterDataStorageKey(tenantId);
   const original = window.localStorage.getItem(key);
-  const write = vi.spyOn(window.localStorage, 'setItem')
+  const write = vi.spyOn(Storage.prototype, 'setItem')
     .mockImplementationOnce(() => { throw new Error('quota'); });
   try {
     await expect(saveDemoMasterData(tenantId, {

@@ -9,8 +9,10 @@ export const WEEKDAYS = [
 ] as const;
 
 export const GROUP_PRICING_LABELS = {
-  center: 'نظام المتوسط',
-  private: 'نظام البرايفت',
+  center: 'نظام السنتر — متوسط الحضور',
+  fixed_session: 'أجر ثابت للحصة',
+  private: 'نظام البرايفت — النسبة المئوية',
+  per_attendee: 'أجر ثابت لكل طالب حاضر',
   per_session: 'نظام الدفع بالحصة',
 } as const;
 
@@ -20,8 +22,10 @@ const money = z.number({ invalid_type_error: 'أدخل المبالغ المطل
 const percent = z.number({ invalid_type_error: 'أدخل نسبة المعلم' }).min(0).max(100, 'نسبة المعلم من صفر إلى 100');
 
 export const groupPricingSchema = z.discriminatedUnion('model', [
-  z.object({ model: z.literal('center'), monthlyFee: money, teacherRate: money }),
-  z.object({ model: z.literal('private'), monthlyFee: money, teacherPercentage: percent }),
+  z.object({ model: z.literal('center'), monthlyFee: money.optional().default(0), teacherRate: money }),
+  z.object({ model: z.literal('fixed_session'), sessionFee: money, centerFee: money.optional().default(0) }),
+  z.object({ model: z.literal('private'), monthlyFee: money, teacherPercentage: percent, centerPercentage: percent.optional() }),
+  z.object({ model: z.literal('per_attendee'), ratePerStudent: money, studentFee: money.optional().default(0) }),
   z.object({ model: z.literal('per_session'), teacherFee: money, centerFee: money }),
 ]);
 
@@ -77,9 +81,17 @@ export const moneyAmount = (amount: number) => toCents(amount) / 100;
 
 export function studentGroupFee(group: Group) {
   if (!group.pricing) return group.monthlyFee || group.sessionFee || 0;
-  return group.pricing.model === 'per_session'
-    ? (toCents(group.pricing.teacherFee) + toCents(group.pricing.centerFee)) / 100
-    : group.pricing.monthlyFee;
+  switch (group.pricing.model) {
+    case 'center':
+    case 'private':
+      return group.pricing.monthlyFee || group.monthlyFee || 0;
+    case 'fixed_session':
+      return group.pricing.sessionFee || group.sessionFee || 0;
+    case 'per_attendee':
+      return group.pricing.studentFee || group.sessionFee || 0;
+    case 'per_session':
+      return (toCents(group.pricing.teacherFee) + toCents(group.pricing.centerFee)) / 100;
+  }
 }
 
 export function weeklySlots(group: Pick<Group, 'scheduleDay' | 'startTime' | 'endTime' | 'weeklySlots'>) {
@@ -155,11 +167,38 @@ function periodFrom(group: Group): Omit<GroupPeriod, 'endsAt'> | undefined {
 export function normalizeGroupPricing(pricing: GroupPricing): GroupPricing {
   switch (pricing.model) {
     case 'center':
-      return { ...pricing, monthlyFee: moneyAmount(pricing.monthlyFee), teacherRate: moneyAmount(pricing.teacherRate) };
-    case 'private':
-      return { ...pricing, monthlyFee: moneyAmount(pricing.monthlyFee), teacherPercentage: moneyAmount(pricing.teacherPercentage) };
+      return {
+        ...pricing,
+        monthlyFee: moneyAmount(pricing.monthlyFee || 0),
+        teacherRate: moneyAmount(pricing.teacherRate),
+      };
+    case 'fixed_session':
+      return {
+        ...pricing,
+        sessionFee: moneyAmount(pricing.sessionFee),
+        centerFee: moneyAmount(pricing.centerFee || 0),
+      };
+    case 'private': {
+      const teacherPct = moneyAmount(pricing.teacherPercentage);
+      return {
+        ...pricing,
+        monthlyFee: moneyAmount(pricing.monthlyFee),
+        teacherPercentage: teacherPct,
+        centerPercentage: moneyAmount(pricing.centerPercentage ?? (100 - teacherPct)),
+      };
+    }
+    case 'per_attendee':
+      return {
+        ...pricing,
+        ratePerStudent: moneyAmount(pricing.ratePerStudent),
+        studentFee: moneyAmount(pricing.studentFee || 0),
+      };
     case 'per_session':
-      return { ...pricing, teacherFee: moneyAmount(pricing.teacherFee), centerFee: moneyAmount(pricing.centerFee) };
+      return {
+        ...pricing,
+        teacherFee: moneyAmount(pricing.teacherFee),
+        centerFee: moneyAmount(pricing.centerFee),
+      };
   }
 }
 
@@ -237,8 +276,14 @@ export function buildGroup(tenantId: string, input: GroupInput, refs: ScheduleRe
     id: input.id, tenantId, nameAr, branchId, stageId, gradeId, subjectId, teacherId, teacherName: teacher.fullName,
     classroomId: first.classroomId, scheduleDay: first.scheduleDay, startTime: first.startTime, endTime: first.endTime,
     pricingModel: pricing.model, pricing, weeklySlots: slots, effectiveFrom, scheduleHistory,
-    monthlyFee: pricing.model === 'per_session' ? 0 : pricing.monthlyFee,
-    sessionFee: pricing.model === 'per_session' ? moneyAmount(pricing.teacherFee + pricing.centerFee) : 0,
+    monthlyFee: (pricing.model === 'center' || pricing.model === 'private') ? (pricing.monthlyFee || 0) : 0,
+    sessionFee: pricing.model === 'fixed_session'
+      ? pricing.sessionFee
+      : pricing.model === 'per_attendee'
+        ? (pricing.studentFee || pricing.ratePerStudent)
+        : pricing.model === 'per_session'
+          ? moneyAmount(pricing.teacherFee + pricing.centerFee)
+          : 0,
     maxStudents: input.maxStudents ?? capacity, isActive: current?.isActive ?? true,
     academicYear: current?.academicYear ?? `${academicYear}/${academicYear + 1}`,
     createdAt: current?.createdAt ?? now.toISOString(), version: input.version + 1,
