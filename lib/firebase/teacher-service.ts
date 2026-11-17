@@ -177,13 +177,74 @@ export async function saveTeacherProfile(
       if (!password || password.length < 8 || password.length > 128) {
         throw new TeacherServiceError(400, 'كلمة مرور المعلم مطلوبة ومن 8 إلى 128 حرفًا');
       }
+      const username = input.login.username;
+      const usernameDocPath = `system_usernames/${username}`;
+      const existingUsername = await store.getDocument<{ teacherId: string; tenantId: string }>(usernameDocPath);
+      if (existingUsername.exists && (existingUsername.data.teacherId !== id || existingUsername.data.tenantId !== tenant.id)) {
+        throw new TeacherServiceError(409, 'اسم المستخدم مستخدم بالفعل في المنصة. اختر اسماً مختلفاً');
+      }
+
       uid = `yc_${await digest(JSON.stringify([tenant.id, id, email]))}`;
       await provision(uid, email, password);
+
+      writes.push({
+        type: 'set',
+        documentPath: usernameDocPath,
+        data: {
+          username,
+          email,
+          uid,
+          teacherId: id,
+          tenantId: tenant.id,
+          tenantSlug: tenant.slug,
+          createdAt: profile.updatedAt,
+        },
+      });
+
+      writes.push({
+        type: 'set',
+        documentPath: `staff_memberships/${uid}`,
+        data: {
+          uid,
+          email,
+          displayName: input.fullName,
+          tenantId: tenant.id,
+          role: 'TEACHER',
+          teacherId: id,
+          isActive: true,
+        },
+      });
+
+      writes.push({
+        type: 'set',
+        documentPath: `users/${uid}/profile`,
+        data: {
+          uid,
+          teacherId: id,
+          tenantId: tenant.id,
+          fullName: input.fullName,
+          username,
+          phone: input.phone,
+          phone2: input.phone2 || null,
+          avatarUrl: input.avatarData || null,
+          role: 'TEACHER',
+          permissions: input.permissions,
+          tabs: input.tabs,
+          status: 'active',
+          createdAt: profile.updatedAt,
+          updatedAt: profile.updatedAt,
+        },
+      });
     }
+
     writes.push({
       type: 'set', documentPath: nextPath, currentDocument: { exists: false },
       data: { teacherId: id, tenantId: tenant.id, uid },
     });
+  }
+
+  if (previous?.login?.mode === 'username' && input.login?.mode === 'username' && previous.login.username !== input.login.username) {
+    writes.push({ type: 'delete', documentPath: `system_usernames/${previous.login.username}` });
   }
 
   if (previousPath && previousPath !== nextPath) {
@@ -210,6 +271,23 @@ export async function archiveTeacherProfile(context: TeacherServiceContext, id: 
   ];
   if (previous?.login) {
     writes.push({ type: 'delete', documentPath: await loginPath(tenant, previous.login.mode, loginEmail(tenant, previous.login)) });
+    if (previous.login.mode === 'username') {
+      const prevEmail = loginEmail(tenant, previous.login);
+      const prevUid = `yc_${await digest(JSON.stringify([tenant.id, id, prevEmail]))}`;
+      writes.push({
+        type: 'set',
+        documentPath: `staff_memberships/${prevUid}`,
+        data: {
+          uid: prevUid,
+          email: prevEmail,
+          displayName: profile.fullName,
+          tenantId: tenant.id,
+          role: 'TEACHER',
+          teacherId: id,
+          isActive: false,
+        },
+      });
+    }
   }
   await store.commit(writes);
   return profile;

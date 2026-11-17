@@ -114,6 +114,7 @@ export interface IDataProvider {
   getTenantBySlug(slug: string): Promise<Tenant | null>;
   getTenantById(id: string): Promise<Tenant | null>;
   getTenants(): Promise<Tenant[]>;
+  createTenant?(tenant: Tenant): Promise<Tenant>;
   getBranches(tenantId: string): Promise<Branch[]>;
   saveBranch(tenantId: string, branch: BranchInput): Promise<Branch>;
   deleteBranch(tenantId: string, branchId: string): Promise<{ success: boolean; error?: string }>;

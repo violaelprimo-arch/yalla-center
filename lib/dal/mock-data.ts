@@ -1113,35 +1113,35 @@ export class MockDataProvider implements IDataProvider {
   public booksInventory: BookInventoryItem[];
   public notifications: NotificationRecord[];
 
-  constructor({ archiveMaherGroups = false, useOperationalFixtures = true } = {}) {
+  constructor({ archiveMaherGroups = false, useOperationalFixtures = true, empty = false } = {}) {
     this.useOperationalFixtures = useOperationalFixtures;
-    this.tenants = JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.tenants));
-    this.stages = JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.stages));
+    this.tenants = empty ? [] : JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.tenants));
+    this.stages = empty ? [] : JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.stages));
     this.initializedStageTenants = new Set(this.stages.map(stage => stage.tenantId));
-    this.branches = useOperationalFixtures ? structuredClone(INITIAL_SEEDED_DATA.branches) : [];
-    this.baseClassrooms = useOperationalFixtures ? structuredClone(INITIAL_SEEDED_DATA.classrooms) : [];
+    this.branches = !empty && useOperationalFixtures ? structuredClone(INITIAL_SEEDED_DATA.branches) : [];
+    this.baseClassrooms = !empty && useOperationalFixtures ? structuredClone(INITIAL_SEEDED_DATA.classrooms) : [];
     this.classrooms = structuredClone(this.baseClassrooms);
-    this.users = structuredClone(INITIAL_SEEDED_DATA.users).filter(user => useOperationalFixtures || user.role !== 'TEACHER');
-    this.subjects = JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.subjects));
-    this.baseGroups = useOperationalFixtures ? INITIAL_SEEDED_DATA.groups.map(group =>
+    this.users = !empty && useOperationalFixtures ? structuredClone(INITIAL_SEEDED_DATA.users) : [];
+    this.subjects = empty ? [] : JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.subjects));
+    this.baseGroups = !empty && useOperationalFixtures ? INITIAL_SEEDED_DATA.groups.map(group =>
       archiveMaherGroups && group.tenantId === 'tenant-maher-001' ? archiveGroup(group) : { ...group }) : [];
     this.groups = structuredClone(this.baseGroups);
-    this.sessions = useOperationalFixtures ? structuredClone(INITIAL_SEEDED_DATA.sessions) : [];
-    this.enrollments = useOperationalFixtures ? structuredClone(INITIAL_SEEDED_DATA.enrollments) : [];
+    this.sessions = !empty && useOperationalFixtures ? structuredClone(INITIAL_SEEDED_DATA.sessions) : [];
+    this.enrollments = !empty && useOperationalFixtures ? structuredClone(INITIAL_SEEDED_DATA.enrollments) : [];
     this.attendance = [];
-    this.teacherRates = useOperationalFixtures ? structuredClone(INITIAL_SEEDED_DATA.teacherRates) : [];
-    this.teacherPayroll = useOperationalFixtures ? structuredClone(INITIAL_SEEDED_DATA.teacherPayroll) : [];
-    this.teacherAdvances = useOperationalFixtures ? structuredClone(INITIAL_SEEDED_DATA.teacherAdvances) : [];
-    this.materials = JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.materials));
-    this.exams = JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.exams));
-    this.examQuestions = JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.examQuestions));
-    this.examSubmissions = JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.examSubmissions));
-    this.invoices = useOperationalFixtures ? structuredClone(INITIAL_SEEDED_DATA.invoices) : [];
-    this.payments = useOperationalFixtures ? structuredClone(INITIAL_SEEDED_DATA.payments) : [];
-    this.cashierShifts = useOperationalFixtures ? structuredClone(INITIAL_SEEDED_DATA.cashierShifts) : [];
-    this.expenses = useOperationalFixtures ? structuredClone(INITIAL_SEEDED_DATA.expenses) : [];
-    this.booksInventory = JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.booksInventory));
-    this.notifications = JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.notifications));
+    this.teacherRates = !empty && useOperationalFixtures ? structuredClone(INITIAL_SEEDED_DATA.teacherRates) : [];
+    this.teacherPayroll = !empty && useOperationalFixtures ? structuredClone(INITIAL_SEEDED_DATA.teacherPayroll) : [];
+    this.teacherAdvances = !empty && useOperationalFixtures ? structuredClone(INITIAL_SEEDED_DATA.teacherAdvances) : [];
+    this.materials = empty ? [] : JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.materials));
+    this.exams = !empty && useOperationalFixtures ? JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.exams)) : [];
+    this.examQuestions = !empty && useOperationalFixtures ? JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.examQuestions)) : [];
+    this.examSubmissions = !empty && useOperationalFixtures ? JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.examSubmissions)) : [];
+    this.invoices = !empty && useOperationalFixtures ? structuredClone(INITIAL_SEEDED_DATA.invoices) : [];
+    this.payments = !empty && useOperationalFixtures ? structuredClone(INITIAL_SEEDED_DATA.payments) : [];
+    this.cashierShifts = !empty && useOperationalFixtures ? structuredClone(INITIAL_SEEDED_DATA.cashierShifts) : [];
+    this.expenses = !empty && useOperationalFixtures ? structuredClone(INITIAL_SEEDED_DATA.expenses) : [];
+    this.booksInventory = empty ? [] : JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.booksInventory));
+    this.notifications = empty ? [] : JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.notifications));
   }
 
   // Older snapshots contain both saved records and exact copies of the initial fixtures.
@@ -1220,6 +1220,22 @@ export class MockDataProvider implements IDataProvider {
 
   async getTenants(): Promise<Tenant[]> {
     return [...this.tenants];
+  }
+
+  async createTenant(tenant: Tenant): Promise<Tenant> {
+    const existing = this.tenants.find((t) => t.id === tenant.id || t.slug === tenant.slug);
+    if (existing) {
+      Object.assign(existing, tenant);
+      return existing;
+    }
+    const newTenant = { ...tenant };
+    this.tenants.push(newTenant);
+    if (!this.initializedStageTenants.has(newTenant.id)) {
+      const defaultStages = buildDefaultStages(newTenant.id);
+      this.stages.push(...defaultStages);
+      this.initializedStageTenants.add(newTenant.id);
+    }
+    return newTenant;
   }
 
   async getBranches(tenantId: string): Promise<Branch[]> {

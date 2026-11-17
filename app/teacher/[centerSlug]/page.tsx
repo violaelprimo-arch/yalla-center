@@ -67,7 +67,7 @@ export default function TeacherPortalPage({ params }: { params: { centerSlug: st
       {auth.idToken && <Button variant="outline" onClick={() => { setSigninError(''); void auth.signOut(); }}><LogOut size={16} /> تسجيل الخروج</Button>}
     </header>
 
-    {!auth.configured && <p className="rounded-2xl border border-border bg-card p-5 text-sm">دخول المعلمين يحتاج إعداد Firebase في هذه البيئة.</p>}
+    {!auth.configured && <p className="rounded-2xl border border-border bg-card p-5 text-sm text-muted-foreground">خدمة المصادقة السحابية غير متوفرة حالياً في هذه البيئة.</p>}
     {auth.configured && !auth.idToken && !auth.loading && <section className="card-elevated mx-auto max-w-md space-y-4 rounded-2xl border border-border p-5">
       <h2 className="text-lg font-bold">تسجيل دخول المعلم</h2>
       <form className="space-y-3" onSubmit={event => { event.preventDefault(); void signIn('username'); }}>

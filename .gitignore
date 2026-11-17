@@ -11,16 +11,22 @@
 build/
 dist/
 
+# Package manager locks
+pnpm-lock.yaml
+*.tsbuildinfo
+
 # Environment files
 .env*.local
 .env
+.env.production
+.env.local
 
-# Logs
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-.pnpm-debug.log*
+# Private logs
 *.log
+
+# Helper tools & dev scripts
+.bin_tools/
+.test_probe.txt
 
 # Testing coverage
 /coverage/

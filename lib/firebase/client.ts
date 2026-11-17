@@ -9,6 +9,7 @@ import {
   onIdTokenChanged,
   signInWithEmailAndPassword,
   signOut,
+  sendPasswordResetEmail,
   type Auth,
   type User as FirebaseUser,
 } from 'firebase/auth';
@@ -161,6 +162,14 @@ export async function signOutFirebaseStaff(): Promise<void> {
   const services = getFirebaseClientServices();
   if (!services) return;
   await signOut(services.auth);
+}
+
+export async function sendFirebasePasswordReset(email: string): Promise<void> {
+  const services = getFirebaseClientServices();
+  if (!services) {
+    throw new Error('خدمة المصادقة السحابية غير متوفرة');
+  }
+  await sendPasswordResetEmail(services.auth, email.trim());
 }
 
 export async function getFreshFirebaseIdToken(): Promise<string | null> {

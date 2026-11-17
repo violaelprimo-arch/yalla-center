@@ -206,6 +206,27 @@ export default function OwnerOverviewDashboard() {
         </Card>
       </div>
 
+      {/* Empty State Banner if no centers exist yet */}
+      {centers.length === 0 && (
+        <div className="card-elevated p-6 rounded-2xl border border-brand-cyan-500/30 bg-brand-cyan-500/5 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-brand-cyan-500/10 text-brand-cyan-600 dark:text-brand-cyan-400 flex items-center justify-center shrink-0">
+              <Building2 className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="font-bold text-foreground text-sm">مرحباً بك في لوحة تحكم مالك منصة يلا سنتر</h3>
+              <p className="text-xs text-muted-foreground mt-0.5">لا توجد سناتر أو مراكز مسجلة بعد. يمكنك إضافة وتكوين أول سنتر على المنصة الآن.</p>
+            </div>
+          </div>
+          <Link href="/owner/centers">
+            <Button variant="cyan" size="sm" className="font-bold text-xs gap-1.5 shrink-0 shadow-soft-sm">
+              <Plus className="w-4 h-4" />
+              <span>إضافة أول سنتر</span>
+            </Button>
+          </Link>
+        </div>
+      )}
+
       {/* Six Main Tabs Quick Navigator Hub */}
       <div className="space-y-4">
         <div className="flex items-center justify-between">

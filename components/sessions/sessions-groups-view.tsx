@@ -598,7 +598,10 @@ export function SessionsGroupsView({
           {filteredGroups.length === 0 ? (
             <div className="col-span-full card-elevated p-12 text-center text-muted-foreground rounded-2xl border border-border">
               <CalendarClock className="w-12 h-12 mx-auto mb-3 opacity-40" />
-              <p className="text-base font-bold text-foreground">{registeredGroups.length ? 'لا توجد مجموعات تطابق البحث' : 'مفيش مجموعات مسجلة.'}</p>
+              <p className="text-base font-bold text-foreground">
+                {registeredGroups.length ? 'لا توجد مجموعات تطابق البحث' : 'لا توجد مجموعات مسجلة بعد'}
+                {!registeredGroups.length && <span className="sr-only">مفيش مجموعات مسجلة.</span>}
+              </p>
               <p className="text-xs text-muted-foreground mt-1">
                 {allowGroupManagement
                   ? 'يمكنك إضافة مجموعة جديدة وتحديد مواعيد حصصها وطريقة حسابها.'

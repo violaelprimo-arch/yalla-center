@@ -724,10 +724,31 @@ function TeachersDirectory() {
                 <tbody className="divide-y divide-border">
                   {visibleTeachers.length === 0 ? (
                     <tr>
-                      <td colSpan={9} className="p-10 text-center text-muted-foreground space-y-1">
-                        <Users size={28} className="mx-auto text-muted-foreground/40" />
-                        <p className="font-bold">لا يوجد معلمون مطابقون لمعايير البحث والتصفية</p>
-                        <p className="text-[11px]">جرّب تغيير فلاتر البحث أو إضافة معلم جديد بالنقر على زر الإضافة أعلاه.</p>
+                      <td colSpan={9} className="p-12 text-center text-muted-foreground space-y-3">
+                        <Users size={32} className="mx-auto text-muted-foreground/40" />
+                        {totalTeachersCount === 0 ? (
+                          <div className="space-y-3">
+                            <p className="font-bold text-sm text-foreground">لا يوجد معلمون مسجلون بعد</p>
+                            <p className="text-xs text-muted-foreground">ابدأ بإضافة أول معلم للسنتر لإسناد المراحل والمجموعات والبدء بالتشغيل.</p>
+                            {mayManageDemo && (
+                              <Button
+                                type="button"
+                                variant="cyan"
+                                size="sm"
+                                onClick={() => setEditor({ id: `teacher-${crypto.randomUUID()}` })}
+                                className="gap-2 font-bold text-xs shadow-soft-sm mx-auto"
+                              >
+                                <Plus size={16} />
+                                <span>إضافة معلم جديد</span>
+                              </Button>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="space-y-1">
+                            <p className="font-bold text-foreground">لا يوجد معلمون مطابقون لمعايير البحث والتصفية</p>
+                            <p className="text-[11px]">جرّب تغيير فلاتر البحث أو إعادة تعيين معايير البحث.</p>
+                          </div>
+                        )}
                       </td>
                     </tr>
                   ) : (

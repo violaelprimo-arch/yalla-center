@@ -235,6 +235,36 @@ rules_version = '2';
 //   - studentUid: string (optional)
 //   - status: string (optional)
 //
+// Collection: users
+// Document ID: {userId}
+// Subcollection: profile/{profileDocId}
+// Fields:
+//   - id: string (optional) - User identifier
+//   - uid: string (optional) - Firebase Auth UID
+//   - tenantId: string (optional, immutable for non-owners) - Center/tenant ID
+//   - role: string (optional) - User role (PLATFORM_OWNER, CENTER_ADMIN, TEACHER, STUDENT, etc.)
+//   - fullName: string (optional, max 200 chars)
+//   - username: string (optional, max 64 chars)
+//   - email: string (optional, max 256 chars)
+//   - phone: string (optional, max 32 chars)
+//   - avatarUrl: string (optional, safe profile field, max 2048 chars)
+//   - photoUrl: string (optional, safe profile field, max 2048 chars)
+//   - avatar_url: string (optional, safe profile field, max 2048 chars)
+//   - status / isActive: string/bool (optional)
+//   - createdAt: string/timestamp (optional)
+//   - updatedAt: string/timestamp (optional)
+//
+// Collection: system_usernames
+// Document ID: {username}
+// Fields:
+//   - username: string (required, 3..64 chars, immutable)
+//   - email: string (optional, max 256 chars)
+//   - uid: string (optional, max 128 chars)
+//   - teacherId: string (optional, max 128 chars)
+//   - tenantId: string (required, max 128 chars, immutable)
+//   - tenantSlug: string (optional, max 128 chars)
+//   - createdAt: string/timestamp (optional)
+//
 // ===============================================================
 
 service cloud.firestore {
@@ -362,6 +392,50 @@ service cloud.firestore {
 
     function isValidTenantId(tenantId) {
       return tenantId is string && tenantId.size() > 0 && tenantId.size() <= 128;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isCenterAdminForDoc(docData) {
+      return isPlatformOwner() || (
+        'tenantId' in docData && isCenterAdmin(docData.tenantId)
+      );
+    }
+
+    function isSafeProfileUpdate() {
+      let allowedKeys = ['avatarUrl', 'photoUrl', 'avatar_url', 'updatedAt'];
+      let diff = request.resource.data.diff(resource.data);
+      return diff.affectedKeys().hasOnly(allowedKeys) &&
+        (!('avatarUrl' in request.resource.data) || request.resource.data.avatarUrl == null || (request.resource.data.avatarUrl is string && request.resource.data.avatarUrl.size() <= 2048)) &&
+        (!('photoUrl' in request.resource.data) || request.resource.data.photoUrl == null || (request.resource.data.photoUrl is string && request.resource.data.photoUrl.size() <= 2048)) &&
+        (!('avatar_url' in request.resource.data) || request.resource.data.avatar_url == null || (request.resource.data.avatar_url is string && request.resource.data.avatar_url.size() <= 2048)) &&
+        (!('updatedAt' in request.resource.data) || request.resource.data.updatedAt is string || request.resource.data.updatedAt is timestamp);
+    }
+
+    function isValidUserDoc(data) {
+      return (!('tenantId' in data) || (data.tenantId is string && isValidTenantId(data.tenantId))) &&
+        (!('role' in data) || (data.role is string && data.role.size() <= 64)) &&
+        (!('fullName' in data) || (data.fullName is string && data.fullName.size() <= 200)) &&
+        (!('email' in data) || (data.email is string && data.email.size() <= 256)) &&
+        (!('phone' in data) || data.phone == null || (data.phone is string && data.phone.size() <= 32)) &&
+        (!('avatarUrl' in data) || data.avatarUrl == null || (data.avatarUrl is string && data.avatarUrl.size() <= 2048)) &&
+        (!('photoUrl' in data) || data.photoUrl == null || (data.photoUrl is string && data.photoUrl.size() <= 2048)) &&
+        (!('avatar_url' in data) || data.avatar_url == null || (data.avatar_url is string && data.avatar_url.size() <= 2048));
+    }
+
+    function isValidUsernameData(data, username) {
+      return data.username == username &&
+        data.username is string &&
+        data.username.size() >= 3 &&
+        data.username.size() <= 64 &&
+        data.tenantId is string &&
+        isValidTenantId(data.tenantId) &&
+        (!('email' in data) || (data.email is string && data.email.size() <= 256)) &&
+        (!('uid' in data) || (data.uid is string && data.uid.size() <= 128)) &&
+        (!('teacherId' in data) || (data.teacherId is string && data.teacherId.size() <= 128)) &&
+        (!('tenantSlug' in data) || (data.tenantSlug is string && data.tenantSlug.size() <= 128));
     }
 
     // ===============================================================
@@ -790,7 +864,76 @@ service cloud.firestore {
       allow write: if false;
     }
 
-    // 20. Default closed guardrail
+    // 20. Users & Profile documents: self-profile updates & multi-tenant administrative isolation
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isCenterAdminForDoc(resource.data);
+      allow create: if isPlatformOwner() || (
+        'tenantId' in request.resource.data &&
+        isCenterAdmin(request.resource.data.tenantId) &&
+        isValidUserDoc(request.resource.data)
+      );
+      allow update: if (
+        isOwner(userId) &&
+        isSafeProfileUpdate()
+      ) || (
+        isPlatformOwner() &&
+        isValidUserDoc(request.resource.data)
+      ) || (
+        isCenterAdminForDoc(resource.data) &&
+        ('tenantId' in request.resource.data ? request.resource.data.tenantId == resource.data.tenantId : true) &&
+        ('role' in request.resource.data ? request.resource.data.role != 'PLATFORM_OWNER' : true) &&
+        isValidUserDoc(request.resource.data)
+      );
+      allow delete: if isPlatformOwner() || isCenterAdminForDoc(resource.data);
+    }
+
+    // 21. User profile subcollection documents (users/{userId}/profile)
+    match /users/{userId}/profile/{profileDocId} {
+      allow read: if isOwner(userId) || isCenterAdminForDoc(resource.data);
+      allow create: if isPlatformOwner() || (
+        'tenantId' in request.resource.data &&
+        isCenterAdmin(request.resource.data.tenantId) &&
+        isValidUserDoc(request.resource.data)
+      );
+      allow update: if (
+        isOwner(userId) &&
+        isSafeProfileUpdate()
+      ) || (
+        isPlatformOwner() &&
+        isValidUserDoc(request.resource.data)
+      ) || (
+        isCenterAdminForDoc(resource.data) &&
+        ('tenantId' in request.resource.data ? request.resource.data.tenantId == resource.data.tenantId : true) &&
+        ('role' in request.resource.data ? request.resource.data.role != 'PLATFORM_OWNER' : true) &&
+        isValidUserDoc(request.resource.data)
+      );
+      allow delete: if isPlatformOwner() || isCenterAdminForDoc(resource.data);
+    }
+
+    // 22. System usernames registry for uniqueness checks and teacher onboarding
+    match /system_usernames/{username} {
+      allow read: if isSignedIn();
+      allow create: if (
+        isPlatformOwner() || (
+          'tenantId' in request.resource.data &&
+          isCenterAdmin(request.resource.data.tenantId)
+        )
+      ) && isValidUsernameData(request.resource.data, username);
+
+      allow update: if (
+        isPlatformOwner() || (
+          isCenterAdminForDoc(resource.data) &&
+          request.resource.data.tenantId == resource.data.tenantId
+        )
+      ) &&
+      request.resource.data.username == username &&
+      request.resource.data.tenantId == resource.data.tenantId &&
+      isValidUsernameData(request.resource.data, username);
+
+      allow delete: if isPlatformOwner() || isCenterAdminForDoc(resource.data);
+    }
+
+    // 23. Default closed guardrail
     match /{document=**} {
       allow read, write: if false;
     }

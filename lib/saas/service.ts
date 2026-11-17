@@ -932,7 +932,8 @@ function writeStorage<T>(key: string, data: T): void {
 }
 
 // In-memory memory caches for SSR runtime
-let memoryCenters = [...INITIAL_CENTERS];
+const isFixturesMode = process.env.NODE_ENV === 'test' || (typeof window !== 'undefined' && window.location.search.includes('fixtures=true'));
+let memoryCenters = isFixturesMode && process.env.DATA_PROVIDER_MODE !== 'production' ? [...INITIAL_CENTERS] : [];
 let memoryPlans = [...INITIAL_PLANS];
 let memoryWebsiteDraft = { ...INITIAL_WEBSITE_CONFIG };
 let memoryWebsitePublished = { ...INITIAL_WEBSITE_CONFIG };
