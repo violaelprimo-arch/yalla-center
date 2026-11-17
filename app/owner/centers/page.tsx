@@ -319,7 +319,39 @@ export default function OwnerCentersPage() {
 
       {/* Centers Directory Cards Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {filteredCenters.map((center) => {
+        {filteredCenters.length === 0 ? (
+          <div className="col-span-full card-elevated p-12 text-center text-muted-foreground rounded-2xl border border-border space-y-3 bg-card">
+            <div className="w-12 h-12 rounded-2xl bg-brand-cyan-500/10 text-brand-cyan-600 dark:text-brand-cyan-400 flex items-center justify-center mx-auto">
+              <Building2 className="w-6 h-6" />
+            </div>
+            <div>
+              <p className="font-bold text-sm text-foreground">
+                {centers.length === 0 ? 'لا توجد سناتر أو مراكز مسجلة بعد' : 'لا توجد سناتر مطابقة لشروط البحث'}
+              </p>
+              <p className="text-xs text-muted-foreground mt-1 max-w-md mx-auto">
+                {centers.length === 0
+                  ? 'ابدأ بتهيئة وإطلاق أول سنتر تعليمي في منصة يلا سنتر عبر معالج التهيئة الشامل.'
+                  : 'جرّب تغيير كلمات البحث أو إعادة ضبط الفلاتر.'}
+              </p>
+            </div>
+            {centers.length === 0 && (
+              <Button
+                type="button"
+                variant="cyan"
+                size="sm"
+                onClick={() => {
+                  setWizardStep(1);
+                  setIsWizardOpen(true);
+                }}
+                className="gap-2 font-bold text-xs shadow-soft-sm mx-auto"
+              >
+                <Plus className="w-4 h-4" />
+                <span>إضافة أول سنتر الآن</span>
+              </Button>
+            )}
+          </div>
+        ) : (
+          filteredCenters.map((center) => {
           const isSuspended = center.status === 'suspended';
           return (
             <div
@@ -474,7 +506,7 @@ export default function OwnerCentersPage() {
               </div>
             </div>
           );
-        })}
+        }))}
       </div>
 
       {/* ========================================================================= */}

@@ -104,6 +104,7 @@ export function TeacherEditor({
     tabs: initial.tabs || teacherTabs,
   }));
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const [processingPhoto, setProcessingPhoto] = useState(false);
@@ -176,9 +177,15 @@ export function TeacherEditor({
       setError('اكتب بريد Google صحيح');
       return;
     }
-    if (needsPassword && (!password || password.length < 8)) {
-      setError('كلمة المرور لازم تكون 8 أحرف على الأقل');
-      return;
+    if (needsPassword) {
+      if (!password || password.length < 8) {
+        setError('كلمة المرور لازم تكون 8 أحرف على الأقل');
+        return;
+      }
+      if (password !== confirmPassword) {
+        setError('كلمة المرور وتأكيد كلمة المرور غير متطابقتين');
+        return;
+      }
     }
 
     setStep(2);
@@ -521,7 +528,7 @@ export function TeacherEditor({
               <div className="space-y-3 pt-2 border-t border-border">
                 <h3 className="text-sm font-bold text-foreground flex items-center gap-2">
                   <ShieldCheck className="w-4 h-4 text-brand-cyan-600 dark:text-brand-cyan-400" />
-                  <span>بيانات تسجيل دخول المعلم (الحساب السحابي)</span>
+                  <span>بيانات حساب المعلم</span>
                 </h3>
 
                 <div className="flex flex-wrap gap-4 text-xs font-bold">
@@ -533,6 +540,7 @@ export function TeacherEditor({
                       checked={input.login?.mode === 'username'}
                       onChange={() => {
                         setPassword('');
+                        setConfirmPassword('');
                         setField(
                           'login',
                           initial.login?.mode === 'username'
@@ -553,6 +561,7 @@ export function TeacherEditor({
                       checked={input.login?.mode === 'google'}
                       onChange={() => {
                         setPassword('');
+                        setConfirmPassword('');
                         setField(
                           'login',
                           initial.login?.mode === 'google'
@@ -566,7 +575,7 @@ export function TeacherEditor({
                 </div>
 
                 {input.login?.mode === 'username' && (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
                     <div>
                       <label className="text-xs font-semibold text-foreground">اسم المستخدم</label>
                       <input
@@ -583,27 +592,44 @@ export function TeacherEditor({
                       />
                     </div>
                     {needsPassword && (
-                      <div>
-                        <label className="text-xs font-semibold text-foreground">كلمة المرور (مبدئية)</label>
-                        <input
-                          className={control}
-                          aria-label="كلمة المرور"
-                          dir="ltr"
-                          type="password"
-                          autoComplete="new-password"
-                          minLength={8}
-                          maxLength={128}
-                          placeholder="••••••••"
-                          value={password}
-                          onChange={(e) => setPassword(e.target.value)}
-                        />
-                      </div>
+                      <>
+                        <div>
+                          <label className="text-xs font-semibold text-foreground">كلمة المرور (مبدئية)</label>
+                          <input
+                            className={control}
+                            aria-label="كلمة المرور"
+                            dir="ltr"
+                            type="password"
+                            autoComplete="new-password"
+                            minLength={8}
+                            maxLength={128}
+                            placeholder="••••••••"
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs font-semibold text-foreground">تأكيد كلمة المرور</label>
+                          <input
+                            className={control}
+                            aria-label="تأكيد كلمة المرور"
+                            dir="ltr"
+                            type="password"
+                            autoComplete="new-password"
+                            minLength={8}
+                            maxLength={128}
+                            placeholder="••••••••"
+                            value={confirmPassword}
+                            onChange={(e) => setConfirmPassword(e.target.value)}
+                          />
+                        </div>
+                      </>
                     )}
                   </div>
                 )}
 
                 {input.login?.mode === 'google' && (
-                  <div className="pt-1">
+                  <div className="pt-1 space-y-1">
                     <label className="text-xs font-semibold text-foreground">البريد الإلكتروني لحساب Google</label>
                     <input
                       className={control}
@@ -617,6 +643,9 @@ export function TeacherEditor({
                         setField('login', { mode: 'google', email: e.target.value.toLowerCase() })
                       }
                     />
+                    <p className="text-[11px] text-muted-foreground leading-relaxed pt-1">
+                      سيتم إرسال دعوة الحساب، ويلزم المعلم تأكيد هويته عبر تسجيل الدخول الرسمي بحساب Google لربط الصلاحيات.
+                    </p>
                   </div>
                 )}
               </div>

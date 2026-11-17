@@ -9,6 +9,7 @@ import {
   onIdTokenChanged,
   signInWithEmailAndPassword,
   signOut,
+  sendPasswordResetEmail,
   type Auth,
   type User as FirebaseUser,
 } from 'firebase/auth';
@@ -22,6 +23,8 @@ export interface FirebaseWebConfig {
   storageBucket?: string;
   messagingSenderId?: string;
   appId: string;
+  measurementId?: string;
+  vapidKey?: string;
 }
 
 export const DEFAULT_FIREBASE_WEB_CONFIG: FirebaseWebConfig = {
@@ -31,6 +34,8 @@ export const DEFAULT_FIREBASE_WEB_CONFIG: FirebaseWebConfig = {
   storageBucket: 'yalla-center.firebasestorage.app',
   messagingSenderId: '876735697299',
   appId: '1:876735697299:web:31eff284bfe9d6c8771866',
+  measurementId: 'G-2VCJL9XHT3',
+  vapidKey: 'BMWN50P7wQrPxs_lmdMCchy0hbpupsLtyG2wPaljzrMyJz-BT5ORotoR99nLqOgMUdBXkT8nF1d9k-7QtVGEmVM',
 };
 
 export function getFirebaseWebConfig(): FirebaseWebConfig | null {
@@ -91,6 +96,14 @@ export function getFirebaseWebConfig(): FirebaseWebConfig | null {
       DEFAULT_FIREBASE_WEB_CONFIG.messagingSenderId
     )?.trim(),
     appId,
+    measurementId: (
+      process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID ||
+      DEFAULT_FIREBASE_WEB_CONFIG.measurementId
+    )?.trim(),
+    vapidKey: (
+      process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY ||
+      DEFAULT_FIREBASE_WEB_CONFIG.vapidKey
+    )?.trim(),
   };
 }
 
@@ -161,6 +174,14 @@ export async function signOutFirebaseStaff(): Promise<void> {
   const services = getFirebaseClientServices();
   if (!services) return;
   await signOut(services.auth);
+}
+
+export async function sendFirebasePasswordReset(email: string): Promise<void> {
+  const services = getFirebaseClientServices();
+  if (!services) {
+    throw new Error('خدمة المصادقة السحابية غير متوفرة');
+  }
+  await sendPasswordResetEmail(services.auth, email.trim());
 }
 
 export async function getFreshFirebaseIdToken(): Promise<string | null> {

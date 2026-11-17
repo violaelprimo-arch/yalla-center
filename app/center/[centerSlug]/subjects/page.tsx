@@ -343,9 +343,13 @@ export default function SubjectsManagementPage() {
             <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center text-muted-foreground mb-3">
               <BookOpen className="w-6 h-6" />
             </div>
-            <h3 className="text-base font-bold text-foreground">لا توجد مواد دراسية مطابقة</h3>
+            <h3 className="text-base font-bold text-foreground">
+              {subjects.length === 0 ? 'لا توجد مواد دراسية مسجلة بعد' : 'لا توجد مواد دراسية مطابقة'}
+            </h3>
             <p className="text-xs text-muted-foreground mt-1 max-w-sm">
-              لم نجد أي مادة دراسية تطابق معايير البحث. يمكنك إضافة مواد دراسية جديدة للمرحلة والصف المطلوبين.
+              {subjects.length === 0
+                ? 'ابدأ بتهيئة المواد الدراسية الخاصة بالمراحل والصفوف التعليمية في السنتر.'
+                : 'لم نجد أي مادة دراسية تطابق معايير البحث الحالية. يمكنك تعديل خيارات التصفية أو إضافة مادة جديدة.'}
             </p>
             <Button
               disabled={!canEdit}

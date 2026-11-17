@@ -411,8 +411,27 @@ export default function StudentsDirectoryPage() {
                 <tr>
                   <td colSpan={6} className="py-12 text-center text-muted-foreground">
                     <GraduationCap className="w-10 h-10 mx-auto text-muted-foreground/40 mb-2" />
-                    <p className="font-bold">لا يوجد طلاب يطابقون شروط البحث</p>
-                    <p className="text-xs text-muted-foreground mt-1">جرب تغيير كلمات البحث أو إعادة ضبط الفلاتر</p>
+                    {students.length === 0 ? (
+                      <div className="space-y-3">
+                        <p className="font-bold text-sm text-foreground">لا يوجد طلاب مسجلون بعد</p>
+                        <p className="text-xs text-muted-foreground">ابدأ بتسجيل أول طالب في السنتر لتوليد الباركود وكارت الدخول والالتحاق بالمجموعات.</p>
+                        <Button
+                          type="button"
+                          variant="cyan"
+                          size="sm"
+                          onClick={() => setIsRegisterModalOpen(true)}
+                          className="gap-2 font-bold text-xs shadow-soft-sm mx-auto"
+                        >
+                          <Plus className="w-4 h-4" />
+                          <span>إضافة طالب جديد</span>
+                        </Button>
+                      </div>
+                    ) : (
+                      <>
+                        <p className="font-bold">لا يوجد طلاب يطابقون شروط البحث</p>
+                        <p className="text-xs text-muted-foreground mt-1">جرب تغيير كلمات البحث أو إعادة ضبط الفلاتر</p>
+                      </>
+                    )}
                   </td>
                 </tr>
               ) : (

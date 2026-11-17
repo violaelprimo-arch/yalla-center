@@ -629,50 +629,24 @@ export function LessonExamScorePanel({
               </div>
             </div>
           ) : authProps.configured ? (
-            <form onSubmit={handleSignInSubmit} className="space-y-2">
-              <div className="flex items-center gap-1.5 text-[11px] font-bold text-amber-700 dark:text-amber-400">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-2.5 rounded-xl bg-muted/30 border border-border text-xs">
+              <div className="flex items-center gap-1.5 text-[11px] font-bold text-muted-foreground">
                 <Lock className="w-3.5 h-3.5 shrink-0" />
-                <span>سجّل الدخول بحساب الموظف على Firebase لتفعيل الحفظ والمزامنة اللحظية</span>
+                <span>لتفعيل المزامنة السحابية اللحظية، سجّل الدخول بحساب موظف معتمد من بوابة الدخول الموحدة.</span>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                <input
-                  type="email"
-                  required
-                  placeholder="البريد الإلكتروني للموظف"
-                  value={loginEmail}
-                  onChange={(e) => setLoginEmail(e.target.value)}
-                  className="h-8 px-2.5 rounded-lg border border-border bg-background text-xs"
-                />
-                <input
-                  type="password"
-                  required
-                  placeholder="كلمة المرور"
-                  value={loginPassword}
-                  onChange={(e) => setLoginPassword(e.target.value)}
-                  className="h-8 px-2.5 rounded-lg border border-border bg-background text-xs"
-                />
-                <Button
-                  type="submit"
-                  size="sm"
-                  variant="cyan"
-                  disabled={isSigningIn}
-                  className="h-8 text-[11px]"
-                >
-                  <LogIn className="w-3.5 h-3.5" />
-                  <span>{isSigningIn ? 'جارٍ الدخول...' : 'تسجيل الدخول'}</span>
-                </Button>
-              </div>
-              {(loginError || authProps.error) && (
-                <p role="alert" className="text-[11px] font-semibold text-rose-600 dark:text-rose-400">
-                  {loginError || authProps.error}
-                </p>
-              )}
-            </form>
+              <a
+                href="/login"
+                className="text-[11px] font-bold text-brand-cyan-600 hover:underline inline-flex items-center gap-1 shrink-0"
+              >
+                <LogIn className="w-3.5 h-3.5" />
+                <span>بوابة تسجيل الدخول</span>
+              </a>
+            </div>
           ) : (
             <div className="flex items-center gap-2 text-[11px] text-amber-700 dark:text-amber-400">
               <CloudOff className="w-3.5 h-3.5 shrink-0" />
               <span>
-                ربط Firebase غير مفعّل بعد: أضف إعدادات مشروع <code className="font-mono">yalla-center</code> ووقّع دخول الموظف للمزامنة السحابية.
+                المزامنة السحابية غير متصلة؛ يتم الحفظ محليًا على هذا الجهاز بصورة مؤقتة.
               </span>
             </div>
           )}

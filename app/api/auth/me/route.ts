@@ -71,15 +71,24 @@ export async function GET(req: NextRequest) {
     }
 
     // Compute redirect destination
-    let defaultRedirectUrl = `/center/${activeTenant.slug}`;
+    const tenantSlug = activeTenant?.slug || 'al-maher';
+    let defaultRedirectUrl = `/center/${tenantSlug}`;
     if (role === 'PLATFORM_OWNER') {
       defaultRedirectUrl = '/owner';
     } else if (role === 'TEACHER') {
-      defaultRedirectUrl = `/teacher/${activeTenant.slug}`;
+      defaultRedirectUrl = `/teacher/${tenantSlug}`;
+    } else if (role === 'CENTER_ADMIN') {
+      defaultRedirectUrl = `/center/${tenantSlug}`;
+    } else if (role === 'BRANCH_MANAGER') {
+      defaultRedirectUrl = `/center/${tenantSlug}/branch`;
+    } else if (role === 'ACCOUNTANT') {
+      defaultRedirectUrl = `/center/${tenantSlug}/finance`;
+    } else if (role === 'RECEPTIONIST') {
+      defaultRedirectUrl = `/center/${tenantSlug}/reception`;
     } else if (role === 'STUDENT') {
-      defaultRedirectUrl = `/center/${activeTenant.slug}/student-portal`;
+      defaultRedirectUrl = `/center/${tenantSlug}/student-portal`;
     } else if (role === 'PARENT') {
-      defaultRedirectUrl = `/center/${activeTenant.slug}/parent-portal`;
+      defaultRedirectUrl = `/center/${tenantSlug}/parent-portal`;
     }
 
     return reply({

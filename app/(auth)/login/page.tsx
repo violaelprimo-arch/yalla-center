@@ -17,67 +17,20 @@ import {
   GraduationCap,
   Briefcase,
   UserCheck,
+  Eye,
+  EyeOff,
+  KeyRound,
+  HelpCircle,
+  X,
 } from 'lucide-react';
 import { BrandLogo } from '@/components/brand/brand-logo';
 import { Button } from '@/components/ui/button';
 import {
   getFirebaseClientServices,
-  signInFirebaseStaff,
   signInFirebaseGoogle,
   useFirebaseAuthSession,
 } from '@/lib/firebase/client';
-
-interface DemoAccount {
-  label: string;
-  role: string;
-  email: string;
-  password: string;
-  icon: React.ElementType;
-  targetUrl: string;
-}
-
-const DEMO_ACCOUNTS: DemoAccount[] = [
-  {
-    label: 'مالك المنصة (Super-Admin)',
-    role: 'PLATFORM_OWNER',
-    email: 'owner@yallacenter.com',
-    password: 'password123',
-    icon: ShieldCheck,
-    targetUrl: '/owner',
-  },
-  {
-    label: 'مدير السنتر (سنتر الماهر)',
-    role: 'CENTER_ADMIN',
-    email: 'admin@almaher.edu.eg',
-    password: 'password123',
-    icon: Building2,
-    targetUrl: '/center/al-maher',
-  },
-  {
-    label: 'معلم معتمد (أحمد عبد العزيز)',
-    role: 'TEACHER',
-    email: 'teacher@almaher.edu.eg',
-    password: 'password123',
-    icon: Briefcase,
-    targetUrl: '/teacher/al-maher',
-  },
-  {
-    label: 'طالب مقيد (بوابة الطالب)',
-    role: 'STUDENT',
-    email: 'student@almaher.edu.eg',
-    password: 'password123',
-    icon: GraduationCap,
-    targetUrl: '/center/al-maher/student-portal',
-  },
-  {
-    label: 'ولي أمر (بوابة ولي الأمر)',
-    role: 'PARENT',
-    email: 'parent@almaher.edu.eg',
-    password: 'password123',
-    icon: Users,
-    targetUrl: '/center/al-maher/parent-portal',
-  },
-];
+import { getArabicAuthErrorMessage } from '@/lib/firebase/errors';
 
 function LoginForm() {
   const router = useRouter();
@@ -85,27 +38,20 @@ function LoginForm() {
   const redirectParam = searchParams.get('redirect');
 
   const authSession = useFirebaseAuthSession();
-  const [email, setEmail] = useState('');
+  const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
   const [googleBusy, setGoogleBusy] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
-  const [isDemoAllowed, setIsDemoAllowed] = useState(false);
 
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const host = window.location.hostname;
-      if (
-        process.env.NODE_ENV !== 'production' ||
-        host.includes('workers.dev') ||
-        host.includes('localhost') ||
-        window.location.search.includes('demo=true')
-      ) {
-        setIsDemoAllowed(true);
-      }
-    }
-  }, []);
+  // Password Reset Modal State
+  const [isResetOpen, setIsResetOpen] = useState(false);
+  const [resetIdentifier, setResetIdentifier] = useState('');
+  const [resetBusy, setResetBusy] = useState(false);
+  const [resetMsg, setResetMsg] = useState<string | null>(null);
+  const [resetError, setResetError] = useState<string | null>(null);
 
   // Sync cookies helper
   const setSessionCookies = (role: string, tenantSlug: string, userId: string) => {
@@ -126,22 +72,24 @@ function LoginForm() {
       const data = await res.json();
       if (data.authenticated && data.user) {
         setSessionCookies(data.user.role, data.tenant?.slug || 'al-maher', data.user.uid);
-        const destination = redirectParam || data.defaultRedirectUrl || `/center/${data.tenant?.slug || 'al-maher'}`;
+        const destination =
+          redirectParam || data.defaultRedirectUrl || `/center/${data.tenant?.slug || 'al-maher'}`;
         setSuccessMsg(`مرحبًا بك، ${data.user.displayName}. جارٍ تحويلك إلى بوابتك...`);
         setTimeout(() => {
           router.push(destination);
-        }, 600);
+        }, 500);
+      } else {
+        setErrorMsg('تعذّر التحقق من الصلاحيات السحابية للحساب.');
       }
     } catch {
-      // Fallback redirect
-      router.push('/center/al-maher');
+      setErrorMsg('تعذّر الاتصال بخادم التحقق من الصلاحيات.');
     }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email || !password) {
-      setErrorMsg('يرجى إدخال البريد الإلكتروني وكلمة المرور');
+    if (!identifier.trim() || !password) {
+      setErrorMsg('يرجى إدخال اسم المستخدم أو البريد الإلكتروني وكلمة المرور');
       return;
     }
 
@@ -150,26 +98,36 @@ function LoginForm() {
     setSuccessMsg(null);
 
     try {
-      const result = await signInFirebaseStaff(email, password);
-      await handleAuthenticatedUser(result.idToken);
-    } catch (err: unknown) {
-      // Demo accounts fallback if user not yet created in remote Firebase console
-      const trimmedEmail = email.trim().toLowerCase();
-      const demoMatch = DEMO_ACCOUNTS.find((a) => a.email.toLowerCase() === trimmedEmail);
-      if (demoMatch && (password === 'password123' || password === demoMatch.password)) {
-        setSessionCookies(demoMatch.role, 'al-maher', `demo-${demoMatch.role.toLowerCase()}`);
-        setSuccessMsg(`تم تسجيل الدخول بصلاحيات ${demoMatch.label}. جارٍ التحويل...`);
-        setTimeout(() => {
-          router.push(redirectParam || demoMatch.targetUrl);
-        }, 500);
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          identifier: identifier.trim(),
+          password,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok || !data.authenticated) {
+        const errorText = data.error || 'اسم المستخدم أو كلمة المرور غير صحيحة';
+        setErrorMsg(getArabicAuthErrorMessage(errorText));
+        setBusy(false);
         return;
       }
 
-      const msg =
-        err instanceof Error
-          ? err.message
-          : 'تعذّر تسجيل الدخول. راجع البريد وكلمة المرور.';
-      setErrorMsg(msg);
+      // Successful server-side authentication
+      if (data.user && data.defaultRedirectUrl) {
+        const targetTenant = data.tenant?.slug || 'al-maher';
+        setSessionCookies(data.user.role, targetTenant, data.user.uid);
+        setSuccessMsg(`مرحبًا بك، ${data.user.displayName}. جارٍ تحويلك إلى بوابتك المعتمدة...`);
+        const destination = redirectParam || data.defaultRedirectUrl;
+        setTimeout(() => {
+          router.push(destination);
+        }, 500);
+      }
+    } catch {
+      setErrorMsg('تعذّر الاتصال بخدمة تسجيل الدخول. يرجى التحقق من اتصال الإنترنت.');
       setBusy(false);
     }
   };
@@ -186,29 +144,46 @@ function LoginForm() {
         await handleAuthenticatedUser(idToken);
       }
     } catch (err: unknown) {
-      const msg =
-        err instanceof Error ? err.message : 'تعذّر إتمام تسجيل الدخول بحساب Google';
+      const msg = getArabicAuthErrorMessage(err, 'تعذّر إتمام تسجيل الدخول بحساب Google');
       setErrorMsg(msg);
       setGoogleBusy(false);
     }
   };
 
-  const applyDemoPreset = (account: DemoAccount) => {
-    setEmail(account.email);
-    setPassword(account.password);
-    setErrorMsg(null);
-  };
+  const handlePasswordReset = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!resetIdentifier.trim()) {
+      setResetError('يرجى إدخال اسم المستخدم أو البريد الإلكتروني');
+      return;
+    }
 
-  const handleDemoDirectLogin = (account: DemoAccount) => {
-    setSessionCookies(account.role, 'al-maher', `demo-${account.role.toLowerCase()}`);
-    setSuccessMsg(`تم تفعيل دور ${account.label}. جارٍ الدخول...`);
-    setTimeout(() => {
-      router.push(account.targetUrl);
-    }, 400);
+    setResetBusy(true);
+    setResetMsg(null);
+    setResetError(null);
+
+    try {
+      const res = await fetch('/api/auth/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ identifier: resetIdentifier.trim() }),
+      });
+      const data = await res.json();
+      setResetMsg(
+        data.message ||
+          'إذا كان هذا الحساب مسجلاً لدينا، فستصلك تعليمات استعادة كلمة المرور عبر البريد الإلكتروني.'
+      );
+    } catch {
+      setResetError('تعذّر إرسال طلب الاستعادة. حاول مجددًا لاحقًا.');
+    } finally {
+      setResetBusy(false);
+    }
   };
 
   return (
-    <div className="min-h-screen bg-background text-foreground flex flex-col justify-between p-4 sm:p-8 relative overflow-hidden" dir="rtl">
+    <div
+      className="min-h-screen bg-background text-foreground flex flex-col justify-between p-4 sm:p-8 relative overflow-hidden"
+      dir="rtl"
+    >
       {/* Ambient background glows */}
       <div className="absolute top-[-10%] right-[-10%] w-[500px] h-[500px] rounded-full bg-brand-cyan-500/10 blur-[130px] pointer-events-none" />
       <div className="absolute bottom-[-10%] left-[-10%] w-[500px] h-[500px] rounded-full bg-brand-blue-700/15 blur-[130px] pointer-events-none" />
@@ -229,7 +204,7 @@ function LoginForm() {
 
       {/* Main Login Container */}
       <main className="w-full max-w-4xl mx-auto my-auto py-8 grid grid-cols-1 lg:grid-cols-12 gap-8 items-center z-10">
-        {/* Left Side (or Right in RTL): Login Form */}
+        {/* Left Side: Login Form */}
         <div className="lg:col-span-7 bg-card border border-border rounded-2xl shadow-soft-lg p-6 sm:p-8 space-y-6">
           <div className="space-y-1">
             <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-brand-cyan-500/10 text-brand-cyan-600 dark:text-brand-cyan-400 border border-brand-cyan-500/20 inline-flex items-center gap-1">
@@ -238,7 +213,7 @@ function LoginForm() {
             </span>
             <h1 className="text-2xl font-black text-foreground pt-2">تسجيل الدخول إلى يلا سنتر</h1>
             <p className="text-xs text-muted-foreground">
-              سجّل الدخول بحسابك السحابي للوصول التلقائي إلى بوابتك وصلاحياتك المحددة.
+              سجّل الدخول بحسابك السحابي للوصول التلقائي إلى بوابتك وصلاحياتك المعتمدة.
             </p>
           </div>
 
@@ -289,44 +264,64 @@ function LoginForm() {
           <div className="relative flex items-center justify-center">
             <div className="border-t border-border w-full" />
             <span className="bg-card px-3 text-[11px] text-muted-foreground uppercase absolute">
-              أو عبر البريد الإلكتروني
+              أو عبر اسم المستخدم أو البريد
             </span>
           </div>
 
-          {/* Email/Password Form */}
+          {/* Unified Username/Email & Password Form */}
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-1.5">
               <label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
-                <Mail className="w-3.5 h-3.5 text-muted-foreground" />
-                <span>البريد الإلكتروني</span>
+                <Users className="w-3.5 h-3.5 text-muted-foreground" />
+                <span>اسم المستخدم أو البريد الإلكتروني</span>
               </label>
               <input
-                type="email"
+                type="text"
                 dir="ltr"
                 required
-                autoComplete="email"
-                placeholder="user@example.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                autoComplete="username"
+                placeholder="username أو user@example.com"
+                value={identifier}
+                onChange={(e) => setIdentifier(e.target.value)}
                 className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-brand-cyan-500 transition-all text-left"
               />
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
-                <Lock className="w-3.5 h-3.5 text-muted-foreground" />
-                <span>كلمة المرور</span>
-              </label>
-              <input
-                type="password"
-                dir="ltr"
-                required
-                autoComplete="current-password"
-                placeholder="••••••••"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-brand-cyan-500 transition-all text-left"
-              />
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                  <Lock className="w-3.5 h-3.5 text-muted-foreground" />
+                  <span>كلمة المرور</span>
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setIsResetOpen(true)}
+                  className="text-[11px] font-bold text-brand-cyan-600 hover:text-brand-cyan-500 hover:underline"
+                >
+                  نسيت كلمة المرور؟
+                </button>
+              </div>
+              <div className="relative">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  dir="ltr"
+                  required
+                  autoComplete="current-password"
+                  placeholder="••••••••"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full px-3.5 py-2.5 pl-10 rounded-xl border border-border bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-brand-cyan-500 transition-all text-left"
+                />
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground p-1 transition-colors"
+                  aria-label={showPassword ? 'إخفاء كلمة المرور' : 'إظهار كلمة المرور'}
+                >
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
             </div>
 
             <Button
@@ -335,104 +330,158 @@ function LoginForm() {
               disabled={busy || googleBusy}
             >
               <LogIn className="w-4 h-4" />
-              <span>{busy ? 'جارٍ تسجيل الدخول…' : 'تسجيل الدخول السحابي'}</span>
+              <span>{busy ? 'جارٍ التحقق من الحساب…' : 'تسجيل الدخول'}</span>
             </Button>
           </form>
 
-          {/* Status info */}
+          {/* Security status */}
           <div className="pt-2 border-t border-border/60 flex items-center justify-between text-[11px] text-muted-foreground">
             <span>نظام أمان SaaS عالي التشفير</span>
-            <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
+            <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-semibold">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              Firebase Auth Active
+              حماية مشفرة آمنة
             </span>
           </div>
         </div>
 
-        {/* Right Side: Quick Portal Selector & Demo Accounts (Enabled on demo/dev hosts) */}
+        {/* Right Side: Platform Architecture & Security Assurance */}
         <div className="lg:col-span-5 space-y-4">
-          {!isDemoAllowed ? (
-            <div className="card-elevated p-6 rounded-2xl border border-border space-y-4 bg-muted/30">
-              <h2 className="text-sm font-bold text-foreground flex items-center gap-2">
-                <ShieldCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                <span>منظومة الدخول السحابية الموثقة</span>
-              </h2>
-              <p className="text-xs text-muted-foreground leading-relaxed">
-                يتم التحقق من الهوية والصلاحيات مركزياً عبر Firebase Authentication. يتم توجيه كل مستخدم آلياً إلى بوابته المعتمدة وفقاً لعضويته المعتمدة في السنتر.
-              </p>
-              <div className="p-4 rounded-xl bg-card border border-border text-xs space-y-2.5">
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
-                  <span>عزل كامل بين بيانات المراكز والسناتر التعليمية</span>
-                </div>
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
-                  <span>تشفير جلسات العمل وتدقيق الصلاحيات السحابية</span>
-                </div>
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
-                  <span>دعم تسجيل الدخول عبر Google أو البريد الرسمي</span>
-                </div>
+          <div className="card-elevated p-6 rounded-2xl border border-border space-y-4 bg-muted/30">
+            <h2 className="text-sm font-bold text-foreground flex items-center gap-2">
+              <ShieldCheck className="w-4 h-4 text-brand-cyan-600 dark:text-brand-cyan-400" />
+              <span>منظومة الدخول السحابية الموثقة</span>
+            </h2>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              يتم التحقق من الهوية والصلاحيات مركزياً عبر بنية مصادقة آمنة. يتم توجيه كل مستخدم آلياً إلى بوابته المعتمدة فور التحقق:
+            </p>
+            <div className="p-4 rounded-xl bg-card border border-border text-xs space-y-2.5">
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                <span>عزل كامل بين بيانات المراكز والسناتر التعليمية</span>
+              </div>
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                <span>دعم اسم المستخدم الموحد أو البريد الرسمي أو حساب Google</span>
+              </div>
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                <span>توجيه تلقائي للأدوار (المالك، الإدارة، المعلمون، الاستقبال، الطلاب)</span>
+              </div>
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                <span>حماية متقدمة ضد هجمات التخمين ومحاولات الدخول المتكررة</span>
               </div>
             </div>
-          ) : (
-            <div className="card-elevated p-5 rounded-2xl border border-border space-y-3 bg-muted/30">
-              <h2 className="text-sm font-bold text-foreground flex items-center gap-2">
-                <UserCheck className="w-4 h-4 text-brand-cyan-600 dark:text-brand-cyan-400" />
-                <span>الدخول السريع للأدوار التجريبية (Dev Only)</span>
-              </h2>
-              <p className="text-[11px] text-muted-foreground leading-relaxed">
-                اختر أحد الأدوار التالية لملء البيانات أو الدخول الفوري وتجربة بوابات المنصة:
-              </p>
-
-              <div className="space-y-2 pt-1">
-                {DEMO_ACCOUNTS.map((acc) => {
-                  const IconComponent = acc.icon;
-                  return (
-                    <div
-                      key={acc.role}
-                      className="p-3 rounded-xl border border-border bg-card hover:border-brand-cyan-500/50 transition-all flex items-center justify-between gap-3 text-xs"
-                    >
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <div className="w-7 h-7 rounded-lg bg-brand-cyan-500/10 text-brand-cyan-600 dark:text-brand-cyan-400 flex items-center justify-center shrink-0">
-                          <IconComponent className="w-4 h-4" />
-                        </div>
-                        <div className="min-w-0">
-                          <p className="font-bold text-foreground truncate">{acc.label}</p>
-                          <p className="text-[10px] text-muted-foreground font-mono truncate">{acc.email}</p>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        <button
-                          type="button"
-                          onClick={() => applyDemoPreset(acc)}
-                          className="px-2 py-1 rounded-lg text-[10px] font-bold bg-muted hover:bg-muted/80 text-foreground transition-colors"
-                          title="ملء في النموذج"
-                        >
-                          ملء
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDemoDirectLogin(acc)}
-                          className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-brand-cyan-600 hover:bg-brand-cyan-500 text-white transition-colors"
-                          title="دخول فوري مباشر"
-                        >
-                          دخول
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
+          </div>
         </div>
       </main>
 
+      {/* Password Reset Modal */}
+      {isResetOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in"
+          dir="rtl"
+        >
+          <div className="bg-card border border-border rounded-2xl shadow-soft-xl max-w-md w-full p-6 space-y-4">
+            <div className="flex items-center justify-between pb-2 border-b border-border">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-brand-cyan-500/10 text-brand-cyan-600 dark:text-brand-cyan-400 flex items-center justify-center">
+                  <KeyRound className="w-4 h-4" />
+                </div>
+                <h3 className="text-base font-bold text-foreground">استعادة كلمة المرور</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsResetOpen(false);
+                  setResetMsg(null);
+                  setResetError(null);
+                }}
+                className="text-muted-foreground hover:text-foreground p-1 rounded-lg"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              أدخل اسم المستخدم أو البريد الإلكتروني المسجل في النظام، وسنرسل لك رابطاً لإعادة ضبط كلمة المرور.
+            </p>
+
+            {resetError && (
+              <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-600 dark:text-red-400 text-xs flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{resetError}</span>
+              </div>
+            )}
+
+            {resetMsg && (
+              <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 text-xs flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 shrink-0" />
+                <span>{resetMsg}</span>
+              </div>
+            )}
+
+            {!resetMsg ? (
+              <form onSubmit={handlePasswordReset} className="space-y-3 pt-1">
+                <div>
+                  <label className="text-xs font-semibold text-foreground">
+                    اسم المستخدم أو البريد الإلكتروني
+                  </label>
+                  <input
+                    type="text"
+                    dir="ltr"
+                    required
+                    placeholder="user@example.com أو username"
+                    value={resetIdentifier}
+                    onChange={(e) => setResetIdentifier(e.target.value)}
+                    className="w-full mt-1 px-3 py-2 rounded-xl border border-border bg-background text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-brand-cyan-500 text-left"
+                  />
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setIsResetOpen(false)}
+                    className="text-xs"
+                  >
+                    إلغاء
+                  </Button>
+                  <Button
+                    type="submit"
+                    variant="cyan"
+                    size="sm"
+                    disabled={resetBusy}
+                    className="text-xs font-bold"
+                  >
+                    {resetBusy ? 'جارٍ الإرسال…' : 'إرسال رابط الاستعادة'}
+                  </Button>
+                </div>
+              </form>
+            ) : (
+              <div className="pt-2 text-center">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setIsResetOpen(false);
+                    setResetMsg(null);
+                  }}
+                  className="text-xs font-bold w-full"
+                >
+                  العودة لتسجيل الدخول
+                </Button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Footer */}
       <footer className="w-full max-w-5xl mx-auto py-3 text-center text-xs text-muted-foreground border-t border-border/50 z-10">
-        جميع الحقوق محفوظة © {new Date().getFullYear()} منصة يلا سنتر — تشفير سحابي Firebase
+        جميع الحقوق محفوظة © {new Date().getFullYear()} منصة يلا سنتر — تأمين سحابي متعدد المراكز
       </footer>
     </div>
   );
@@ -442,7 +491,10 @@ export default function LoginPage() {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen bg-background flex items-center justify-center p-6 text-sm text-muted-foreground" dir="rtl">
+        <div
+          className="min-h-screen bg-background flex items-center justify-center p-6 text-sm text-muted-foreground"
+          dir="rtl"
+        >
           جارٍ تهيئة بوابة الدخول السحابية…
         </div>
       }
