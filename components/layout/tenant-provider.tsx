@@ -43,16 +43,16 @@ export function TenantProvider({
   const [savedUsers, setSavedUsers] = useState<User[]>();
   const availableUsers = savedUsers ?? initialUsers;
 
-  // Default initial user to Center Admin
+  // Initial user fallback (clean visitor state when unauthenticated)
   const defaultAdmin = useMemo(
     () =>
       initialUsers.find((u) => u.role === 'CENTER_ADMIN') ||
       initialUsers[0] || {
-        id: 'user-admin-default',
+        id: 'user-guest',
         tenantId: tenant.id,
-        role: 'CENTER_ADMIN' as UserRole,
-        fullName: 'أ. محمود التهامي (مدير السنتر)',
-        email: 'admin@almaher.edu.eg',
+        role: 'STUDENT' as UserRole,
+        fullName: 'زائر السنتر',
+        email: '',
         balanceDue: 0,
         isActive: true,
         createdAt: new Date().toISOString(),

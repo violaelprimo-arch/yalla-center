@@ -25,23 +25,96 @@ import { cairoClock, receptionSessionState } from '@/lib/attendance/reception';
 import { getDataProvider } from '@/lib/dal/factory';
 import type { Session } from '@/lib/dal/types';
 import { clockLabel, GROUP_PRICING_LABELS } from '@/lib/timetable/group-schedule';
+import { useFirebaseAuthSession } from '@/lib/firebase/client';
 
 export default function CenterDashboardPage() {
   const { tenant, branches, currentRole, currentUser, groupData } = useTenant();
   const { groups, classrooms, ready } = groupData;
+  const authSession = useFirebaseAuthSession();
   const [todaySessions, setTodaySessions] = useState<Session[]>([]);
+  const [studentsCount, setStudentsCount] = useState<number>(0);
+  const [attendanceRate, setAttendanceRate] = useState<string>('0%');
+  const [attendanceSubtitle, setAttendanceSubtitle] = useState<string>('لا توجد حصص مسجلة اليوم');
+  const [cashierTotal, setCashierTotal] = useState<number>(0);
+  const [cashierSubtitle, setCashierSubtitle] = useState<string>('لا توجد متحصلات خزينة اليوم');
+  const [examsCount, setExamsCount] = useState<number>(0);
+
   const clock = cairoClock();
   const today = clock.slice(0, 10);
   const ownGroups = groups.filter(group => group.teacherId === currentUser.id && group.isActive);
   const scheduledToday = todaySessions.filter(session => groups.some(group => group.id === session.groupId && group.isActive));
   const ownModels = [...new Set(ownGroups.map(group => GROUP_PRICING_LABELS[group.pricingModel]))];
 
+  const isAuthenticated = Boolean(authSession.idToken || authSession.user);
+
   useEffect(() => {
     if (!ready) return;
     let active = true;
-    getDataProvider().getSessions(tenant.id, { date: today }).then(sessions => {
+    const dal = getDataProvider();
+
+    // 1. Load today's sessions
+    dal.getSessions(tenant.id, { date: today }).then(sessions => {
       if (active) setTodaySessions(sessions.sort((a, b) => a.startTime.localeCompare(b.startTime)));
     });
+
+    // 2. Load real students count
+    dal.getUsers(tenant.id, { role: 'STUDENT' }).then(students => {
+      if (active) setStudentsCount(students.filter(s => s.tenantId === tenant.id && s.isActive).length);
+    }).catch(() => {
+      if (active) setStudentsCount(0);
+    });
+
+    // 3. Load today attendance stats
+    if (todaySessions.length > 0) {
+      Promise.all(todaySessions.map(s => dal.getSessionAttendance(s.id))).then(results => {
+        if (!active) return;
+        const allAtt = results.flat();
+        const present = allAtt.filter(r => r.status === 'present').length;
+        const total = allAtt.length;
+        if (total > 0) {
+          const rate = Math.round((present / total) * 100);
+          setAttendanceRate(`${rate}%`);
+          setAttendanceSubtitle(`${present} طالب حاضر من أصل ${total} مسجلاً`);
+        } else {
+          setAttendanceRate('0%');
+          setAttendanceSubtitle('لا توجد تسجيلات حضور اليوم');
+        }
+      }).catch(() => {
+        if (active) {
+          setAttendanceRate('0%');
+          setAttendanceSubtitle('لا توجد حصص مسجلة اليوم');
+        }
+      });
+    } else {
+      setAttendanceRate('0%');
+      setAttendanceSubtitle('لا توجد حصص مسجلة اليوم');
+    }
+
+    // 4. Load cashier shifts & revenue
+    dal.getCashierShifts(tenant.id).then(shifts => {
+      if (!active) return;
+      const todayShifts = shifts.filter(s => s.openedAt.slice(0, 10) === today);
+      const total = todayShifts.reduce((sum, s) => sum + (s.cashCollected || 0) + (s.digitalCollected || 0), 0);
+      setCashierTotal(total);
+      if (todayShifts.length > 0) {
+        setCashierSubtitle(`تم تسجيل ${todayShifts.length} مناوبة خزينة`);
+      } else {
+        setCashierSubtitle('لا توجد حركات خزينة اليوم');
+      }
+    }).catch(() => {
+      if (active) {
+        setCashierTotal(0);
+        setCashierSubtitle('لا توجد حركات خزينة اليوم');
+      }
+    });
+
+    // 5. Load exams count
+    dal.getExams(tenant.id).then(exams => {
+      if (active) setExamsCount(exams.filter(e => e.tenantId === tenant.id).length);
+    }).catch(() => {
+      if (active) setExamsCount(0);
+    });
+
     return () => { active = false; };
   }, [ready, groups, tenant.id, today]);
 
@@ -55,7 +128,9 @@ export default function CenterDashboardPage() {
               لوحة القيادة — {tenant.nameAr}
             </h1>
             <Badge variant="cyan">
-              {currentRole === 'STUDENT'
+              {!isAuthenticated
+                ? 'زائر'
+                : currentRole === 'STUDENT'
                 ? 'طالب'
                 : currentRole === 'TEACHER'
                 ? 'معلم'
@@ -65,13 +140,22 @@ export default function CenterDashboardPage() {
             </Badge>
           </div>
           <p className="text-xs sm:text-sm text-muted-foreground">
-            مرحباً بك، <strong className="text-foreground">{currentUser.fullName}</strong>.
-            متابعة فورية للعمليات اليومية، الحصص الميدانية، والحضور السريع.
+            {isAuthenticated ? (
+              <>
+                مرحباً بك، <strong className="text-foreground">{currentUser.fullName}</strong>.
+                متابعة فورية للعمليات اليومية، الحصص الميدانية، والحضور السريع.
+              </>
+            ) : (
+              <>
+                مرحباً بك في <strong className="text-foreground">{tenant.nameAr}</strong>.
+                يرجى تسجيل الدخول للوصول إلى أدوات الإدارة والحسابات.
+              </>
+            )}
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {['CENTER_ADMIN', 'PLATFORM_OWNER'].includes(currentRole) && (
+          {isAuthenticated && ['CENTER_ADMIN', 'PLATFORM_OWNER'].includes(currentRole) && (
             <Link href={`/center/${tenant.slug}/admin`}>
               <Button size="sm" variant="outline" className="gap-1.5 border-brand-cyan-500/40">
                 <ShieldCheck className="w-4 h-4 text-brand-cyan-600" />
@@ -79,7 +163,7 @@ export default function CenterDashboardPage() {
               </Button>
             </Link>
           )}
-          {['CENTER_ADMIN', 'PLATFORM_OWNER'].includes(currentRole) && (
+          {isAuthenticated && ['CENTER_ADMIN', 'PLATFORM_OWNER'].includes(currentRole) && (
             <Link href={`/center/${tenant.slug}/subscription`}>
               <Button size="sm" variant="outline" className="gap-1.5 border-purple-500/40">
                 <Sparkles className="w-4 h-4 text-purple-500" />
@@ -151,7 +235,7 @@ export default function CenterDashboardPage() {
         </div>
       )}
 
-      {/* 4 Primary Operational Metric Cards */}
+      {/* 4 Primary Operational Metric Cards (Live Real Metrics) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <Card className="hover:border-brand-cyan-500/50 transition-colors">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -163,9 +247,9 @@ export default function CenterDashboardPage() {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-black font-mono text-foreground">850</div>
-            <p className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium mt-1 flex items-center gap-1">
-              <span>+12.4% مقارنة بالشهر السابق</span>
+            <div className="text-2xl font-black font-mono text-foreground">{studentsCount}</div>
+            <p className="text-[11px] text-muted-foreground font-medium mt-1">
+              {studentsCount > 0 ? `${studentsCount} طالب مسجل في السنتر` : 'لا يوجد طلاب مقيدون حالياً'}
             </p>
           </CardContent>
         </Card>
@@ -180,9 +264,9 @@ export default function CenterDashboardPage() {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-black font-mono text-foreground">88.7%</div>
+            <div className="text-2xl font-black font-mono text-foreground">{attendanceRate}</div>
             <p className="text-[11px] text-muted-foreground mt-1">
-              142 طالب حاضر من أصل 160 متوقعاً
+              {attendanceSubtitle}
             </p>
           </CardContent>
         </Card>
@@ -197,9 +281,9 @@ export default function CenterDashboardPage() {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-black font-mono text-foreground">11,360 ج.م</div>
+            <div className="text-2xl font-black font-mono text-foreground">{cashierTotal.toLocaleString()} ج.م</div>
             <p className="text-[11px] text-muted-foreground mt-1">
-              تم إغلاق مناوبة الصباح بنجاح
+              {cashierSubtitle}
             </p>
           </CardContent>
         </Card>
@@ -214,9 +298,9 @@ export default function CenterDashboardPage() {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-black font-mono text-foreground">24</div>
-            <p className="text-[11px] text-purple-600 dark:text-purple-400 font-medium mt-1">
-              مؤصلة بذكاء اصطناعي وتصدير A4
+            <div className="text-2xl font-black font-mono text-foreground">{examsCount}</div>
+            <p className="text-[11px] text-muted-foreground font-medium mt-1">
+              {examsCount > 0 ? 'مؤصلة بذكاء اصطناعي وتصدير A4' : 'لا توجد امتحانات منشأة'}
             </p>
           </CardContent>
         </Card>

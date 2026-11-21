@@ -97,6 +97,8 @@ export interface TeacherProfile extends TeacherInput {
   active: boolean;
   version: number;
   updatedAt: string;
+  uid?: string;
+  createdAt?: string;
 }
 
 export interface ExtraSessionRequest {

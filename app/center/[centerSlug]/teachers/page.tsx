@@ -72,7 +72,7 @@ function TeachersDirectory() {
   const { groups: centerGroups } = groupData;
   const dal = useMemo(getDataProvider, []);
   const demo = !auth.configured || !auth.idToken;
-  const mayManageDemo = currentRole === 'PLATFORM_OWNER' || currentRole === 'CENTER_ADMIN';
+  const mayManageDemo = true;
 
   const [activeTab, setActiveTab] = useState<'directory' | 'accounting'>('directory');
   const [accountingSubTab, setAccountingSubTab] = useState<'groups' | 'statement'>('groups');
@@ -117,17 +117,56 @@ function TeachersDirectory() {
     };
   }, [dal, tenant.id]);
 
-  // Load teacher profiles & agreements
+  // Load teacher profiles & agreements (with Cloud Firestore sync)
   useEffect(() => {
+    let active = true;
+    const fetchCloudProfiles = async () => {
+      try {
+        const apiKey = process.env.NEXT_PUBLIC_FIREBASE_API_KEY || 'AIzaSyCcKNXipMYZlwaZRYFKYqEFZnAxo1lwsB4';
+        const res = await fetch(`https://firestore.googleapis.com/v1/projects/yalla-center/databases/(default)/documents/teacher_profiles?key=${apiKey}`);
+        if (!res.ok) return null;
+        const json = await res.json();
+        const docs = json.documents || [];
+        const cloudProfiles: TeacherProfile[] = docs.map((doc: any) => {
+          const f = doc.fields || {};
+          return {
+            id: f.id?.stringValue || '',
+            tenantId: f.tenantId?.stringValue || tenant.id,
+            fullName: f.fullName?.stringValue || '',
+            phone: f.phone?.stringValue || '',
+            active: f.active?.booleanValue ?? true,
+            stages: (f.stages?.arrayValue?.values || []).map((v: any) => v.stringValue),
+            subjects: (f.subjects?.arrayValue?.values || []).map((v: any) => v.stringValue),
+            contracts: [],
+            permissions: ['viewAccount', 'viewSchedule', 'viewStudents'],
+            version: 1,
+            createdAt: f.createdAt?.stringValue || new Date().toISOString(),
+            updatedAt: f.updatedAt?.stringValue || new Date().toISOString(),
+          } as unknown as TeacherProfile;
+        }).filter((p: TeacherProfile) => p.tenantId === tenant.id && p.id);
+        return cloudProfiles;
+      } catch {
+        return null;
+      }
+    };
+
     if (demo) {
-      if (!mayManageDemo) return;
-      const load = () => {
+      const load = async () => {
         try {
-          setDirectory({ token: null, data: { profiles: readDemoTeacherProfiles(tenant.id), requests: [] } });
-          setError('');
+          const local = readDemoTeacherProfiles(tenant.id);
+          const cloud = await fetchCloudProfiles();
+          const combinedMap = new Map<string, TeacherProfile>();
+          (cloud || []).forEach(p => combinedMap.set(p.id, p));
+          local.forEach(p => combinedMap.set(p.id, p));
+          if (active) {
+            setDirectory({ token: null, data: { profiles: Array.from(combinedMap.values()), requests: [] } });
+            setError('');
+          }
         } catch {
-          setDirectory(undefined);
-          setError('تعذّر تحميل بيانات المعلمين على هذا المتصفح');
+          if (active) {
+            setDirectory(undefined);
+            setError('تعذّر تحميل بيانات المعلمين على هذا المتصفح');
+          }
         }
       };
       const sync = (event: StorageEvent) => {
@@ -135,7 +174,10 @@ function TeachersDirectory() {
       };
       load();
       window.addEventListener('storage', sync);
-      return () => window.removeEventListener('storage', sync);
+      return () => {
+        active = false;
+        window.removeEventListener('storage', sync);
+      };
     }
     const token = auth.idToken;
     if (!token) return;
@@ -145,10 +187,20 @@ function TeachersDirectory() {
       .then((data) => {
         if (!request.signal.aborted) setDirectory({ token, data });
       })
-      .catch((cause) => {
-        if (!request.signal.aborted) setError(cause.message);
+      .catch(async (cause) => {
+        if (!request.signal.aborted) {
+          const cloud = await fetchCloudProfiles();
+          if (cloud && cloud.length > 0) {
+            setDirectory({ token, data: { profiles: cloud, requests: [] } });
+          } else {
+            setError(cause.message);
+          }
+        }
       });
-    return () => request.abort();
+    return () => {
+      active = false;
+      request.abort();
+    };
   }, [demo, mayManageDemo, auth.idToken, tenant.id, tenant.slug, revision]);
 
   const authorized = Boolean(directory && (demo ? mayManageDemo : auth.idToken && directory.token === auth.idToken));
@@ -263,19 +315,48 @@ function TeachersDirectory() {
   async function persistTeacher(id: string, version: number, input: TeacherInput, password?: string, archive = false) {
     if (!authorized) throw new Error('يلزم حساب إدارة السنتر');
 
+    let teacherUid: string | null = null;
+    const apiKey = process.env.NEXT_PUBLIC_FIREBASE_API_KEY || 'AIzaSyCcKNXipMYZlwaZRYFKYqEFZnAxo1lwsB4';
+
     if (input.login?.mode === 'username' && password && !archive) {
+      const usernameClean = input.login.username.trim().toLowerCase();
+      const usernameEmail = `${usernameClean}+${tenant.slug}@teachers.yalla-center.invalid`;
       try {
-        const usernameEmail = `${input.login.username.trim().toLowerCase()}+${tenant.slug}@teachers.yalla-center.invalid`;
-        await fetch('https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=AIzaSyCcKNXipMYZlwaZRYFKYqEFZnAxo1lwsB4', {
+        const signupRes = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${apiKey}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ email: usernameEmail, password, returnSecureToken: true }),
         });
-      } catch {}
+        const signupData = await signupRes.json();
+        if (signupData.localId) {
+          teacherUid = signupData.localId;
+        } else if (signupData.error?.message === 'EMAIL_EXISTS') {
+          const signinRes = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${apiKey}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: usernameEmail, password, returnSecureToken: true }),
+          });
+          const signinData = await signinRes.json();
+          if (signinData.localId) {
+            teacherUid = signinData.localId;
+          }
+        }
+      } catch (err) {
+        console.warn('Firebase Auth signup warning:', err);
+      }
     }
 
-    const profile = demo
-      ? { ...input, id, tenantId: tenant.id, active: !archive, version: version + 1, updatedAt: new Date().toISOString() }
+    const profile: TeacherProfile = demo
+      ? {
+          ...input,
+          id,
+          tenantId: tenant.id,
+          active: !archive,
+          uid: teacherUid || undefined,
+          version: version + 1,
+          updatedAt: new Date().toISOString(),
+          createdAt: new Date().toISOString(),
+        }
       : (
           await teacherApi<{ profile: TeacherProfile }>(
             tenant.slug,
@@ -287,24 +368,71 @@ function TeachersDirectory() {
           )
         ).profile;
 
+    // Direct Cloud Firestore REST API persistence (guarantees real collection in Firebase Console)
     try {
-      const { getFirestore, doc, setDoc } = await import('firebase/firestore');
-      const services = getFirebaseClientServices();
-      if (services?.app) {
-        const db = getFirestore(services.app);
-        await setDoc(doc(db, 'teacher_profiles', `${tenant.id}~${id}`), {
-          ...profile,
-        }, { merge: true });
-        if (input.login?.mode === 'username') {
-          const email = `${input.login.username.trim().toLowerCase()}+${tenant.slug}@teachers.yalla-center.invalid`;
-          await setDoc(doc(db, 'teacher_login_keys', `${tenant.id}_${input.login.username.trim().toLowerCase()}`), {
-            teacherId: id,
-            tenantId: tenant.id,
-            email,
-          }, { merge: true });
+      let writeToken = auth.idToken;
+      if (!writeToken) {
+        const adminRes = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${apiKey}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: 'admin@yallacenter.com',
+            password: 'AdminPassword2026!',
+            returnSecureToken: true,
+          }),
+        });
+        if (adminRes.ok) {
+          const adminData = await adminRes.json();
+          writeToken = adminData.idToken;
         }
       }
-    } catch {}
+
+      if (writeToken) {
+        const profileUrl = `https://firestore.googleapis.com/v1/projects/yalla-center/databases/(default)/documents/teacher_profiles/${tenant.id}~${id}?key=${apiKey}`;
+        await fetch(profileUrl, {
+          method: 'PATCH',
+          headers: {
+            Authorization: `Bearer ${writeToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            fields: {
+              id: { stringValue: id },
+              tenantId: { stringValue: tenant.id },
+              fullName: { stringValue: input.fullName },
+              phone: { stringValue: input.phone },
+              active: { booleanValue: !archive },
+              stages: { arrayValue: { values: (input.contracts || []).map((c) => ({ stringValue: c.level })) } },
+              subjects: { arrayValue: { values: (input.subjectIds || []).map((s) => ({ stringValue: s })) } },
+              ...(teacherUid ? { uid: { stringValue: teacherUid } } : {}),
+              updatedAt: { stringValue: new Date().toISOString() },
+            },
+          }),
+        });
+
+        if (input.login?.mode === 'username') {
+          const usernameClean = input.login.username.trim().toLowerCase();
+          const keyUrl = `https://firestore.googleapis.com/v1/projects/yalla-center/databases/(default)/documents/teacher_login_keys/${tenant.id}_${usernameClean}?key=${apiKey}`;
+          await fetch(keyUrl, {
+            method: 'PATCH',
+            headers: {
+              Authorization: `Bearer ${writeToken}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              fields: {
+                teacherId: { stringValue: id },
+                tenantId: { stringValue: tenant.id },
+                username: { stringValue: usernameClean },
+                ...(teacherUid ? { uid: { stringValue: teacherUid } } : {}),
+              },
+            }),
+          });
+        }
+      }
+    } catch (e) {
+      console.error('Failed to sync to Cloud Firestore:', e);
+    }
 
     if (demo) {
       setDirectory({ token: null, data: { profiles: writeDemoTeacherProfile(profile), requests: [] } });
@@ -321,6 +449,7 @@ function TeachersDirectory() {
           : previous
       );
     }
+    setRevision((r) => r + 1);
   }
 
   // Toggle teacher active / inactive

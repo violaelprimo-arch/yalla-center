@@ -568,43 +568,51 @@ export function TeacherEditor({
                 </div>
 
                 {input.login?.mode === 'username' && (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                    <div>
-                      <label className="text-xs font-semibold text-foreground">
-                        اسم المستخدم <span className="text-destructive">*</span>
-                      </label>
-                      <input
-                        className={control}
-                        aria-label="اسم المستخدم"
-                        dir="ltr"
-                        autoComplete="off"
-                        maxLength={32}
-                        placeholder="teacher_username"
-                        value={input.login.username}
-                        onChange={(e) =>
-                          setField('login', {
-                            mode: 'username',
-                            username: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''),
-                          })
-                        }
-                      />
-                    </div>
-                    <div>
-                      <label className="text-xs font-semibold text-foreground">
-                        {editing ? 'كلمة المرور (اتركها فارغة للاحتفاظ بالحالية)' : 'كلمة المرور *'}
-                      </label>
-                      <input
-                        className={control}
-                        aria-label="كلمة المرور"
-                        dir="ltr"
-                        type="password"
-                        autoComplete="new-password"
-                        minLength={6}
-                        maxLength={128}
-                        placeholder={editing ? '•••••••• (غير معدلة)' : '•••••••• (6 أحرف أو أكثر)'}
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                      />
+                  <div className="bg-muted/40 p-4 rounded-xl border border-border/80 space-y-3 pt-3">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-xs font-bold text-foreground block mb-1">
+                          اسم المستخدم (Username) <span className="text-destructive">*</span>
+                        </label>
+                        <input
+                          className={control}
+                          aria-label="اسم المستخدم"
+                          dir="ltr"
+                          autoComplete="off"
+                          maxLength={32}
+                          placeholder="teacher_username"
+                          value={input.login.username}
+                          onChange={(e) =>
+                            setField('login', {
+                              mode: 'username',
+                              username: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''),
+                            })
+                          }
+                        />
+                        <span className="text-[10px] text-muted-foreground mt-1 block">
+                          أحرف إنجليزية وأرقام وعلامة _ فقط
+                        </span>
+                      </div>
+                      <div>
+                        <label className="text-xs font-bold text-foreground block mb-1">
+                          {editing ? 'كلمة المرور (اتركها فارغة للاحتفاظ بالحالية)' : 'كلمة المرور (Password) *'}
+                        </label>
+                        <input
+                          className={control}
+                          aria-label="كلمة المرور"
+                          dir="ltr"
+                          type="password"
+                          autoComplete="new-password"
+                          minLength={6}
+                          maxLength={128}
+                          placeholder={editing ? '•••••••• (غير معدلة)' : '•••••••• (6 أحرف أو أكثر)'}
+                          value={password}
+                          onChange={(e) => setPassword(e.target.value)}
+                        />
+                        <span className="text-[10px] text-muted-foreground mt-1 block">
+                          6 أحرف أو أرقام على الأقل لتسجيل دخول المعلم
+                        </span>
+                      </div>
                     </div>
                   </div>
                 )}
