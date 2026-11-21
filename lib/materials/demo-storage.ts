@@ -8,7 +8,7 @@ export function demoMaterialsKey(tenantId: string) {
 }
 
 export async function readDemoMaterials(tenantId: string, raw = window.localStorage.getItem(demoMaterialsKey(tenantId))): Promise<Material[]> {
-  if (raw === null) return getDataProvider().getMaterials(tenantId);
+  if (raw === null) return getDataProvider().useOperationalFixtures ? getDataProvider().getMaterials(tenantId) : [];
   let materials: unknown;
   try { materials = JSON.parse(raw); } catch { throw new MaterialError(400, 'تعذّر قراءة المذكرات المحفوظة في هذا المتصفح'); }
   if (!Array.isArray(materials) || !materials.every(row => row?.tenantId === tenantId &&

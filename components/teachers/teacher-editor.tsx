@@ -122,11 +122,6 @@ export function TeacherEditor({
   }, []);
 
   const avatar = input.avatarData ?? (showOldPhoto ? originalAvatar : undefined);
-  const needsPassword =
-    !demo &&
-    input.login?.mode === 'username' &&
-    (initial.login?.mode !== 'username' ||
-      initial.login.username !== input.login.username.trim().toLowerCase());
 
   const setField = <K extends keyof TeacherInput>(field: K, value: TeacherInput[K]) =>
     setInput((prev) => ({ ...prev, [field]: value }));
@@ -168,16 +163,23 @@ export function TeacherEditor({
       setError('اختر طريقة تسجيل دخول المعلم');
       return;
     }
-    if (input.login.mode === 'username' && !input.login.username.trim()) {
-      setError('اسم المستخدم مطلوب');
-      return;
+    if (input.login.mode === 'username') {
+      const u = input.login.username.trim();
+      if (!u) {
+        setError('اسم المستخدم مطلوب');
+        return;
+      }
+      if (!editing && (!password || password.length < 6)) {
+        setError('كلمة المرور مطلوبة وتتكون من 6 أحرف على الأقل');
+        return;
+      }
+      if (editing && password && password.length < 6) {
+        setError('كلمة المرور يجب أن تتكون من 6 أحرف على الأقل');
+        return;
+      }
     }
     if (input.login.mode === 'google' && !input.login.email.trim()) {
       setError('اكتب بريد Google صحيح');
-      return;
-    }
-    if (needsPassword && (!password || password.length < 8)) {
-      setError('كلمة المرور لازم تكون 8 أحرف على الأقل');
       return;
     }
 
@@ -210,7 +212,7 @@ export function TeacherEditor({
 
     setSaving(true);
     try {
-      await onSave(parsed.data, needsPassword ? password : undefined);
+      await onSave(parsed.data, password.trim() ? password.trim() : undefined);
       onClose();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'تعذّر حفظ بيانات المعلم');
@@ -568,7 +570,9 @@ export function TeacherEditor({
                 {input.login?.mode === 'username' && (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
                     <div>
-                      <label className="text-xs font-semibold text-foreground">اسم المستخدم</label>
+                      <label className="text-xs font-semibold text-foreground">
+                        اسم المستخدم <span className="text-destructive">*</span>
+                      </label>
                       <input
                         className={control}
                         aria-label="اسم المستخدم"
@@ -578,27 +582,30 @@ export function TeacherEditor({
                         placeholder="teacher_username"
                         value={input.login.username}
                         onChange={(e) =>
-                          setField('login', { mode: 'username', username: e.target.value.toLowerCase() })
+                          setField('login', {
+                            mode: 'username',
+                            username: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''),
+                          })
                         }
                       />
                     </div>
-                    {needsPassword && (
-                      <div>
-                        <label className="text-xs font-semibold text-foreground">كلمة المرور (مبدئية)</label>
-                        <input
-                          className={control}
-                          aria-label="كلمة المرور"
-                          dir="ltr"
-                          type="password"
-                          autoComplete="new-password"
-                          minLength={8}
-                          maxLength={128}
-                          placeholder="••••••••"
-                          value={password}
-                          onChange={(e) => setPassword(e.target.value)}
-                        />
-                      </div>
-                    )}
+                    <div>
+                      <label className="text-xs font-semibold text-foreground">
+                        {editing ? 'كلمة المرور (اتركها فارغة للاحتفاظ بالحالية)' : 'كلمة المرور *'}
+                      </label>
+                      <input
+                        className={control}
+                        aria-label="كلمة المرور"
+                        dir="ltr"
+                        type="password"
+                        autoComplete="new-password"
+                        minLength={6}
+                        maxLength={128}
+                        placeholder={editing ? '•••••••• (غير معدلة)' : '•••••••• (6 أحرف أو أكثر)'}
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                      />
+                    </div>
                   </div>
                 )}
 

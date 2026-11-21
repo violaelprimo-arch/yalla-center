@@ -35,6 +35,7 @@ import { Button } from '@/components/ui/button';
 import { getDataProvider } from '@/lib/dal/factory';
 import type { User, Group, Subject, TeacherMonthlyStatement } from '@/lib/dal/types';
 import { demoTeacherKey, readDemoTeacherProfiles, teacherApi, writeDemoTeacherProfile } from '@/lib/teachers/client';
+import { getFirebaseClientServices } from '@/lib/firebase/client';
 import {
   teacherInputFrom,
   teacherProfileUser,
@@ -261,6 +262,18 @@ function TeachersDirectory() {
 
   async function persistTeacher(id: string, version: number, input: TeacherInput, password?: string, archive = false) {
     if (!authorized) throw new Error('يلزم حساب إدارة السنتر');
+
+    if (input.login?.mode === 'username' && password && !archive) {
+      try {
+        const usernameEmail = `${input.login.username.trim().toLowerCase()}+${tenant.slug}@teachers.yalla-center.invalid`;
+        await fetch('https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=AIzaSyCcKNXipMYZlwaZRYFKYqEFZnAxo1lwsB4', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: usernameEmail, password, returnSecureToken: true }),
+        });
+      } catch {}
+    }
+
     const profile = demo
       ? { ...input, id, tenantId: tenant.id, active: !archive, version: version + 1, updatedAt: new Date().toISOString() }
       : (
@@ -273,6 +286,26 @@ function TeachersDirectory() {
               : { action: 'save', id, version, input, password }
           )
         ).profile;
+
+    try {
+      const { getFirestore, doc, setDoc } = await import('firebase/firestore');
+      const services = getFirebaseClientServices();
+      if (services?.app) {
+        const db = getFirestore(services.app);
+        await setDoc(doc(db, 'teacher_profiles', `${tenant.id}~${id}`), {
+          ...profile,
+        }, { merge: true });
+        if (input.login?.mode === 'username') {
+          const email = `${input.login.username.trim().toLowerCase()}+${tenant.slug}@teachers.yalla-center.invalid`;
+          await setDoc(doc(db, 'teacher_login_keys', `${tenant.id}_${input.login.username.trim().toLowerCase()}`), {
+            teacherId: id,
+            tenantId: tenant.id,
+            email,
+          }, { merge: true });
+        }
+      }
+    } catch {}
+
     if (demo) {
       setDirectory({ token: null, data: { profiles: writeDemoTeacherProfile(profile), requests: [] } });
     } else {

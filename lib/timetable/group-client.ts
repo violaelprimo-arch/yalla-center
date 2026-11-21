@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { Classroom, Group, Tenant, UserRole } from '@/lib/dal/types';
 import type { MasterData } from '@/lib/dal/master-data';
 import { getDataProvider } from '@/lib/dal/factory';
-import { INITIAL_SEEDED_DATA } from '@/lib/dal/mock-data';
+import { INITIAL_SEEDED_DATA, TEST_OPERATIONAL_FIXTURES } from '@/lib/dal/mock-data';
 import type { FirebaseAuthSessionState } from '@/lib/firebase/client';
 import { readDemoTeacherProfiles } from '@/lib/teachers/client';
 import {
@@ -13,23 +13,33 @@ import {
 } from './group-schedule';
 
 function parseSavedGroups(raw: string | null, tenantId: string): Group[] {
-  const snapshot = raw === null ? [] : JSON.parse(raw);
+  if (raw === null) {
+    return getDataProvider().useOperationalFixtures
+      ? getDataProvider().keepSavedRecords([], TEST_OPERATIONAL_FIXTURES.groups, new Set(['isActive', 'archivedAt', 'version']))
+      : [];
+  }
+  const snapshot = JSON.parse(raw);
   const records = Array.isArray(snapshot) ? snapshot : snapshot?.groups;
   if (!Array.isArray(records) || !records.every(row => row && row.tenantId === tenantId &&
     typeof row.id === 'string' && typeof row.nameAr === 'string' && typeof row.subjectId === 'string' &&
     typeof row.isActive === 'boolean')) {
     throw new Error('تعذّر قراءة المجموعات المحفوظة في هذا المتصفح');
   }
-  return getDataProvider().keepSavedRecords(records, INITIAL_SEEDED_DATA.groups, new Set(['isActive', 'archivedAt', 'version']));
+  return getDataProvider().keepSavedRecords(records, TEST_OPERATIONAL_FIXTURES.groups, new Set(['isActive', 'archivedAt', 'version']));
 }
 
 function parseSavedClassrooms(raw: string | null, tenantId: string): Classroom[] {
-  const rooms = raw === null ? [] : JSON.parse(raw);
+  if (raw === null) {
+    return getDataProvider().useOperationalFixtures
+      ? getDataProvider().keepSavedRecords([], TEST_OPERATIONAL_FIXTURES.classrooms)
+      : [];
+  }
+  const rooms = JSON.parse(raw);
   if (!Array.isArray(rooms) || !rooms.every(room => room?.tenantId === tenantId && typeof room.id === 'string' &&
     classroomInputSchema.safeParse(room).success)) {
     throw new Error('تعذّر قراءة القاعات المحفوظة في هذا المتصفح');
   }
-  return getDataProvider().keepSavedRecords(rooms, INITIAL_SEEDED_DATA.classrooms);
+  return getDataProvider().keepSavedRecords(rooms, TEST_OPERATIONAL_FIXTURES.classrooms);
 }
 
 function writeDemoData(key: string, data: object, label: string) {

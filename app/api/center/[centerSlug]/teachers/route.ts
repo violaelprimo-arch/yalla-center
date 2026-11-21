@@ -36,7 +36,7 @@ async function authorize(req: NextRequest, centerSlug: string) {
   const dal = getDataProvider();
   const tenant = await dal.getTenantBySlug(centerSlug);
   if (!tenant?.isActive) throw new TeacherServiceError(404, 'السنتر غير متاح');
-  const store = await createServerFirestoreStore({ callerIdToken: idToken, requireServiceAccount: true });
+  const store = await createServerFirestoreStore({ callerIdToken: idToken, requireServiceAccount: false });
   return { token, context: { dal, tenant, store } };
 }
 

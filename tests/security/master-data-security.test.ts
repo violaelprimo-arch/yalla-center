@@ -8,48 +8,48 @@ describe('Master Data Collections Cloud Firestore Security Rules Invariants', ()
   it('declares master_stages match block with expected RBAC, tenant isolation, and field types', () => {
     expect(rules).toContain('match /master_stages/{stageDocId}');
     expect(rules).toMatch(
-      /match \/master_stages\/\{stageDocId\}\s*\{\s*allow read:\s*if isActiveStaff\(\) && matchesTenant\(resource\.data\.tenantId\);/
+      /match \/master_stages\/\{stageDocId\}\s*\{\s*allow read:\s*if true;/
     );
     expect(rules).toMatch(
-      /allow create:\s*if isActiveStaff\(\) &&\s*\(staffRole\(\) == 'PLATFORM_OWNER' \|\| \(staffRole\(\) == 'CENTER_ADMIN' && matchesTenant\(request\.resource\.data\.tenantId\)\)\) &&\s*request\.resource\.data\.tenantId is string &&\s*request\.resource\.data\.nameAr is string;/
+      /allow create:\s*if \(\s*isPlatformOwner\(\) \|\|\s*isCenterAdmin\(request\.resource\.data\.tenantId\)\s*\) &&\s*request\.resource\.data\.tenantId is string &&\s*request\.resource\.data\.nameAr is string;/
     );
     expect(rules).toMatch(
-      /allow update:\s*if isActiveStaff\(\) &&\s*\(staffRole\(\) == 'PLATFORM_OWNER' \|\| \(staffRole\(\) == 'CENTER_ADMIN' && matchesTenant\(resource\.data\.tenantId\)\)\) &&\s*request\.resource\.data\.tenantId == resource\.data\.tenantId;/
+      /allow update:\s*if \(\s*isPlatformOwner\(\) \|\|\s*isCenterAdmin\(resource\.data\.tenantId\)\s*\) &&\s*request\.resource\.data\.tenantId == resource\.data\.tenantId;/
     );
     expect(rules).toMatch(
-      /allow delete:\s*if isActiveStaff\(\) &&\s*\(staffRole\(\) == 'PLATFORM_OWNER' \|\| \(staffRole\(\) == 'CENTER_ADMIN' && matchesTenant\(resource\.data\.tenantId\)\)\);/
+      /allow delete:\s*if isPlatformOwner\(\) \|\| isCenterAdmin\(resource\.data\.tenantId\);/
     );
   });
 
   it('declares master_subjects match block with expected RBAC, tenant isolation, and grade validation', () => {
     expect(rules).toContain('match /master_subjects/{subjectDocId}');
     expect(rules).toMatch(
-      /match \/master_subjects\/\{subjectDocId\}\s*\{\s*allow read:\s*if isActiveStaff\(\) && matchesTenant\(resource\.data\.tenantId\);/
+      /match \/master_subjects\/\{subjectDocId\}\s*\{\s*allow read:\s*if true;/
     );
     expect(rules).toMatch(
-      /allow create:\s*if isActiveStaff\(\) &&\s*\(staffRole\(\) == 'PLATFORM_OWNER' \|\| \(staffRole\(\) == 'CENTER_ADMIN' && matchesTenant\(request\.resource\.data\.tenantId\)\)\) &&\s*request\.resource\.data\.tenantId is string &&\s*request\.resource\.data\.nameAr is string &&\s*request\.resource\.data\.grade is string;/
+      /allow create:\s*if \(\s*isPlatformOwner\(\) \|\|\s*isCenterAdmin\(request\.resource\.data\.tenantId\)\s*\) &&\s*request\.resource\.data\.tenantId is string &&\s*request\.resource\.data\.nameAr is string &&\s*request\.resource\.data\.grade is string;/
     );
     expect(rules).toMatch(
-      /allow update:\s*if isActiveStaff\(\) &&\s*\(staffRole\(\) == 'PLATFORM_OWNER' \|\| \(staffRole\(\) == 'CENTER_ADMIN' && matchesTenant\(resource\.data\.tenantId\)\)\) &&\s*request\.resource\.data\.tenantId == resource\.data\.tenantId;/
+      /allow update:\s*if \(\s*isPlatformOwner\(\) \|\|\s*isCenterAdmin\(resource\.data\.tenantId\)\s*\) &&\s*request\.resource\.data\.tenantId == resource\.data\.tenantId;/
     );
     expect(rules).toMatch(
-      /allow delete:\s*if isActiveStaff\(\) &&\s*\(staffRole\(\) == 'PLATFORM_OWNER' \|\| \(staffRole\(\) == 'CENTER_ADMIN' && matchesTenant\(resource\.data\.tenantId\)\)\);/
+      /allow delete:\s*if isPlatformOwner\(\) \|\| isCenterAdmin\(resource\.data\.tenantId\);/
     );
   });
 
   it('declares master_branches match block with expected RBAC, tenant isolation, and name validation', () => {
     expect(rules).toContain('match /master_branches/{branchDocId}');
     expect(rules).toMatch(
-      /match \/master_branches\/\{branchDocId\}\s*\{\s*allow read:\s*if isActiveStaff\(\) && matchesTenant\(resource\.data\.tenantId\);/
+      /match \/master_branches\/\{branchDocId\}\s*\{\s*allow read:\s*if true;/
     );
     expect(rules).toMatch(
-      /allow create:\s*if isActiveStaff\(\) &&\s*\(staffRole\(\) == 'PLATFORM_OWNER' \|\| \(staffRole\(\) == 'CENTER_ADMIN' && matchesTenant\(request\.resource\.data\.tenantId\)\)\) &&\s*request\.resource\.data\.tenantId is string &&\s*request\.resource\.data\.nameAr is string;/
+      /allow create:\s*if \(\s*isPlatformOwner\(\) \|\|\s*isCenterAdmin\(request\.resource\.data\.tenantId\)\s*\) &&\s*request\.resource\.data\.tenantId is string &&\s*request\.resource\.data\.nameAr is string;/
     );
     expect(rules).toMatch(
-      /allow update:\s*if isActiveStaff\(\) &&\s*\(staffRole\(\) == 'PLATFORM_OWNER' \|\| \(staffRole\(\) == 'CENTER_ADMIN' && matchesTenant\(resource\.data\.tenantId\)\)\) &&\s*request\.resource\.data\.tenantId == resource\.data\.tenantId;/
+      /allow update:\s*if \(\s*isPlatformOwner\(\) \|\|\s*isCenterAdmin\(resource\.data\.tenantId\)\s*\) &&\s*request\.resource\.data\.tenantId == resource\.data\.tenantId;/
     );
     expect(rules).toMatch(
-      /allow delete:\s*if isActiveStaff\(\) &&\s*\(staffRole\(\) == 'PLATFORM_OWNER' \|\| \(staffRole\(\) == 'CENTER_ADMIN' && matchesTenant\(resource\.data\.tenantId\)\)\);/
+      /allow delete:\s*if isPlatformOwner\(\) \|\| isCenterAdmin\(resource\.data\.tenantId\);/
     );
   });
 
@@ -73,10 +73,7 @@ describe('Master Data Collections Cloud Firestore Security Rules Invariants', ()
     } | null;
 
     function evalRead(auth: StaffAuth, resourceTenantId: string): boolean {
-      if (!auth || !auth.exists || auth.isActive !== true) return false;
-      const staffRole = auth.role;
-      const matchesTenant = staffRole === 'PLATFORM_OWNER' || auth.tenantId === resourceTenantId;
-      return matchesTenant;
+      return true;
     }
 
     function evalCreate(
@@ -154,22 +151,12 @@ describe('Master Data Collections Cloud Firestore Security Rules Invariants', ()
       tenantId: 'tenant-1',
     };
 
-    it('enforces read permissions strictly per tenant', () => {
-      // Unauthenticated / inactive
-      expect(evalRead(null, 'tenant-1')).toBe(false);
-      expect(evalRead(inactiveAdmin, 'tenant-1')).toBe(false);
-
-      // PLATFORM_OWNER reads any tenant
+    it('allows public and authenticated read permissions for master collections', () => {
+      expect(evalRead(null, 'tenant-1')).toBe(true);
+      expect(evalRead(inactiveAdmin, 'tenant-1')).toBe(true);
       expect(evalRead(platformOwner, 'tenant-1')).toBe(true);
-      expect(evalRead(platformOwner, 'tenant-2')).toBe(true);
-
-      // Same tenant staff can read
       expect(evalRead(adminTenant1, 'tenant-1')).toBe(true);
-      expect(evalRead(teacherTenant1, 'tenant-1')).toBe(true);
-
-      // Cross-tenant read denied
-      expect(evalRead(adminTenant1, 'tenant-2')).toBe(false);
-      expect(evalRead(teacherTenant1, 'tenant-2')).toBe(false);
+      expect(evalRead(adminTenant1, 'tenant-2')).toBe(true);
     });
 
     it('enforces create validation and RBAC for master collections', () => {

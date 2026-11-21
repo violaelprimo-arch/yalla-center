@@ -10,7 +10,7 @@
     "binding": "ASSETS"
   },
   "vars": {
-    "DATA_PROVIDER_MODE": "mock",
+    "DATA_PROVIDER_MODE": "firebase",
     "FIREBASE_PROJECT_ID": "yalla-center",
     "NEXT_PUBLIC_FIREBASE_API_KEY": "AIzaSyCcKNXipMYZlwaZRYFKYqEFZnAxo1lwsB4",
     "NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN": "yalla-center.firebaseapp.com",

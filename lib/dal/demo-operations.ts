@@ -1,4 +1,4 @@
-import { INITIAL_SEEDED_DATA, type MockDataProvider } from './mock-data';
+import { INITIAL_SEEDED_DATA, TEST_OPERATIONAL_FIXTURES, type MockDataProvider } from './mock-data';
 
 const key = 'yc-demo-operations-v1';
 const fields = [
@@ -29,24 +29,24 @@ export function attachDemoOperations(provider: MockDataProvider, storage: Storag
       throw new Error('تعذّر قراءة السجلات التجريبية المحفوظة');
     }
     if (provider.useOperationalFixtures) return { ...data, teacherRates: data.teacherRates ?? baseline.teacherRates };
-    const seedTeachers = INITIAL_SEEDED_DATA.users.filter(user => user.role === 'TEACHER');
+    const seedTeachers = TEST_OPERATIONAL_FIXTURES.users.filter(user => user.role === 'TEACHER');
     const usedSessions = new Set([
       ...data.attendance.map(record => record.sessionId),
       ...data.invoices.flatMap(invoice => invoice.sessionId ? [invoice.sessionId] : []),
     ]);
-    const sessions = provider.keepSavedRecords(data.sessions, INITIAL_SEEDED_DATA.sessions.filter(session => !usedSessions.has(session.id)));
+    const sessions = provider.keepSavedRecords(data.sessions, TEST_OPERATIONAL_FIXTURES.sessions.filter(session => !usedSessions.has(session.id)));
     return {
       ...data,
       users: provider.keepSavedRecords(data.users, seedTeachers),
       sessions: sessions.filter(session => !session.id.startsWith('reception-demo-') || usedSessions.has(session.id)),
-      enrollments: provider.keepSavedRecords(data.enrollments, INITIAL_SEEDED_DATA.enrollments),
-      invoices: provider.keepSavedRecords(data.invoices, INITIAL_SEEDED_DATA.invoices),
-      payments: provider.keepSavedRecords(data.payments, INITIAL_SEEDED_DATA.payments),
-      teacherRates: provider.keepSavedRecords(data.teacherRates ?? [], INITIAL_SEEDED_DATA.teacherRates),
-      teacherPayroll: provider.keepSavedRecords(data.teacherPayroll, INITIAL_SEEDED_DATA.teacherPayroll),
-      teacherAdvances: provider.keepSavedRecords(data.teacherAdvances, INITIAL_SEEDED_DATA.teacherAdvances),
-      cashierShifts: provider.keepSavedRecords(data.cashierShifts, INITIAL_SEEDED_DATA.cashierShifts),
-      expenses: provider.keepSavedRecords(data.expenses, INITIAL_SEEDED_DATA.expenses),
+      enrollments: provider.keepSavedRecords(data.enrollments, TEST_OPERATIONAL_FIXTURES.enrollments),
+      invoices: provider.keepSavedRecords(data.invoices, TEST_OPERATIONAL_FIXTURES.invoices),
+      payments: provider.keepSavedRecords(data.payments, TEST_OPERATIONAL_FIXTURES.payments),
+      teacherRates: provider.keepSavedRecords(data.teacherRates ?? [], TEST_OPERATIONAL_FIXTURES.teacherRates),
+      teacherPayroll: provider.keepSavedRecords(data.teacherPayroll, TEST_OPERATIONAL_FIXTURES.teacherPayroll),
+      teacherAdvances: provider.keepSavedRecords(data.teacherAdvances, TEST_OPERATIONAL_FIXTURES.teacherAdvances),
+      cashierShifts: provider.keepSavedRecords(data.cashierShifts, TEST_OPERATIONAL_FIXTURES.cashierShifts),
+      expenses: provider.keepSavedRecords(data.expenses, TEST_OPERATIONAL_FIXTURES.expenses),
     };
   }
 

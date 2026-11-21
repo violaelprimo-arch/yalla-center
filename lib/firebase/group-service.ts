@@ -22,13 +22,18 @@ const revisionCollection = 'center_group_revisions';
 
 export async function listManagedGroups(store: ILessonScoreStore, tenantId: string): Promise<Group[]> {
   const rows = await store.queryCollection<Group>(collection, [{ fieldPath: 'tenantId', op: 'EQUAL', value: tenantId }]);
-  return getDataProvider().keepSavedRecords(rows.map(row => row.data), INITIAL_SEEDED_DATA.groups,
-    new Set(['isActive', 'archivedAt', 'version']));
+  const records = rows.map(row => row.data);
+  return getDataProvider().useOperationalFixtures
+    ? getDataProvider().keepSavedRecords(records, INITIAL_SEEDED_DATA.groups, new Set(['isActive', 'archivedAt', 'version']))
+    : records;
 }
 
 export async function listManagedClassrooms(store: ILessonScoreStore, tenantId: string): Promise<Classroom[]> {
   const rows = await classroomDocuments(store, tenantId);
-  return getDataProvider().keepSavedRecords(rows.map(row => row.data), INITIAL_SEEDED_DATA.classrooms);
+  const rooms = rows.map(row => row.data);
+  return getDataProvider().useOperationalFixtures
+    ? getDataProvider().keepSavedRecords(rooms, INITIAL_SEEDED_DATA.classrooms)
+    : rooms;
 }
 
 function classroomDocuments(store: ILessonScoreStore, tenantId: string) {

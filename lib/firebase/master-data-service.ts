@@ -88,12 +88,12 @@ async function readCatalog({ tenant, store, dal }: MasterDataContext) {
     subjects: subjects.map(row => row.data),
     branches: branches.map(row => row.data),
   };
-  const catalog = revision || stored.stages.length ? stored : {
+  const catalog = revision || stored.stages.length || !(dal instanceof MockDataProvider && dal.useOperationalFixtures) ? stored : {
     ...await readMasterData(dal, tenantId),
     ...(stored.subjects.length ? { subjects: stored.subjects } : {}),
     ...(stored.branches.length ? { branches: stored.branches } : {}),
   };
-  const data = dal instanceof MockDataProvider
+  const data = (dal instanceof MockDataProvider && dal.useOperationalFixtures)
     ? { ...catalog, branches: dal.keepSavedRecords(catalog.branches, INITIAL_SEEDED_DATA.branches) } : catalog;
   return { data, stored, revision, revisionPath: `master_stages/${revisionId}` };
 }

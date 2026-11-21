@@ -149,12 +149,17 @@ function LoginForm() {
     setErrorMsg(null);
     setSuccessMsg(null);
 
+    const rawInput = email.trim().toLowerCase();
+    const resolvedEmail = rawInput.includes('@')
+      ? rawInput
+      : `${rawInput}+al-maher@teachers.yalla-center.invalid`;
+
     try {
-      const result = await signInFirebaseStaff(email, password);
+      const result = await signInFirebaseStaff(resolvedEmail, password);
       await handleAuthenticatedUser(result.idToken);
     } catch (err: unknown) {
       // Demo accounts fallback if user not yet created in remote Firebase console
-      const trimmedEmail = email.trim().toLowerCase();
+      const trimmedEmail = rawInput;
       const demoMatch = DEMO_ACCOUNTS.find((a) => a.email.toLowerCase() === trimmedEmail);
       if (demoMatch && (password === 'password123' || password === demoMatch.password)) {
         setSessionCookies(demoMatch.role, 'al-maher', `demo-${demoMatch.role.toLowerCase()}`);

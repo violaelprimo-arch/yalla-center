@@ -74,6 +74,10 @@ import { gradeExamSubmission as gradeExam } from '../exams/grading';
 import type { MasterData } from './master-data';
 
 export function buildDefaultStages(tenantId: string): EducationalStage[] {
+  return [];
+}
+
+export function buildFixtureStages(tenantId: string): EducationalStage[] {
   return [
     {
       id: 'primary',
@@ -137,10 +141,10 @@ export function buildDefaultStages(tenantId: string): EducationalStage[] {
   ];
 }
 
-export const INITIAL_SEEDED_DATA = {
+export const TEST_OPERATIONAL_FIXTURES = {
   stages: [
-    ...buildDefaultStages('tenant-maher-001'),
-    ...buildDefaultStages('tenant-rowad-002'),
+    ...buildFixtureStages('tenant-maher-001'),
+    ...buildFixtureStages('tenant-rowad-002'),
   ],
   tenants: [
     {
@@ -1081,6 +1085,74 @@ export const INITIAL_SEEDED_DATA = {
   ] as BookInventoryItem[],
 };
 
+export const INITIAL_SEEDED_DATA = {
+  stages: [] as EducationalStage[],
+  tenants: [
+    {
+      id: 'tenant-maher-001',
+      slug: 'al-maher',
+      nameAr: 'سنتر الماهر النموذجي',
+      nameEn: 'Al Maher Educational Center',
+      logoUrl: '/brand/yalla-center-logo-dark.png',
+      phone: '01001234567',
+      address: 'شارع عباس العقاد، مدينة نصر، القاهرة',
+      subscriptionPlan: 'pro' as const,
+      isActive: true,
+      settings: { currency: 'EGP', enableWhatsApp: true, enableFCM: true },
+      createdAt: '2026-01-01T00:00:00Z',
+      updatedAt: '2026-01-01T00:00:00Z',
+    },
+  ],
+  branches: [] as Branch[],
+  classrooms: [] as Classroom[],
+  users: [
+    {
+      id: 'user-owner-001',
+      tenantId: undefined,
+      role: 'PLATFORM_OWNER' as const,
+      fullName: 'مالك المنصة',
+      email: 'owner@yallacenter.com',
+      phone: '01000000001',
+      avatarUrl: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e',
+      balanceDue: 0,
+      isActive: true,
+      createdAt: '2026-01-01T00:00:00Z',
+      updatedAt: '2026-01-01T00:00:00Z',
+    },
+    {
+      id: 'user-admin-maher',
+      tenantId: 'tenant-maher-001',
+      role: 'CENTER_ADMIN' as const,
+      fullName: 'أ. محمود التهامي (مدير السنتر)',
+      email: 'admin@almaher.edu.eg',
+      phone: '01011112222',
+      avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d',
+      balanceDue: 0,
+      isActive: true,
+      createdAt: '2026-01-01T00:00:00Z',
+      updatedAt: '2026-01-01T00:00:00Z',
+    },
+  ] as User[],
+  subjects: [] as Subject[],
+  groups: [] as Group[],
+  sessions: [] as Session[],
+  enrollments: [] as Enrollment[],
+  attendance: [] as Attendance[],
+  teacherRates: [] as TeacherRate[],
+  teacherPayroll: [] as TeacherPayroll[],
+  teacherAdvances: [] as TeacherAdvance[],
+  materials: [] as Material[],
+  exams: [] as Exam[],
+  examQuestions: [] as ExamQuestion[],
+  examSubmissions: [] as ExamSubmission[],
+  invoices: [] as Invoice[],
+  payments: [] as Payment[],
+  cashierShifts: [] as CashierShift[],
+  expenses: [] as Expense[],
+  booksInventory: [] as BookInventoryItem[],
+  notifications: [] as NotificationRecord[],
+};
+
 export class MockDataProvider implements IDataProvider {
   readonly useOperationalFixtures: boolean;
   private initializedStageTenants: Set<string>;
@@ -1113,35 +1185,36 @@ export class MockDataProvider implements IDataProvider {
   public booksInventory: BookInventoryItem[];
   public notifications: NotificationRecord[];
 
-  constructor({ archiveMaherGroups = false, useOperationalFixtures = true } = {}) {
+  constructor({ archiveMaherGroups = false, useOperationalFixtures = process.env.NODE_ENV === 'test' } = {}) {
     this.useOperationalFixtures = useOperationalFixtures;
-    this.tenants = JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.tenants));
-    this.stages = JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.stages));
+    const source = useOperationalFixtures ? TEST_OPERATIONAL_FIXTURES : INITIAL_SEEDED_DATA;
+    this.tenants = JSON.parse(JSON.stringify(source.tenants));
+    this.stages = JSON.parse(JSON.stringify(source.stages));
     this.initializedStageTenants = new Set(this.stages.map(stage => stage.tenantId));
-    this.branches = useOperationalFixtures ? structuredClone(INITIAL_SEEDED_DATA.branches) : [];
-    this.baseClassrooms = useOperationalFixtures ? structuredClone(INITIAL_SEEDED_DATA.classrooms) : [];
+    this.branches = structuredClone(source.branches);
+    this.baseClassrooms = structuredClone(source.classrooms);
     this.classrooms = structuredClone(this.baseClassrooms);
-    this.users = structuredClone(INITIAL_SEEDED_DATA.users).filter(user => useOperationalFixtures || user.role !== 'TEACHER');
-    this.subjects = JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.subjects));
-    this.baseGroups = useOperationalFixtures ? INITIAL_SEEDED_DATA.groups.map(group =>
-      archiveMaherGroups && group.tenantId === 'tenant-maher-001' ? archiveGroup(group) : { ...group }) : [];
+    this.users = structuredClone(source.users).filter(user => useOperationalFixtures || user.role !== 'TEACHER');
+    this.subjects = JSON.parse(JSON.stringify(source.subjects));
+    this.baseGroups = source.groups.map(group =>
+      archiveMaherGroups && group.tenantId === 'tenant-maher-001' ? archiveGroup(group) : { ...group });
     this.groups = structuredClone(this.baseGroups);
-    this.sessions = useOperationalFixtures ? structuredClone(INITIAL_SEEDED_DATA.sessions) : [];
-    this.enrollments = useOperationalFixtures ? structuredClone(INITIAL_SEEDED_DATA.enrollments) : [];
+    this.sessions = structuredClone(source.sessions);
+    this.enrollments = structuredClone(source.enrollments);
     this.attendance = [];
-    this.teacherRates = useOperationalFixtures ? structuredClone(INITIAL_SEEDED_DATA.teacherRates) : [];
-    this.teacherPayroll = useOperationalFixtures ? structuredClone(INITIAL_SEEDED_DATA.teacherPayroll) : [];
-    this.teacherAdvances = useOperationalFixtures ? structuredClone(INITIAL_SEEDED_DATA.teacherAdvances) : [];
-    this.materials = JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.materials));
-    this.exams = JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.exams));
-    this.examQuestions = JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.examQuestions));
-    this.examSubmissions = JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.examSubmissions));
-    this.invoices = useOperationalFixtures ? structuredClone(INITIAL_SEEDED_DATA.invoices) : [];
-    this.payments = useOperationalFixtures ? structuredClone(INITIAL_SEEDED_DATA.payments) : [];
-    this.cashierShifts = useOperationalFixtures ? structuredClone(INITIAL_SEEDED_DATA.cashierShifts) : [];
-    this.expenses = useOperationalFixtures ? structuredClone(INITIAL_SEEDED_DATA.expenses) : [];
-    this.booksInventory = JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.booksInventory));
-    this.notifications = JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.notifications));
+    this.teacherRates = structuredClone(source.teacherRates);
+    this.teacherPayroll = structuredClone(source.teacherPayroll);
+    this.teacherAdvances = structuredClone(source.teacherAdvances);
+    this.materials = JSON.parse(JSON.stringify(source.materials));
+    this.exams = JSON.parse(JSON.stringify(source.exams));
+    this.examQuestions = JSON.parse(JSON.stringify(source.examQuestions));
+    this.examSubmissions = JSON.parse(JSON.stringify(source.examSubmissions));
+    this.invoices = structuredClone(source.invoices);
+    this.payments = structuredClone(source.payments);
+    this.cashierShifts = structuredClone(source.cashierShifts);
+    this.expenses = structuredClone(source.expenses);
+    this.booksInventory = JSON.parse(JSON.stringify(source.booksInventory));
+    this.notifications = JSON.parse(JSON.stringify(source.notifications));
   }
 
   // Older snapshots contain both saved records and exact copies of the initial fixtures.
@@ -1296,8 +1369,8 @@ export class MockDataProvider implements IDataProvider {
   // Stages & Grades (Master Data)
   async getStages(tenantId: string): Promise<EducationalStage[]> {
     if (!this.initializedStageTenants.has(tenantId)) {
-      if (!this.stages.some(stage => stage.tenantId === tenantId)) {
-        this.stages.push(...buildDefaultStages(tenantId));
+      if (this.useOperationalFixtures && !this.stages.some(stage => stage.tenantId === tenantId)) {
+        this.stages.push(...buildFixtureStages(tenantId));
       }
       this.initializedStageTenants.add(tenantId);
     }

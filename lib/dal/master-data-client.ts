@@ -14,13 +14,13 @@ import {
   type MasterData,
   type MasterDataAction,
 } from './master-data';
-import { INITIAL_SEEDED_DATA } from './mock-data';
+import { INITIAL_SEEDED_DATA, TEST_OPERATIONAL_FIXTURES } from './mock-data';
 import type { Tenant } from './types';
 
 export { masterDataStorageKey } from './master-data';
 
 async function readDemoData(tenantId: string, raw: string | null): Promise<MasterData> {
-  if (raw === null) return readMasterData(createCenterDataProvider(), tenantId);
+  if (raw === null) return getDataProvider().useOperationalFixtures ? readMasterData(createCenterDataProvider(), tenantId) : emptyMasterData;
   const parsed = JSON.parse(raw) as MasterData;
   const ownsRecords = (records: unknown) => Array.isArray(records) &&
     records.every(record => record?.tenantId === tenantId && typeof record.id === 'string' &&
@@ -29,7 +29,7 @@ async function readDemoData(tenantId: string, raw: string | null): Promise<Maste
     !ownsRecords(parsed.stages) || !parsed.stages.every(stage => ownsRecords(stage.grades))) {
     throw new Error('تعذّر قراءة البيانات الأساسية المحفوظة في هذا المتصفح');
   }
-  return { ...parsed, branches: getDataProvider().keepSavedRecords(parsed.branches, INITIAL_SEEDED_DATA.branches) };
+  return { ...parsed, branches: getDataProvider().keepSavedRecords(parsed.branches, TEST_OPERATIONAL_FIXTURES.branches) };
 }
 
 export async function saveDemoMasterData(tenantId: string, input: MasterDataAction) {

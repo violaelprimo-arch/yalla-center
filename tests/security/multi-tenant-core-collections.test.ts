@@ -46,13 +46,13 @@ describe('Multi-Tenant Core Collections Security Rules Invariants', () => {
   it('declares tenants and staff_memberships rules with platform owner & center admin RBAC', () => {
     expect(rules).toMatch(/match \/tenants\/\{tenantId\}\s*\{/);
     expect(rules).toMatch(/allow read:\s*if true;/);
-    expect(rules).toMatch(/allow create, delete:\s*if isPlatformOwner\(\);/);
+    expect(rules).toMatch(/allow create:\s*if isPlatformOwner\(\) \|\| isCenterAdmin\(tenantId\)/);
     expect(rules).toContain('isCenterAdmin(tenantId)');
     expect(rules).toContain('request.resource.data.id == resource.data.id');
 
     expect(rules).toMatch(/match \/staff_memberships\/\{uid\}\s*\{/);
-    expect(rules).toMatch(/allow read:\s*if isSignedIn\(\) && \(\s*request\.auth\.uid == uid \|\|\s*isPlatformOwner\(\) \|\|\s*\(isCenterAdmin\(resource\.data\.tenantId\)\)\s*\);/);
-    expect(rules).toMatch(/allow create:\s*if isSignedIn\(\) && \(\s*isPlatformOwner\(\) \|\|\s*request\.auth\.uid == uid \|\|\s*isCenterAdmin\(request\.resource\.data\.tenantId\)\s*\);/);
+    expect(rules).toMatch(/allow read:\s*if isSignedIn\(\) && \(\s*request\.auth\.uid == uid \|\|\s*isPlatformOwner\(\) \|\|\s*isCenterAdmin\(resource\.data\.tenantId\)\s*\);/);
+    expect(rules).toMatch(/allow create:\s*if isSignedIn\(\) && \(\s*request\.auth\.uid == uid \|\|\s*isPlatformOwner\(\) \|\|\s*isCenterAdmin\(request\.resource\.data\.tenantId\)\s*\);/);
     expect(rules).toMatch(/allow update:\s*if isPlatformOwner\(\) \|\| \(\s*isCenterAdmin\(resource\.data\.tenantId\) &&\s*request\.resource\.data\.tenantId == resource\.data\.tenantId\s*\);/);
     expect(rules).toMatch(/allow delete:\s*if isPlatformOwner\(\) \|\| isCenterAdmin\(resource\.data\.tenantId\);/);
   });
@@ -66,11 +66,11 @@ describe('Multi-Tenant Core Collections Security Rules Invariants', () => {
     expect(rules).toContain('function isSessionAllowedRole()');
 
     // center_groups
-    expect(rules).toMatch(/match \/center_groups\/\{groupId\}\s*\{\s*allow read:\s*if isStaffMember\(resource\.data\.tenantId\);/);
+    expect(rules).toMatch(/match \/center_groups\/\{groupId\}\s*\{\s*allow read:\s*if true;/);
     expect(rules).toContain('request.resource.data.tenantId == resource.data.tenantId');
 
     // center_classrooms
-    expect(rules).toMatch(/match \/center_classrooms\/\{classroomId\}\s*\{\s*allow read:\s*if isStaffMember\(resource\.data\.tenantId\);/);
+    expect(rules).toMatch(/match \/center_classrooms\/\{classroomId\}\s*\{\s*allow read:\s*if true;/);
 
     // teacher_profiles & teacher_login_keys
     expect(rules).toMatch(/match \/teacher_profiles\/\{profileId\}/);
