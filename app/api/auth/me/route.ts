@@ -22,6 +22,7 @@ const PLATFORM_OWNER_EMAILS = [
   'admin@yallacenter.com',
   'islam@yallacenter.com',
   'fathyelprimo@gmail.com',
+  'zizo.infinity@gmail.com',
 ];
 
 export async function GET(req: NextRequest) {

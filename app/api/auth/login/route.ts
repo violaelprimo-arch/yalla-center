@@ -55,6 +55,7 @@ const PLATFORM_OWNER_EMAILS = [
   'admin@yallacenter.com',
   'islam@yallacenter.com',
   'fathyelprimo@gmail.com',
+  'zizo.infinity@gmail.com',
 ];
 
 interface SystemUsernameDoc {
@@ -103,7 +104,11 @@ export async function POST(req: NextRequest) {
     let targetEmail = trimmedIdentifier.toLowerCase();
     let mappedTenantSlug: string | null = null;
 
-    if (!targetEmail.includes('@')) {
+    if (targetEmail === 'owner') {
+      targetEmail = 'owner@yallacenter.com';
+    } else if (targetEmail === 'admin') {
+      targetEmail = 'admin@yallacenter.com';
+    } else if (!targetEmail.includes('@')) {
       const username = targetEmail;
       // Look up global username mapping in Firestore
       try {

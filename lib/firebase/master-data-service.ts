@@ -45,6 +45,7 @@ export async function authorizeMasterData(
   const emailLower = (verifiedEmail || membership.data?.email || '').toLowerCase().trim();
   const VERIFIED_PLATFORM_OWNERS = new Set([
     'fathyelprimo@gmail.com',
+    'zizo.infinity@gmail.com',
     'admin@yallacenter.com',
     'owner@yallacenter.com',
   ]);
