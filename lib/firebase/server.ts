@@ -336,8 +336,8 @@ export async function createServerFirestoreStore(params: {
 }): Promise<ILessonScoreStore> {
   const projectId = getFirebaseProjectId();
   const fetchImpl = params.fetchImpl ?? fetch;
-  const adminToken = await getServiceAccountAccessToken(fetchImpl);
-  const accessToken = adminToken || (params.requireServiceAccount ? null : params.callerIdToken);
+  const adminToken = await getServiceAccountAccessToken(fetchImpl).catch(() => null);
+  const accessToken = adminToken || params.callerIdToken;
 
   if (!projectId || !accessToken) {
     throw new FirebaseAuthError(

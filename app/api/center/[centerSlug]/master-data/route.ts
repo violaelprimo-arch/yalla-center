@@ -24,7 +24,7 @@ function reply(body: object, status = 200) {
   return NextResponse.json(body, { status, headers: { 'Cache-Control': 'no-store' } });
 }
 
-async function resolveContext(req: NextRequest, centerSlug: string, requireAdmin: boolean, requireServiceAccount = false) {
+async function resolveContext(req: NextRequest, centerSlug: string, requireAdmin: boolean) {
   const dal = getDataProvider();
   const tenant = await dal.getTenantBySlug(centerSlug);
   if (!tenant?.isActive) throw new MasterDataError(404, 'السنتر غير موجود أو غير مفعل');
@@ -34,7 +34,7 @@ async function resolveContext(req: NextRequest, centerSlug: string, requireAdmin
   const { uid, email } = await verifyFirebaseIdToken(bearer);
   if (uid.includes('/')) throw new MasterDataError(401, 'معرّف الحساب غير صالح');
 
-  const store = await createServerFirestoreStore({ callerIdToken: bearer, requireServiceAccount });
+  const store = await createServerFirestoreStore({ callerIdToken: bearer });
   const canEdit = await authorizeMasterData(store, uid, tenant.id, requireAdmin, email);
   return { tenant, store, dal, canEdit };
 }
@@ -64,7 +64,7 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
   try {
     const { centerSlug } = await params;
     const parsed = masterDataActionSchema.safeParse(await req.json().catch(() => null));
-    const context = await resolveContext(req, centerSlug, true, parsed.success && parsed.data.action === 'deleteSubject');
+    const context = await resolveContext(req, centerSlug, true);
     if (!parsed.success) {
       return reply({ success: false, error: parsed.error.issues[0]?.message || 'بيانات الطلب غير صالحة' }, 400);
     }
