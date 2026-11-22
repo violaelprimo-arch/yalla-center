@@ -961,7 +961,66 @@ export class SaasPlatformService {
   // 1. Center Directory & Provisioning
   // --------------------------------------------------------------------------
   static getCenters(): CenterExtended[] {
-    return readStorage(STORAGE_KEYS.CENTERS, memoryCenters);
+    const raw = readStorage(STORAGE_KEYS.CENTERS, memoryCenters);
+    if (process.env.DATA_PROVIDER_MODE === 'production' || process.env.NODE_ENV === 'production') {
+      const filtered = raw.filter(c => c.slug !== 'al-maher' && c.slug !== 'al-rowad' && c.id !== 'tenant-maher-001' && c.id !== 'tenant-rowad-002');
+      if (filtered.length === 0) {
+        return [
+          {
+            id: 'tenant-elmaher-001',
+            slug: 'elmaher',
+            nameAr: 'سنتر الماهر',
+            nameEn: 'El Maher Educational Center',
+            logoUrl: '',
+            phone: '+20 100 123 4567',
+            address: 'الفرع الرئيسي',
+            email: 'contact@elmaher.edu.eg',
+            adminName: 'مدير سنتر الماهر',
+            adminEmail: 'admin@elmaher.edu.eg',
+            adminPhone: '+20 100 123 4567',
+            adminUsername: 'maher_admin',
+            subscriptionPlanId: 'plan-pro',
+            planNameAr: 'باقة المحترفين (Pro)',
+            subscriptionStartDate: '2026-09-01T00:00:00.000Z',
+            subscriptionEndDate: '2027-08-31T23:59:59.000Z',
+            billingAmount: 3500,
+            billingFrequency: 'monthly',
+            paymentStatus: 'paid',
+            customPricing: null,
+            branchesCount: 1,
+            studentsCount: 0,
+            teachersCount: 0,
+            employeesCount: 1,
+            maxBranches: 3,
+            maxStudents: 500,
+            maxTeachers: 30,
+            maxEmployees: 10,
+            aiBalance: 100,
+            aiUsageTotal: 0,
+            aiEnabled: true,
+            status: 'active',
+            enabledModules: [
+              'attendance',
+              'reception',
+              'groups',
+              'exams',
+              'ai_exams',
+              'finance',
+              'materials',
+              'whatsapp',
+              'parent_portal',
+              'student_portal',
+            ],
+            showInPublicDirectory: true,
+            notes: 'السنتر المعتمد الرئيسي',
+            createdAt: '2026-01-01T00:00:00.000Z',
+            updatedAt: '2026-01-01T00:00:00.000Z',
+          },
+        ];
+      }
+      return filtered;
+    }
+    return raw;
   }
 
   static getCenterBySlug(slug: string): CenterExtended | null {
@@ -1072,6 +1131,25 @@ export class SaasPlatformService {
     const nextCenters = [newCenter, ...current];
     memoryCenters = nextCenters;
     writeStorage(STORAGE_KEYS.CENTERS, nextCenters);
+
+    // Sync to Cloud Firestore API in browser environment
+    if (typeof window !== 'undefined') {
+      try {
+        const token =
+          sessionStorage.getItem('yc_id_token') ||
+          document.cookie.split('yc_token=')[1]?.split(';')[0];
+        if (token) {
+          fetch('/api/owner/centers', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify(newCenter),
+          }).catch(() => {});
+        }
+      } catch {}
+    }
 
     // Automatically issue the initial subscription invoice
     this.createInvoice({

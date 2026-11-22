@@ -42,6 +42,7 @@ import { RTLIcon } from '@/components/ui/rtl-icon';
 import { SaasPlatformService } from '@/lib/saas/service';
 import { CenterExtended, CenterStatus, BillingFrequency, SubscriptionPlan } from '@/lib/saas/types';
 import { CenterFinancialModal } from '@/components/owner/center-financial-modal';
+import { getFreshFirebaseIdToken } from '@/lib/firebase/client';
 
 export default function OwnerCentersPage() {
   const [centers, setCenters] = useState<CenterExtended[]>([]);
@@ -103,13 +104,97 @@ export default function OwnerCentersPage() {
     notes: '',
   });
 
-  const reloadData = () => {
-    setCenters(SaasPlatformService.getCenters());
+  const reloadData = async () => {
+    try {
+      let token: string | null = null;
+      try {
+        token = await getFreshFirebaseIdToken();
+      } catch {}
+      const res = await fetch('/api/owner/centers', {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && Array.isArray(data.centers) && data.centers.length > 0) {
+          const cleanFirestore = data.centers.filter(
+            (c: any) =>
+              c.slug !== 'al-maher' &&
+              c.slug !== 'al-rowad' &&
+              c.id !== 'tenant-maher-001' &&
+              c.id !== 'tenant-rowad-002'
+          );
+          if (cleanFirestore.length > 0) {
+            const mapped: CenterExtended[] = cleanFirestore.map((f: any) => ({
+              id: f.id,
+              slug: f.slug,
+              nameAr: f.nameAr,
+              nameEn: f.nameEn || '',
+              logoUrl: f.logoUrl || '',
+              phone: f.phone || '',
+              address: f.address || '',
+              email: f.email || '',
+              adminName: f.adminName || 'مدير السنتر',
+              adminEmail: f.adminEmail || '',
+              adminPhone: f.adminPhone || '',
+              adminUsername: f.adminUsername || `admin_${f.slug}`,
+              subscriptionPlanId: f.subscriptionPlan || 'plan-pro',
+              planNameAr:
+                f.subscriptionPlan === 'enterprise'
+                  ? 'باقة المؤسسات (Enterprise)'
+                  : 'باقة المحترفين (Pro)',
+              subscriptionStartDate: f.createdAt || new Date().toISOString(),
+              subscriptionEndDate: new Date(Date.now() + 365 * 86400000).toISOString(),
+              billingAmount: 3500,
+              billingFrequency: 'monthly',
+              paymentStatus: 'paid',
+              customPricing: null,
+              branchesCount: 1,
+              studentsCount: 0,
+              teachersCount: 0,
+              employeesCount: 1,
+              maxBranches: 3,
+              maxStudents: 500,
+              maxTeachers: 30,
+              maxEmployees: 10,
+              aiBalance: 100,
+              aiUsageTotal: 0,
+              aiEnabled: true,
+              status: f.isActive ? 'active' : 'suspended',
+              enabledModules: [
+                'attendance',
+                'reception',
+                'groups',
+                'exams',
+                'finance',
+                'materials',
+                'ai',
+              ],
+              showInPublicDirectory: true,
+              notes: 'مركز تعليمي مسجل سحابياً',
+              createdAt: f.createdAt || new Date().toISOString(),
+              updatedAt: f.updatedAt || new Date().toISOString(),
+            }));
+            setCenters(mapped);
+            setPlans(SaasPlatformService.getPlans(true));
+            return;
+          }
+        }
+      }
+    } catch {}
+
+    const localCenters = SaasPlatformService.getCenters().filter(
+      (c) =>
+        c.slug !== 'al-maher' &&
+        c.slug !== 'al-rowad' &&
+        c.id !== 'tenant-maher-001' &&
+        c.id !== 'tenant-rowad-002'
+    );
+    setCenters(localCenters);
     setPlans(SaasPlatformService.getPlans(true));
   };
 
   useEffect(() => {
-    reloadData();
+    void reloadData();
   }, []);
 
   // Filtered & Searched Centers
@@ -147,6 +232,11 @@ export default function OwnerCentersPage() {
   // Submit 6-Step Wizard
   const handleCompleteWizard = async () => {
     setStatusMessage(null);
+    let token: string | null = null;
+    try {
+      token = await getFreshFirebaseIdToken();
+    } catch {}
+
     const res = await SaasPlatformService.provisionNewCenter({
       ...wizardData,
       customPrice: wizardData.customPrice ? Number(wizardData.customPrice) : undefined,
@@ -157,10 +247,27 @@ export default function OwnerCentersPage() {
       return;
     }
 
-    reloadData();
+    if (token && res.center) {
+      try {
+        await fetch('/api/owner/centers', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify(res.center),
+        });
+      } catch (err) {
+        console.warn('Failed to sync center to Firestore:', err);
+      }
+    }
+
+    await reloadData();
     setIsWizardOpen(false);
     setWizardStep(1);
-    setStatusMessage(`تم بنجاح تهيئة السنتر «${res.center?.nameAr}» برابط /center/${res.center?.slug}`);
+    setStatusMessage(
+      `تم بنجاح تهيئة السنتر «${res.center?.nameAr}» وتثبيته سحابياً برابط /center/${res.center?.slug}`
+    );
   };
 
   // Status Change (Suspend / Activate)

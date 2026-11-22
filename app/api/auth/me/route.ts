@@ -40,7 +40,7 @@ export async function GET(req: NextRequest) {
 
     const dal = getDataProvider();
     const allTenants = await dal.getTenants();
-    const defaultTenant = allTenants.find((t) => t.slug === 'al-maher') || allTenants[0];
+    const defaultTenant = allTenants.find((t) => t.slug === 'elmaher') || allTenants[0];
 
     const isPlatformOwner =
       PLATFORM_OWNER_EMAILS.includes(email.toLowerCase()) ||
@@ -89,7 +89,7 @@ export async function GET(req: NextRequest) {
     }
 
     // Compute redirect destination
-    const tenantSlug = activeTenant?.slug || 'al-maher';
+    const tenantSlug = activeTenant?.slug || 'elmaher';
     let defaultRedirectUrl = `/center/${tenantSlug}`;
     if (role === 'PLATFORM_OWNER') {
       defaultRedirectUrl = '/owner';

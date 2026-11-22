@@ -34,7 +34,7 @@ import Link from 'next/link';
 export default function ExamsPage({ params }: { params: { centerSlug: string } }) {
   const { tenant, masterData } = useTenant();
   const { materials, error: materialsError } = useCenterMaterials(tenant, masterData.auth);
-  const centerSlug = params?.centerSlug || tenant?.slug || 'al-maher';
+  const centerSlug = params?.centerSlug || tenant?.slug || 'elmaher';
 
   // Exams & Materials State
   const [exams, setExams] = useState<Exam[]>([]);

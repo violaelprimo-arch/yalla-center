@@ -8,14 +8,15 @@ import { TenantSuspendedView } from '@/components/layout/tenant-suspended';
 
 interface CenterDynamicLayoutProps {
   children: React.ReactNode;
-  params: { centerSlug: string };
+  params: { centerSlug: string } | Promise<{ centerSlug: string }>;
 }
 
 export async function generateMetadata({
   params,
 }: CenterDynamicLayoutProps): Promise<Metadata> {
+  const { centerSlug } = await Promise.resolve(params);
   const dal = getDataProvider();
-  const tenant = await dal.getTenantBySlug(params.centerSlug);
+  const tenant = await dal.getTenantBySlug(centerSlug);
 
   if (!tenant) {
     return {
@@ -33,11 +34,12 @@ export default async function CenterDynamicLayout({
   children,
   params,
 }: CenterDynamicLayoutProps) {
+  const { centerSlug } = await Promise.resolve(params);
   const dal = getDataProvider();
-  const tenant = await dal.getTenantBySlug(params.centerSlug);
+  const tenant = await dal.getTenantBySlug(centerSlug);
 
   if (!tenant) {
-    return <TenantNotFoundView slug={params.centerSlug} />;
+    return <TenantNotFoundView slug={centerSlug} />;
   }
 
   if (!tenant.isActive) {

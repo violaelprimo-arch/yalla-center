@@ -72,9 +72,9 @@ function LoginForm() {
       });
       const data = await res.json();
       if (data.authenticated && data.user) {
-        setSessionCookies(data.user.role, data.tenant?.slug || 'al-maher', data.user.uid);
+        setSessionCookies(data.user.role, data.tenant?.slug || 'elmaher', data.user.uid);
         const destination =
-          redirectParam || data.defaultRedirectUrl || `/center/${data.tenant?.slug || 'al-maher'}`;
+          redirectParam || data.defaultRedirectUrl || `/center/${data.tenant?.slug || 'elmaher'}`;
         setSuccessMsg(`مرحبًا بك، ${data.user.displayName}. جارٍ تحويلك إلى بوابتك...`);
         setTimeout(() => {
           router.push(destination);
@@ -129,7 +129,7 @@ function LoginForm() {
             }
           }
         }
-        const targetTenant = data.tenant?.slug || 'al-maher';
+        const targetTenant = data.tenant?.slug || 'elmaher';
         setSessionCookies(data.user.role, targetTenant, data.user.uid);
         setSuccessMsg(`مرحبًا بك، ${data.user.displayName}. جارٍ تحويلك إلى بوابتك المعتمدة...`);
         const destination = redirectParam || data.defaultRedirectUrl;

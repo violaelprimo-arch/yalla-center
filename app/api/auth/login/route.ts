@@ -98,7 +98,7 @@ export async function POST(req: NextRequest) {
 
     const dal = getDataProvider();
     const allTenants = await dal.getTenants();
-    const defaultTenant = allTenants.find((t) => t.slug === 'al-maher') || allTenants[0];
+    const defaultTenant = allTenants.find((t) => t.slug === 'elmaher') || allTenants[0];
 
     // Identity Resolution: Username vs Email
     let targetEmail = trimmedIdentifier.toLowerCase();
@@ -119,12 +119,12 @@ export async function POST(req: NextRequest) {
           mappedTenantSlug = usernameDoc.data.tenantSlug || null;
         } else {
           // Check standard center tenant slug fallback
-          const candidateTenant = defaultTenant?.slug || 'al-maher';
+          const candidateTenant = defaultTenant?.slug || 'elmaher';
           targetEmail = teacherPasswordEmail(candidateTenant, username);
         }
       } catch {
         // Fallback to standard deterministic email
-        const candidateTenant = defaultTenant?.slug || 'al-maher';
+        const candidateTenant = defaultTenant?.slug || 'elmaher';
         targetEmail = teacherPasswordEmail(candidateTenant, username);
       }
     }
@@ -181,7 +181,7 @@ export async function POST(req: NextRequest) {
       if (doc.exists && doc.data) {
         membership = doc.data;
       } else if (isPlatformOwner) {
-        const defaultTenant = allTenants.find((t) => t.slug === 'al-maher') || allTenants[0];
+        const defaultTenant = allTenants.find((t) => t.slug === 'elmaher') || allTenants[0];
         const ownerRecord: StaffMembershipRecord = {
           uid,
           email: authenticatedEmail,
@@ -226,7 +226,7 @@ export async function POST(req: NextRequest) {
       if (found) activeTenant = found;
     }
 
-    const tenantSlug = activeTenant?.slug || 'al-maher';
+    const tenantSlug = activeTenant?.slug || 'elmaher';
 
     // Compute verified portal redirect URL
     let defaultRedirectUrl = `/center/${tenantSlug}`;

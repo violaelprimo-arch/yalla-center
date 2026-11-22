@@ -28,25 +28,22 @@ export function TenantNotFoundView({ slug }: { slug: string }) {
             <code className="px-2 py-0.5 rounded bg-muted font-mono text-foreground font-bold">
               {slug}
             </code>
-            . يرجى التأكد من صحة الرابط أو اختيار سنتر من المراكز التجريبية المعتمدة.
+            . يرجى التأكد من صحة الرابط أو تسجيل السنتر من بوابة المالك.
           </p>
         </div>
 
         <div className="pt-2 border-t border-border space-y-2">
-          <p className="text-xs font-semibold text-muted-foreground">
-            المراكز التعليمية التجريبية المتاحة:
-          </p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            <Link href="/center/al-maher" className="w-full">
-              <Button variant="outline" className="w-full text-xs font-bold gap-2">
-                <Building2 className="w-3.5 h-3.5 text-brand-cyan-600" />
+            <Link href="/center/elmaher" className="w-full">
+              <Button variant="cyan" className="w-full text-xs font-bold gap-2">
+                <Building2 className="w-3.5 h-3.5" />
                 سنتر الماهر
               </Button>
             </Link>
-            <Link href="/center/al-rowad" className="w-full">
+            <Link href="/owner/centers" className="w-full">
               <Button variant="outline" className="w-full text-xs font-bold gap-2">
-                <Building2 className="w-3.5 h-3.5 text-brand-cyan-600" />
-                سنتر الرواد
+                <ArrowRight className="w-3.5 h-3.5 text-brand-cyan-600" />
+                إدارة السناتر
               </Button>
             </Link>
           </div>

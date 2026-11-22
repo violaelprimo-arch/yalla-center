@@ -315,11 +315,11 @@ export default function DynamicHomePage() {
               <ArrowRight className="w-4 h-4" />
             </a>
             <Link
-              href="/center/al-maher"
+              href="/center/elmaher"
               className="px-6 py-3 rounded-2xl border border-border bg-card hover:bg-muted font-bold text-sm text-foreground transition-colors flex items-center gap-2"
             >
               <Building2 className="w-4 h-4 text-cyan-500" />
-              <span>تجربة بيئة سنتر الماهر</span>
+              <span>الدخول إلى سنتر الماهر</span>
             </Link>
           </div>
 
@@ -1203,9 +1203,9 @@ export default function DynamicHomePage() {
           <div className="space-y-2">
             <p className="font-bold text-white text-sm mb-3">بوابات الدخول</p>
             <p><Link href="/owner" className="hover:text-cyan-400 transition-colors flex items-center gap-1"><ShieldCheck className="w-3 h-3 text-purple-400" /> بوابة المالك</Link></p>
-            <p><Link href="/center/al-maher" className="hover:text-cyan-400 transition-colors flex items-center gap-1"><Building2 className="w-3 h-3 text-cyan-400" /> سنتر الماهر</Link></p>
-            <p><Link href="/center/al-maher/student-portal" className="hover:text-cyan-400 transition-colors flex items-center gap-1"><GraduationCap className="w-3 h-3 text-emerald-400" /> بوابة الطالب</Link></p>
-            <p><Link href="/teacher/al-maher" className="hover:text-cyan-400 transition-colors flex items-center gap-1"><Briefcase className="w-3 h-3 text-blue-400" /> بوابة المعلم</Link></p>
+            <p><Link href="/center/elmaher" className="hover:text-cyan-400 transition-colors flex items-center gap-1"><Building2 className="w-3 h-3 text-cyan-400" /> سنتر الماهر</Link></p>
+            <p><Link href="/center/elmaher/student-portal" className="hover:text-cyan-400 transition-colors flex items-center gap-1"><GraduationCap className="w-3 h-3 text-emerald-400" /> بوابة الطالب</Link></p>
+            <p><Link href="/teacher/elmaher" className="hover:text-cyan-400 transition-colors flex items-center gap-1"><Briefcase className="w-3 h-3 text-blue-400" /> بوابة المعلم</Link></p>
           </div>
 
           <div className="space-y-2.5">

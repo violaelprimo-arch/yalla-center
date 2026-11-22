@@ -48,8 +48,8 @@ export async function POST(req: NextRequest) {
         } else {
           const dal = getDataProvider();
           const allTenants = await dal.getTenants();
-          const defaultTenant = allTenants.find((t) => t.slug === 'al-maher') || allTenants[0];
-          targetEmail = teacherPasswordEmail(defaultTenant?.slug || 'al-maher', username);
+          const defaultTenant = allTenants.find((t) => t.slug === 'elmaher') || allTenants[0];
+          targetEmail = teacherPasswordEmail(defaultTenant?.slug || 'elmaher', username);
         }
       } catch {
         targetEmail = `${username}@auth.yallacenter.com`;

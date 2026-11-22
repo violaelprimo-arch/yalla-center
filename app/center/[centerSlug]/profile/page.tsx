@@ -18,7 +18,7 @@ import { validateProfilePhotoUpdate } from '@/lib/security/rbac';
 
 export default function ProfilePage() {
   const params = useParams();
-  const centerSlug = (params.centerSlug as string) || 'al-maher';
+  const centerSlug = (params.centerSlug as string) || 'elmaher';
   const { currentUser, setCurrentUser, currentRole, masterData } = useTenant();
 
   const [avatarUrlInput, setAvatarUrlInput] = useState(currentUser?.avatarUrl || '');

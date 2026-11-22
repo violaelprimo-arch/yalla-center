@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
     const actorTenantSlug =
       request.headers.get('x-tenant-slug') ||
       request.cookies.get('yc_tenant')?.value ||
-      'al-maher';
+      'elmaher';
 
     const actorContext: UserSecurityContext = {
       id: actorId,
