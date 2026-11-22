@@ -1,6 +1,7 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "yalla-center",
+  "account_id": "6bf6307334a641a5b556ab072640ec10",
   "main": ".open-next/worker.js",
   "compatibility_date": "2026-11-11",
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
