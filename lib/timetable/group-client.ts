@@ -5,7 +5,7 @@ import type { Classroom, Group, Tenant, UserRole } from '@/lib/dal/types';
 import type { MasterData } from '@/lib/dal/master-data';
 import { getDataProvider } from '@/lib/dal/factory';
 import { INITIAL_SEEDED_DATA } from '@/lib/dal/mock-data';
-import type { FirebaseAuthSessionState } from '@/lib/firebase/client';
+import { getFreshFirebaseIdToken, type FirebaseAuthSessionState } from '@/lib/firebase/client';
 import { readDemoTeacherProfiles } from '@/lib/teachers/client';
 import {
   archiveClassroom, archiveGroup, buildClassroom, buildGroup, classroomInputSchema, groupConflictMessage,
@@ -146,10 +146,15 @@ export function useCenterGroups(tenant: Tenant, catalog: MasterData, auth: Fireb
 
   async function save(input: GroupInput) {
     if (!canEdit) throw new Error('صلاحية مدير السنتر مطلوبة لحفظ المجموعة');
-    if (!demo) {
-      const { group } = await requestGroups<{ group: Group }>(slug, token!, input);
+    const activeToken = token || (await getFreshFirebaseIdToken());
+    const isProduction = process.env.DATA_PROVIDER_MODE === 'production' || process.env.NODE_ENV === 'production';
+    if (activeToken) {
+      const { group } = await requestGroups<{ group: Group }>(slug, activeToken, input);
       await applyGroups(mergeManagedRecords(managedGroups.current, [group]));
       return group;
+    }
+    if (isProduction) {
+      throw new Error('يلزم تسجيل الدخول بحساب إدارة السنتر لحفظ المجموعات على السحابة');
     }
 
     const dal = getDataProvider();
@@ -174,10 +179,15 @@ export function useCenterGroups(tenant: Tenant, catalog: MasterData, auth: Fireb
   async function deleteGroups(selection: Group[]) {
     if (!canEdit) throw new Error('صلاحية مدير السنتر مطلوبة لحذف المجموعات');
     const targets = selection.map(group => ({ id: group.id, version: group.version ?? 0 }));
-    if (!demo) {
-      const { groups } = await requestGroups<{ groups: Group[] }>(slug, token!, { action: 'deleteGroups', groups: targets });
+    const activeToken = token || (await getFreshFirebaseIdToken());
+    const isProduction = process.env.DATA_PROVIDER_MODE === 'production' || process.env.NODE_ENV === 'production';
+    if (activeToken) {
+      const { groups } = await requestGroups<{ groups: Group[] }>(slug, activeToken, { action: 'deleteGroups', groups: targets });
       await applyGroups(mergeManagedRecords(managedGroups.current, groups));
       return;
+    }
+    if (isProduction) {
+      throw new Error('يلزم تسجيل الدخول بحساب إدارة السنتر لحذف المجموعات من السحابة');
     }
 
     const snapshot = readDemoSchedule(tenantId);
@@ -197,10 +207,15 @@ export function useCenterGroups(tenant: Tenant, catalog: MasterData, auth: Fireb
   async function saveClassroom(input: ClassroomInput) {
     if (!canEdit) throw new Error('صلاحية مدير السنتر مطلوبة لحفظ القاعة');
     const parsed = classroomInputSchema.parse(input);
-    if (!demo) {
-      const { room } = await requestGroups<{ room: Classroom }>(slug, token!, { action: 'saveClassroom', room: parsed });
+    const activeToken = token || (await getFreshFirebaseIdToken());
+    const isProduction = process.env.DATA_PROVIDER_MODE === 'production' || process.env.NODE_ENV === 'production';
+    if (activeToken) {
+      const { room } = await requestGroups<{ room: Classroom }>(slug, activeToken, { action: 'saveClassroom', room: parsed });
       await applyClassrooms(mergeManagedRecords(managedClassrooms.current, [room]));
       return room;
+    }
+    if (isProduction) {
+      throw new Error('يلزم تسجيل الدخول بحساب إدارة السنتر لحفظ القاعات على السحابة');
     }
 
     const snapshot = readDemoSchedule(tenantId);
@@ -214,11 +229,16 @@ export function useCenterGroups(tenant: Tenant, catalog: MasterData, auth: Fireb
 
   async function deleteClassroom(room: Classroom) {
     if (!canEdit) throw new Error('صلاحية مدير السنتر مطلوبة لحذف القاعة');
-    if (!demo) {
+    const activeToken = token || (await getFreshFirebaseIdToken());
+    const isProduction = process.env.DATA_PROVIDER_MODE === 'production' || process.env.NODE_ENV === 'production';
+    if (activeToken) {
       const input = { id: room.id, branchId: room.branchId };
-      const { room: archived } = await requestGroups<{ room: Classroom }>(slug, token!, { action: 'deleteClassroom', room: input });
+      const { room: archived } = await requestGroups<{ room: Classroom }>(slug, activeToken, { action: 'deleteClassroom', room: input });
       await applyClassrooms(mergeManagedRecords(managedClassrooms.current, [archived]));
       return;
+    }
+    if (isProduction) {
+      throw new Error('يلزم تسجيل الدخول بحساب إدارة السنتر لحذف القاعات من السحابة');
     }
 
     const dal = getDataProvider();

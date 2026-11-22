@@ -694,7 +694,7 @@ function GradeDialog({
       if (activeExamRef.current === ctxExam.id) {
         setSaved(remove ? undefined : grade);
         if (remove) setValue('');
-        setStatus(remove ? 'تم حذف الدرجة' : 'تم الحفظ على هذا المتصفح');
+        setStatus(remove ? 'تم حذف الدرجة' : 'تم الحفظ على السحابة');
       }
       onChange();
       return true;

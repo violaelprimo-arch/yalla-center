@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { hasFirebaseWebConfig } from '@/lib/firebase/client';
+import { getFreshFirebaseIdToken, hasFirebaseWebConfig } from '@/lib/firebase/client';
 import type { TeacherProfile } from './profile';
 
 export function demoTeacherKey(tenantId: string) {
@@ -57,29 +57,73 @@ const noContracts: TeacherContractSummary[] = [];
 export function useTeacherContracts(tenantId: string, centerSlug: string, enabled: boolean, idToken: string | null) {
   const [state, setState] = useState<{ tenantId: string; idToken: string | null; items: TeacherContractSummary[]; error?: string }>();
   const configured = hasFirebaseWebConfig();
+  const isProduction = process.env.DATA_PROVIDER_MODE === 'production' || process.env.NODE_ENV === 'production';
+
   useEffect(() => {
     if (!enabled) return;
-    if (!configured || !idToken) {
-      const refresh = () => {
-        try {
-          setState({ tenantId, idToken, items: readDemoTeacherProfiles(tenantId) });
-        } catch {
-          setState({ tenantId, idToken, items: [], error: 'تعذّر تحميل عقود المعلمين' });
-        }
-      };
-      refresh();
-      const sync = (event: StorageEvent) => { if (event.key === demoTeacherKey(tenantId) || event.key === null) refresh(); };
-      window.addEventListener('storage', sync);
-      return () => window.removeEventListener('storage', sync);
-    }
     const request = new AbortController();
-    teacherApi<{ profiles: TeacherContractSummary[] }>(centerSlug, idToken, '?view=contracts', undefined, request.signal)
-      .then(data => { if (!request.signal.aborted) setState({ tenantId, idToken, items: data.profiles }); })
-      .catch(cause => {
-        if (!request.signal.aborted) setState({ tenantId, idToken, items: [], error: cause.message });
-      });
-    return () => request.abort();
-  }, [tenantId, centerSlug, configured, enabled, idToken]);
+
+    async function loadContracts() {
+      const activeToken = idToken || (await getFreshFirebaseIdToken());
+      if (activeToken) {
+        try {
+          const data = await teacherApi<{ profiles: TeacherContractSummary[] }>(
+            centerSlug,
+            activeToken,
+            '?view=contracts',
+            undefined,
+            request.signal
+          );
+          if (!request.signal.aborted) {
+            setState({ tenantId, idToken: activeToken, items: data.profiles });
+          }
+        } catch (cause) {
+          if (!request.signal.aborted) {
+            setState({
+              tenantId,
+              idToken: activeToken,
+              items: [],
+              error: cause instanceof Error ? cause.message : 'تعذّر تحميل عقود المعلمين',
+            });
+          }
+        }
+        return;
+      }
+
+      if (!isProduction) {
+        try {
+          setState({ tenantId, idToken: null, items: readDemoTeacherProfiles(tenantId) });
+        } catch {
+          setState({ tenantId, idToken: null, items: [], error: 'تعذّر تحميل عقود المعلمين' });
+        }
+      } else {
+        setState({
+          tenantId,
+          idToken: null,
+          items: [],
+          error: 'يلزم تسجيل الدخول بحساب مصرح له لعرض بيانات المعلمين',
+        });
+      }
+    }
+
+    void loadContracts();
+
+    const sync = (event: StorageEvent) => {
+      if (!isProduction && (event.key === demoTeacherKey(tenantId) || event.key === null)) {
+        void loadContracts();
+      }
+    };
+    if (!isProduction) {
+      window.addEventListener('storage', sync);
+    }
+
+    return () => {
+      request.abort();
+      if (!isProduction) {
+        window.removeEventListener('storage', sync);
+      }
+    };
+  }, [tenantId, centerSlug, configured, enabled, idToken, isProduction]);
 
   const current = enabled && state?.tenantId === tenantId && state.idToken === idToken ? state : undefined;
   return { profiles: current?.items ?? noContracts, ready: Boolean(current && !current.error), error: current?.error };

@@ -13,7 +13,8 @@ export function getDataProvider(): MockDataProvider {
   if (instance) return instance;
 
   instance = createCenterDataProvider();
-  if (typeof window !== 'undefined' && process.env.NODE_ENV !== 'test') {
+  const isProduction = process.env.DATA_PROVIDER_MODE === 'production';
+  if (typeof window !== 'undefined' && process.env.NODE_ENV !== 'test' && !isProduction) {
     try {
       attachDemoOperations(instance, window.localStorage);
     } catch {

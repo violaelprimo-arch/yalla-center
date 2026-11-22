@@ -924,6 +924,7 @@ function readStorage<T>(key: string, fallback: T): T {
 
 function writeStorage<T>(key: string, data: T): void {
   if (typeof window === 'undefined') return;
+  if (process.env.DATA_PROVIDER_MODE === 'production') return;
   try {
     localStorage.setItem(key, JSON.stringify(data));
   } catch {

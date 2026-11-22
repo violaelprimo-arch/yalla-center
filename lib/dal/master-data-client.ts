@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useFirebaseAuthSession } from '@/lib/firebase/client';
+import { getFreshFirebaseIdToken, useFirebaseAuthSession } from '@/lib/firebase/client';
 import { readDemoSchedule } from '@/lib/timetable/group-client';
 import { demoMaterialsKey, readDemoMaterials } from '@/lib/materials/demo-storage';
 import { createCenterDataProvider, getDataProvider } from './factory';
@@ -123,20 +123,38 @@ export function useMasterDataCatalog(tenant: Tenant, demoAdmin: boolean) {
   const current = state?.tenantId === tenantId && state.accountId === accountId && (demo || token) ? state : undefined;
   const canEdit = Boolean(current?.data && !current.error && (demo ? demoAdmin : current.canEdit));
 
+  const isProduction = process.env.DATA_PROVIDER_MODE === 'production' || process.env.NODE_ENV === 'production';
+  const [saving, setSaving] = useState(false);
+  const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
+
   async function save(input: MasterDataAction) {
     if (!canEdit) throw new Error('صلاحية مدير السنتر مطلوبة لحفظ البيانات الأساسية');
-    const data = demo
-      ? await saveDemoMasterData(tenantId, input)
-      : (await requestCatalog(tenant, token!, input)).data;
-    revision.current += 1;
-    setState({ tenantId, accountId, data, canEdit: true });
+    setSaving(true);
+    try {
+      const activeToken = token || (await getFreshFirebaseIdToken());
+      let data: MasterData;
+      if (activeToken) {
+        data = (await requestCatalog(tenant, activeToken, input)).data;
+      } else if (!isProduction) {
+        data = await saveDemoMasterData(tenantId, input);
+      } else {
+        throw new Error('يلزم تسجيل الدخول بحساب إدارة السنتر لحفظ البيانات على السحابة');
+      }
+      revision.current += 1;
+      setState({ tenantId, accountId, data, canEdit: true });
+      setLastSavedAt(new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }));
+    } finally {
+      setSaving(false);
+    }
   }
 
   return {
-    auth, demo, canEdit, save, refresh,
+    auth, demo: !isProduction && demo, canEdit, save, refresh,
     ready: Boolean(current?.data),
     data: current?.data ?? emptyMasterData,
     loading: auth.loading || Boolean((demo || token) && !current),
+    saving,
+    lastSavedAt,
     error: current?.error,
   };
 }

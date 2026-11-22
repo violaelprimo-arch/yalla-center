@@ -28,6 +28,7 @@ import { Button } from '@/components/ui/button';
 import {
   getFirebaseClientServices,
   signInFirebaseGoogle,
+  signInFirebaseStaff,
   useFirebaseAuthSession,
 } from '@/lib/firebase/client';
 import { getArabicAuthErrorMessage } from '@/lib/firebase/errors';
@@ -118,6 +119,16 @@ function LoginForm() {
 
       // Successful server-side authentication
       if (data.user && data.defaultRedirectUrl) {
+        if (data.idToken && typeof window !== 'undefined') {
+          sessionStorage.setItem('yc_id_token', data.idToken);
+          document.cookie = `yc_token=${data.idToken}; path=/; max-age=86400; SameSite=Lax`;
+          if (data.user.email && password) {
+            const services = getFirebaseClientServices();
+            if (services) {
+              await signInFirebaseStaff(data.user.email, password).catch(() => {});
+            }
+          }
+        }
         const targetTenant = data.tenant?.slug || 'al-maher';
         setSessionCookies(data.user.role, targetTenant, data.user.uid);
         setSuccessMsg(`مرحبًا بك، ${data.user.displayName}. جارٍ تحويلك إلى بوابتك المعتمدة...`);

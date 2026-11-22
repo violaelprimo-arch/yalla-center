@@ -1,6 +1,7 @@
 import { INITIAL_SEEDED_DATA } from '@/lib/dal/mock-data';
 import type {
   Attendance,
+  Branch,
   Classroom,
   Enrollment,
   Expense,
@@ -11,6 +12,7 @@ import type {
   Session,
   User,
 } from '@/lib/dal/types';
+import type { MasterData } from '@/lib/dal/master-data';
 import type { TeacherProfile } from '@/lib/teachers/profile';
 import { COLLECTIONS } from './center-operations-service';
 import type { FirestoreWriteOperation } from './firestore-rest';
@@ -27,6 +29,9 @@ export interface ImportScanSummary {
   paymentsCount: number;
   expensesCount: number;
   materialsCount: number;
+  stagesCount?: number;
+  subjectsCount?: number;
+  branchesCount?: number;
   totalRecords: number;
 }
 
@@ -41,12 +46,17 @@ export interface ImportPayload {
   payments?: Payment[];
   expenses?: Expense[];
   materials?: Material[];
+  stages?: MasterData['stages'];
+  subjects?: MasterData['subjects'];
+  branches?: Branch[];
+  dryRun?: boolean;
 }
 
 export interface ImportResult {
   success: boolean;
   importedCounts: ImportScanSummary;
   message: string;
+  isDryRun?: boolean;
 }
 
 // Known seed IDs to filter out unless modified
@@ -188,11 +198,37 @@ export async function executeFirestoreImport(
     });
   }
 
-  // Commit in chunks of 200 (Firestore max per commit is 500)
-  const chunkSize = 200;
-  for (let i = 0; i < writes.length; i += chunkSize) {
-    const chunk = writes.slice(i, i + chunkSize);
-    await store.commit(chunk);
+  // 11. Educational Stages
+  const stages = Array.isArray(payload.stages) ? payload.stages : [];
+  for (const stg of stages) {
+    if (!stg.id) continue;
+    writes.push({
+      type: 'set',
+      documentPath: `master_stages/${tenantId}~${stg.id}`,
+      data: { ...stg, tenantId },
+    });
+  }
+
+  // 12. Educational Subjects
+  const subjects = Array.isArray(payload.subjects) ? payload.subjects : [];
+  for (const sub of subjects) {
+    if (!sub.id) continue;
+    writes.push({
+      type: 'set',
+      documentPath: `master_subjects/${tenantId}~${sub.id}`,
+      data: { ...sub, tenantId },
+    });
+  }
+
+  // 13. Center Branches
+  const branches = Array.isArray(payload.branches) ? payload.branches : [];
+  for (const br of branches) {
+    if (!br.id) continue;
+    writes.push({
+      type: 'set',
+      documentPath: `master_branches/${tenantId}~${br.id}`,
+      data: { ...br, tenantId },
+    });
   }
 
   const counts: ImportScanSummary = {
@@ -206,8 +242,28 @@ export async function executeFirestoreImport(
     paymentsCount: validPayments.length,
     expensesCount: validExpenses.length,
     materialsCount: materials.length,
+    stagesCount: stages.length,
+    subjectsCount: subjects.length,
+    branchesCount: branches.length,
     totalRecords: writes.length,
   };
+
+  // If dryRun mode requested, return inspection summary without writing
+  if (payload.dryRun === true) {
+    return {
+      success: true,
+      importedCounts: counts,
+      isDryRun: true,
+      message: `تقرير المعاينة: تم اكتشاف ${writes.length} سجلاً مؤهلاً للنقل السحابي المباشر دون تكرار`,
+    };
+  }
+
+  // Commit in chunks of 200 (Firestore max per commit is 500)
+  const chunkSize = 200;
+  for (let i = 0; i < writes.length; i += chunkSize) {
+    const chunk = writes.slice(i, i + chunkSize);
+    await store.commit(chunk);
+  }
 
   return {
     success: true,

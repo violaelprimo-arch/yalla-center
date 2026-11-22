@@ -25,8 +25,9 @@ export function middleware(request: NextRequest) {
 
   // Resolve user identity from cookies or development/test headers
   const isProd = process.env.NODE_ENV === 'production';
+  const tokenCookie = request.cookies.get('yc_token')?.value;
   const hasAuth =
-    Boolean(request.cookies.get('yc_role')?.value) ||
+    (Boolean(request.cookies.get('yc_role')?.value) && (Boolean(tokenCookie) || !isProd)) ||
     (!isProd && request.headers.has('x-user-role'));
 
   const userRole =

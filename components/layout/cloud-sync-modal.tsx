@@ -15,6 +15,9 @@ import {
   Database,
   ArrowRight,
   Key,
+  Download,
+  Eye,
+  ShieldCheck,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -118,11 +121,89 @@ export function CloudSyncModal({ isOpen, onClose }: CloudSyncModalProps) {
         } catch {}
       }
 
+      // 5. Master Data (Stages, Subjects, Branches)
+      const masterRaw = localStorage.getItem(`yc-master-data-v1:${tenant.id}`);
+      if (masterRaw) {
+        try {
+          const parsed = JSON.parse(masterRaw);
+          if (Array.isArray(parsed.stages)) payload.stages = parsed.stages;
+          if (Array.isArray(parsed.subjects)) payload.subjects = parsed.subjects;
+          if (Array.isArray(parsed.branches)) payload.branches = parsed.branches;
+        } catch {}
+      }
+
+      // 6. Alternative teachers key
+      if (!payload.teachers || payload.teachers.length === 0) {
+        const altTeachersRaw = localStorage.getItem(`yc-teachers-v1:${tenant.id}`);
+        if (altTeachersRaw) {
+          try {
+            payload.teachers = JSON.parse(altTeachersRaw);
+          } catch {}
+        }
+      }
+
       setDetectedPayload(payload);
     } finally {
       setIsScanning(false);
     }
   }, [tenant.id]);
+
+  const [dryRunLoading, setDryRunLoading] = useState(false);
+  const [dryRunResult, setDryRunResult] = useState<ImportResult | null>(null);
+  const [confirmedByOwner, setConfirmedByOwner] = useState(false);
+
+  // Safe JSON Backup Downloader (Phase 2 Requirement)
+  const handleDownloadBackup = () => {
+    if (!detectedPayload || typeof window === 'undefined') return;
+    const sanitized = {
+      tenantSlug: tenant.slug,
+      tenantId: tenant.id,
+      exportedAt: new Date().toISOString(),
+      platform: 'Yalla Center SaaS (Cloud Backup)',
+      records: {
+        students: detectedPayload.students?.map((s) => ({ ...s, password: undefined })),
+        teachers: detectedPayload.teachers?.map((t) => ({ ...t, login: undefined })),
+        groups: detectedPayload.groups,
+        classrooms: detectedPayload.classrooms,
+        stages: detectedPayload.stages,
+        subjects: detectedPayload.subjects,
+        branches: detectedPayload.branches,
+        sessions: detectedPayload.sessions,
+        attendance: detectedPayload.attendance,
+        invoices: detectedPayload.invoices,
+        payments: detectedPayload.payments,
+        expenses: detectedPayload.expenses,
+        materials: detectedPayload.materials,
+      },
+    };
+    const blob = new Blob([JSON.stringify(sanitized, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `yalla-center-backup-${tenant.slug}-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  // Dry-Run Preview Handler
+  const handleDryRun = async () => {
+    if (!detectedPayload || !auth.idToken) return;
+    setDryRunLoading(true);
+    setImportError(null);
+    try {
+      const res = await importBrowserDataToCloud(tenant.slug, auth.idToken, {
+        ...detectedPayload,
+        dryRun: true,
+      });
+      setDryRunResult(res);
+    } catch (err) {
+      setImportError(err instanceof Error ? err.message : 'فشل الفحص التجريبي');
+    } finally {
+      setDryRunLoading(false);
+    }
+  };
 
   useEffect(() => {
     if (isOpen) {
@@ -425,6 +506,45 @@ export function CloudSyncModal({ isOpen, onClose }: CloudSyncModalProps) {
               </div>
             </div>
 
+            {/* Backup & Actions Bar */}
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleDownloadBackup}
+                disabled={totalDetected === 0}
+                className="flex-1 h-9 text-xs font-semibold border-border hover:bg-muted"
+              >
+                <Download className="w-3.5 h-3.5 ml-1 text-brand-cyan-600" />
+                تحميل نسخة JSON احتياطية
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleDryRun}
+                disabled={dryRunLoading || !auth.idToken || totalDetected === 0}
+                className="flex-1 h-9 text-xs font-semibold border-border hover:bg-muted"
+              >
+                <Eye className="w-3.5 h-3.5 ml-1 text-brand-blue-500" />
+                {dryRunLoading ? 'جارٍ الفحص...' : 'معاينة تجريبية (Dry-Run)'}
+              </Button>
+            </div>
+
+            {/* Dry-Run Result Preview */}
+            {dryRunResult && (
+              <div className="p-3 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-600 dark:text-blue-400 text-xs space-y-1">
+                <div className="flex items-center gap-2 font-bold">
+                  <ShieldCheck className="w-4 h-4 shrink-0" />
+                  <span>{dryRunResult.message}</span>
+                </div>
+                <div className="text-[11px] text-muted-foreground pt-1">
+                  سجلات مؤهلة: {dryRunResult.importedCounts.totalRecords} (طلاب: {dryRunResult.importedCounts.studentsCount} · مجموعات: {dryRunResult.importedCounts.groupsCount} · معلمين: {dryRunResult.importedCounts.teachersCount})
+                </div>
+              </div>
+            )}
+
             {/* Result / Error Alerts */}
             {importResult && (
               <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-xs flex items-center gap-2">
@@ -440,11 +560,24 @@ export function CloudSyncModal({ isOpen, onClose }: CloudSyncModalProps) {
               </div>
             )}
 
+            {/* Owner Confirmation Checkbox */}
+            {totalDetected > 0 && auth.idToken && (
+              <label className="flex items-center gap-2 text-xs text-foreground cursor-pointer pt-1 select-none">
+                <input
+                  type="checkbox"
+                  checked={confirmedByOwner}
+                  onChange={(e) => setConfirmedByOwner(e.target.checked)}
+                  className="rounded border-border text-brand-cyan-600 focus:ring-brand-cyan-500"
+                />
+                <span>أؤكد مطابقة السجلات والبدء بالنقل الفعلي لقاعدة بيانات السنتر السحابية</span>
+              </label>
+            )}
+
             {/* Action Button */}
             <Button
               onClick={handleExecuteImport}
-              disabled={isImporting || !auth.user || totalDetected === 0}
-              className="w-full h-10 text-xs font-bold bg-brand-cyan-600 hover:bg-brand-cyan-700 text-white"
+              disabled={isImporting || !auth.idToken || totalDetected === 0 || !confirmedByOwner}
+              className="w-full h-10 text-xs font-bold bg-brand-cyan-600 hover:bg-brand-cyan-700 text-white disabled:opacity-50"
             >
               {isImporting ? (
                 <div className="flex items-center gap-2">
@@ -455,11 +588,11 @@ export function CloudSyncModal({ isOpen, onClose }: CloudSyncModalProps) {
                 <div className="flex items-center gap-2">
                   <UploadCloud className="w-4 h-4" />
                   <span>
-                    {!auth.user
+                    {!auth.idToken
                       ? 'سجّل الدخول بحساب السنتر لتفعيل زر الاستيراد السحابي'
-                      : totalDetected > 0
-                        ? `استيراد ${totalDetected} سجل إلى Firebase`
-                        : 'لا توجد سجلات محلية جديدة للاستيراد'}
+                      : !confirmedByOwner
+                        ? 'يرجى تأكيد خيار المتابعة أعلاه لتفعيل النقل'
+                        : `تأكيد نقل ${totalDetected} سجل إلى Firebase`}
                   </span>
                 </div>
               )}

@@ -165,10 +165,8 @@ export async function POST(req: NextRequest) {
     const authenticatedEmail = authData.email || targetEmail;
     const idToken = authData.idToken;
 
-    // Check Platform Owner
-    const isPlatformOwner =
-      PLATFORM_OWNER_EMAILS.includes(authenticatedEmail.toLowerCase()) ||
-      authenticatedEmail.toLowerCase().startsWith('owner@');
+    // Check Platform Owner against explicit authorized list
+    const isPlatformOwner = PLATFORM_OWNER_EMAILS.includes(authenticatedEmail.toLowerCase().trim());
 
     // Query Firestore for staff membership
     let membership: StaffMembershipRecord | null = null;
@@ -182,10 +180,17 @@ export async function POST(req: NextRequest) {
       // Graceful fallback if Firestore lookup fails
     }
 
-    // Determine Role
-    let role = membership?.role || (isPlatformOwner ? 'PLATFORM_OWNER' : 'CENTER_ADMIN');
+    // Determine Role strictly without privilege escalation
+    let role: string;
     if (isPlatformOwner) {
       role = 'PLATFORM_OWNER';
+    } else if (membership?.role) {
+      role = membership.role;
+    } else if (mappedTenantSlug && targetEmail.includes('@teachers.yallacenter.com')) {
+      role = 'TEACHER';
+    } else {
+      // Default to STUDENT role rather than administrative access
+      role = 'STUDENT';
     }
 
     // Determine Active Tenant
@@ -225,6 +230,7 @@ export async function POST(req: NextRequest) {
       `yc_role=${role}; Path=/; Max-Age=${cookieMaxAge}; SameSite=Lax`,
       `yc_tenant=${tenantSlug}; Path=/; Max-Age=${cookieMaxAge}; SameSite=Lax`,
       `yc_user_id=${uid}; Path=/; Max-Age=${cookieMaxAge}; SameSite=Lax`,
+      `yc_token=${idToken}; Path=/; Max-Age=${cookieMaxAge}; SameSite=Lax`,
     ];
 
     const response = NextResponse.json(

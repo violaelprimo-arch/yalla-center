@@ -51,13 +51,35 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
       });
     }
 
-    // Auto-bootstrap as CENTER_ADMIN for the current center
+    const VERIFIED_OWNER_EMAILS = new Set([
+      'fathyelprimo@gmail.com',
+      'admin@yallacenter.com',
+      'owner@yallacenter.com',
+    ]);
+
+    const normalizedEmail = (email || '').toLowerCase().trim();
+    const isPlatformOwner = VERIFIED_OWNER_EMAILS.has(normalizedEmail);
+    const tenantAdminEmail = (tenant as { adminEmail?: string }).adminEmail?.toLowerCase().trim();
+    const isTenantOwner = tenantAdminEmail ? tenantAdminEmail === normalizedEmail : false;
+
+    // Reject arbitrary uninvited accounts
+    if (!isPlatformOwner && !isTenantOwner) {
+      return reply(
+        {
+          success: false,
+          error: 'الحساب غير مسجل كعضو في إدارة هذا السنتر. يجب دعوة الحساب من إدارة السنتر أولاً.',
+        },
+        403
+      );
+    }
+
+    // Provision authorized admin
     const newMember: StaffMembershipRecord = {
       uid,
       email: email || '',
-      displayName: name || email?.split('@')[0] || 'مدير السنتر',
+      displayName: name || email?.split('@')[0] || (isPlatformOwner ? 'مالك المنصة' : 'مدير السنتر'),
       tenantId: tenant.id,
-      role: 'CENTER_ADMIN',
+      role: isPlatformOwner ? 'PLATFORM_OWNER' : 'CENTER_ADMIN',
       isActive: true,
       branchIds: [],
     };

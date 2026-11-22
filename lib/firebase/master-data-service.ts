@@ -33,35 +33,22 @@ export async function authorizeMasterData(
 
   if (membership.exists && membership.data?.isActive) {
     const { role, tenantId: memberTenantId } = membership.data;
-    const canEdit = role === 'PLATFORM_OWNER' || (memberTenantId === tenantId && role === 'CENTER_ADMIN');
+    const isPlatformOwner = role === 'PLATFORM_OWNER';
+    const isTenantAdmin = memberTenantId === tenantId && role === 'CENTER_ADMIN';
+    const canEdit = isPlatformOwner || isTenantAdmin;
     if (canEdit || (!requireAdmin && memberTenantId === tenantId)) {
       return canEdit;
     }
   }
 
-  // Check email for platform owner
-  const emailLower = (verifiedEmail || membership.data?.email || '').toLowerCase();
-  const isOwner = emailLower.startsWith('owner@') || emailLower === 'fathyelprimo@gmail.com' || emailLower === 'admin@yallacenter.com';
-  if (isOwner) return true;
-
-  // Auto-bootstrap staff doc if authenticated
-  if (!membership.exists) {
-    const newMember: StaffMembershipRecord = {
-      uid,
-      email: verifiedEmail || '',
-      displayName: verifiedEmail ? verifiedEmail.split('@')[0] : 'مدير السنتر',
-      tenantId,
-      role: 'CENTER_ADMIN',
-      isActive: true,
-      branchIds: [],
-    };
-    try {
-      await store.commit([{
-        type: 'set',
-        documentPath: `staff_memberships/${uid}`,
-        data: newMember as unknown as Record<string, unknown>,
-      }]);
-    } catch {}
+  // Explicit verified platform owner list
+  const emailLower = (verifiedEmail || membership.data?.email || '').toLowerCase().trim();
+  const VERIFIED_PLATFORM_OWNERS = new Set([
+    'fathyelprimo@gmail.com',
+    'admin@yallacenter.com',
+    'owner@yallacenter.com',
+  ]);
+  if (VERIFIED_PLATFORM_OWNERS.has(emailLower)) {
     return true;
   }
 

@@ -171,6 +171,12 @@ export async function signInFirebaseGoogle(): Promise<void> {
 }
 
 export async function signOutFirebaseStaff(): Promise<void> {
+  if (typeof window !== 'undefined') {
+    try {
+      sessionStorage.removeItem('yc_id_token');
+      document.cookie = 'yc_token=; path=/; max-age=0; SameSite=Lax';
+    } catch {}
+  }
   const services = getFirebaseClientServices();
   if (!services) return;
   await signOut(services.auth);
@@ -184,11 +190,24 @@ export async function sendFirebasePasswordReset(email: string): Promise<void> {
   await sendPasswordResetEmail(services.auth, email.trim());
 }
 
+export function getStoredFallbackToken(): string | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const sessionToken = sessionStorage.getItem('yc_id_token');
+    if (sessionToken) return sessionToken.trim();
+    const cookieMatch = document.cookie.match(/(?:^|;\s*)yc_token=([^;]+)/);
+    if (cookieMatch && cookieMatch[1]) return decodeURIComponent(cookieMatch[1]).trim();
+  } catch {}
+  return null;
+}
+
 export async function getFreshFirebaseIdToken(): Promise<string | null> {
   const services = getFirebaseClientServices();
   const currentUser = services?.auth.currentUser;
-  if (!currentUser) return null;
-  return currentUser.getIdToken();
+  if (currentUser) {
+    return currentUser.getIdToken();
+  }
+  return getStoredFallbackToken();
 }
 
 export interface FirebaseAuthSessionState {
@@ -217,10 +236,16 @@ export function useFirebaseAuthSession(): FirebaseAuthSessionState {
       return;
     }
 
+    const fallbackToken = getStoredFallbackToken();
+    if (fallbackToken) {
+      setIdToken((prev) => prev || fallbackToken);
+    }
+
     const unsubscribe = onIdTokenChanged(services.auth, async (nextUser) => {
       if (!nextUser) {
+        const stored = getStoredFallbackToken();
         setUser(null);
-        setIdToken(null);
+        setIdToken(stored);
         setLoading(false);
         return;
       }

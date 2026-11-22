@@ -19,6 +19,10 @@ export async function readDemoMaterials(tenantId: string, raw = window.localStor
 }
 
 export async function saveDemoMaterial(tenantId: string, actorId: string, mutation: MaterialMutation) {
+  const isProduction = process.env.DATA_PROVIDER_MODE === 'production';
+  if (isProduction) {
+    throw new MaterialError(403, 'يلزم استخدام واجهة السحابة لإدارة المذكرات في الإنتاج');
+  }
   const editor = createCenterDataProvider();
   const storage = window.localStorage;
   const key = demoMaterialsKey(tenantId);
