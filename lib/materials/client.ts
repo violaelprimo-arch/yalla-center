@@ -2,13 +2,13 @@
 
 import { useEffect, useRef, useState } from 'react';
 import type { Material, Tenant, User } from '@/lib/dal/types';
-import type { FirebaseAuthSessionState } from '@/lib/firebase/client';
+import { getFreshFirebaseIdToken, getStoredFallbackToken, type FirebaseAuthSessionState } from '@/lib/firebase/client';
 import { demoMaterialsKey, readDemoMaterials, saveDemoMaterial } from './demo-storage';
 import { canManageMaterials, type MaterialMutation } from './management';
 
 export function useCenterMaterials(tenant: Tenant, auth: FirebaseAuthSessionState, user?: User) {
   const { id: tenantId, slug } = tenant;
-  const token = auth.idToken;
+  const token = auth.idToken || getStoredFallbackToken();
   const demo = !auth.configured;
   const scope = `${tenantId}:${demo ? 'demo' : auth.user?.uid ?? token}`;
   const endpoint = `/api/center/${encodeURIComponent(slug)}/materials`;
@@ -23,9 +23,10 @@ export function useCenterMaterials(tenant: Tenant, auth: FirebaseAuthSessionStat
     const controller = new AbortController();
     async function load() {
       const version = ++loadVersion.current;
+      const activeToken = token || getStoredFallbackToken();
       try {
         const data = demo ? { materials: await readDemoMaterials(tenantId), canEdit: false }
-          : await requestMaterials<{ materials: Material[]; canEdit: boolean }>(endpoint, token!, { signal: controller.signal });
+          : await requestMaterials<{ materials: Material[]; canEdit: boolean }>(endpoint, activeToken!, { signal: controller.signal });
         if (!controller.signal.aborted && version === loadVersion.current) setState({ scope, ...data });
       } catch (cause) {
         if (!controller.signal.aborted && version === loadVersion.current) setState({ scope, materials: [], canEdit: false,
@@ -47,9 +48,10 @@ export function useCenterMaterials(tenant: Tenant, auth: FirebaseAuthSessionStat
       setState({ scope, materials, canEdit: true });
       return;
     }
+    const activeToken = token || (await getFreshFirebaseIdToken()) || getStoredFallbackToken();
     const method = mutation.action === 'create' ? 'POST' : mutation.action === 'update' ? 'PATCH' : 'DELETE';
     const body = mutation.action === 'create' ? mutation.input : mutation;
-    const { material } = await requestMaterials<{ material: Material | null }>(endpoint, token!, { method, body: JSON.stringify(body) });
+    const { material } = await requestMaterials<{ material: Material | null }>(endpoint, activeToken!, { method, body: JSON.stringify(body) });
     loadVersion.current += 1;
     setState(previous => {
       if (!previous || previous.scope !== scope) return previous;

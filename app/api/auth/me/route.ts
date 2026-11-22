@@ -53,6 +53,23 @@ export async function GET(req: NextRequest) {
       const doc = await store.getDocument<StaffMembershipRecord>(`staff_memberships/${uid}`);
       if (doc.exists && doc.data) {
         membership = doc.data;
+      } else if (isPlatformOwner) {
+        const ownerRecord: StaffMembershipRecord = {
+          uid,
+          email,
+          displayName: name || 'مالك المنصة',
+          tenantId: defaultTenant.id,
+          role: 'PLATFORM_OWNER',
+          isActive: true,
+        };
+        await store.commit([
+          {
+            type: 'set',
+            documentPath: `staff_memberships/${uid}`,
+            data: { ...ownerRecord },
+          },
+        ]).catch(() => {});
+        membership = ownerRecord;
       }
     } catch {
       // If Firestore lookup fails or table empty, fallback gracefully

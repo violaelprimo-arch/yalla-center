@@ -5,11 +5,12 @@ import { readExamSourceMaterials } from '@/lib/materials/exam-source';
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { centerSlug: string } }
+  { params }: { params: { centerSlug: string } | Promise<{ centerSlug: string }> }
 ) {
   try {
+    const { centerSlug } = await Promise.resolve(params);
     const dal = getDataProvider();
-    const tenant = await dal.getTenantBySlug(params.centerSlug);
+    const tenant = await dal.getTenantBySlug(centerSlug);
     if (!tenant) {
       return NextResponse.json({ error: 'Center not found' }, { status: 404 });
     }

@@ -10,7 +10,7 @@ import {
 } from '@/lib/materials/management';
 
 export const dynamic = 'force-dynamic';
-type Params = { params: { centerSlug: string } };
+type Params = { params: { centerSlug: string } | Promise<{ centerSlug: string }> };
 
 function reply(data: object, status = 200) {
   return NextResponse.json(data, { status, headers: { 'Cache-Control': 'no-store' } });
@@ -20,11 +20,17 @@ function failure(cause: unknown) {
   if (cause instanceof MaterialError || cause instanceof FirebaseAuthError || cause instanceof MasterDataError) {
     return reply({ error: cause.message }, cause.status);
   }
-  if (cause instanceof FirestoreHttpError &&
-    ([409, 412].includes(cause.status) || ['ALREADY_EXISTS', 'ABORTED', 'FAILED_PRECONDITION'].includes(cause.code ?? ''))) {
-    return reply({ error: materialConflict }, 409);
+  if (cause instanceof FirestoreHttpError) {
+    if ([409, 412].includes(cause.status) || ['ALREADY_EXISTS', 'ABORTED', 'FAILED_PRECONDITION'].includes(cause.code ?? '')) {
+      return reply({ error: materialConflict }, 409);
+    }
+    if (cause.status === 403) {
+      return reply({ error: 'صلاحية مدير السنتر مطلوبة لإدارة المذكرات' }, 403);
+    }
+    return reply({ error: `خطأ في الاتصال بقاعدة بيانات المذكرات (${cause.status})` }, cause.status >= 400 && cause.status < 600 ? cause.status : 503);
   }
-  return reply({ error: 'تعذّر الاتصال بخدمة المذكرات' }, 503);
+  const message = cause instanceof Error ? cause.message : 'تعذّر الاتصال بخدمة المذكرات';
+  return reply({ error: message }, 503);
 }
 
 async function center(slug: string) {
@@ -36,7 +42,8 @@ async function center(slug: string) {
 
 export async function GET(req: NextRequest, { params }: Params) {
   try {
-    const { dal, tenant } = await center(params.centerSlug);
+    const { centerSlug } = await Promise.resolve(params);
+    const { dal, tenant } = await center(centerSlug);
     const access = req.headers.has('authorization')
       ? await authorizeMaterialAccess(req.headers.get('authorization'), tenant.id) : undefined;
     const source = access ? await loadMaterialProvider(access.store, dal, tenant.id) : dal;
@@ -59,7 +66,8 @@ export async function GET(req: NextRequest, { params }: Params) {
 
 async function mutate(req: NextRequest, { params }: Params, action: MaterialMutation['action']) {
   try {
-    const context = await center(params.centerSlug);
+    const { centerSlug } = await Promise.resolve(params);
+    const context = await center(centerSlug);
     const { store, uid } = await authorizeMaterialAccess(req.headers.get('authorization'), context.tenant.id, true);
     const body = await req.json().catch(() => null);
     let input: MaterialMutation;

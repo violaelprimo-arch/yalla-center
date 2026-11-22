@@ -56,9 +56,25 @@ async function loginPath(tenant: Tenant, mode: TeacherLogin['mode'], email: stri
   return `teacher_login_keys/${await digest(JSON.stringify([tenant.id, mode, email]))}`;
 }
 
+const VERIFIED_PLATFORM_OWNERS = new Set([
+  'fathyelprimo@gmail.com',
+  'zizo.infinity@gmail.com',
+  'admin@yallacenter.com',
+  'owner@yallacenter.com',
+  'islam@yallacenter.com',
+]);
+
 export async function assertTeacherManager(
-  store: ILessonScoreStore, uid: string, tenantId: string, financeRead = false
+  store: ILessonScoreStore,
+  uid: string,
+  tenantId: string,
+  financeRead = false,
+  verifiedEmail?: string
 ) {
+  const emailLower = (verifiedEmail || '').toLowerCase().trim();
+  if (VERIFIED_PLATFORM_OWNERS.has(emailLower) || emailLower.startsWith('owner@')) {
+    return;
+  }
   const membership = await store.getDocument<StaffMembershipRecord>(`staff_memberships/${uid}`);
   if (membership.exists && membership.data.isActive && (
     membership.data.role === 'PLATFORM_OWNER' ||

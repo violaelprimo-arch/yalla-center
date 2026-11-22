@@ -176,10 +176,28 @@ export async function POST(req: NextRequest) {
     // Query Firestore for staff membership
     let membership: StaffMembershipRecord | null = null;
     try {
-      const store = await createServerFirestoreStore({ callerIdToken: idToken, requireServiceAccount: true });
+      const store = await createServerFirestoreStore({ callerIdToken: idToken, requireServiceAccount: false });
       const doc = await store.getDocument<StaffMembershipRecord>(`staff_memberships/${uid}`);
       if (doc.exists && doc.data) {
         membership = doc.data;
+      } else if (isPlatformOwner) {
+        const defaultTenant = allTenants.find((t) => t.slug === 'al-maher') || allTenants[0];
+        const ownerRecord: StaffMembershipRecord = {
+          uid,
+          email: authenticatedEmail,
+          displayName: 'مالك المنصة',
+          tenantId: defaultTenant.id,
+          role: 'PLATFORM_OWNER',
+          isActive: true,
+        };
+        await store.commit([
+          {
+            type: 'set',
+            documentPath: `staff_memberships/${uid}`,
+            data: { ...ownerRecord },
+          },
+        ]).catch(() => {});
+        membership = ownerRecord;
       }
     } catch {
       // Graceful fallback if Firestore lookup fails

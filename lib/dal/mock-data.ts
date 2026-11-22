@@ -1116,13 +1116,13 @@ export class MockDataProvider implements IDataProvider {
   constructor({ archiveMaherGroups = false, useOperationalFixtures = true, empty = false } = {}) {
     this.useOperationalFixtures = useOperationalFixtures;
     this.tenants = empty ? [] : JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.tenants));
-    this.stages = empty ? [] : JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.stages));
+    this.stages = !empty && useOperationalFixtures ? JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.stages)) : [];
     this.initializedStageTenants = new Set(this.stages.map(stage => stage.tenantId));
     this.branches = !empty && useOperationalFixtures ? structuredClone(INITIAL_SEEDED_DATA.branches) : [];
     this.baseClassrooms = !empty && useOperationalFixtures ? structuredClone(INITIAL_SEEDED_DATA.classrooms) : [];
     this.classrooms = structuredClone(this.baseClassrooms);
     this.users = !empty && useOperationalFixtures ? structuredClone(INITIAL_SEEDED_DATA.users) : [];
-    this.subjects = empty ? [] : JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.subjects));
+    this.subjects = !empty && useOperationalFixtures ? JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.subjects)) : [];
     this.baseGroups = !empty && useOperationalFixtures ? INITIAL_SEEDED_DATA.groups.map(group =>
       archiveMaherGroups && group.tenantId === 'tenant-maher-001' ? archiveGroup(group) : { ...group }) : [];
     this.groups = structuredClone(this.baseGroups);
@@ -1132,7 +1132,7 @@ export class MockDataProvider implements IDataProvider {
     this.teacherRates = !empty && useOperationalFixtures ? structuredClone(INITIAL_SEEDED_DATA.teacherRates) : [];
     this.teacherPayroll = !empty && useOperationalFixtures ? structuredClone(INITIAL_SEEDED_DATA.teacherPayroll) : [];
     this.teacherAdvances = !empty && useOperationalFixtures ? structuredClone(INITIAL_SEEDED_DATA.teacherAdvances) : [];
-    this.materials = empty ? [] : JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.materials));
+    this.materials = !empty && useOperationalFixtures ? JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.materials)) : [];
     this.exams = !empty && useOperationalFixtures ? JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.exams)) : [];
     this.examQuestions = !empty && useOperationalFixtures ? JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.examQuestions)) : [];
     this.examSubmissions = !empty && useOperationalFixtures ? JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.examSubmissions)) : [];
@@ -1140,8 +1140,8 @@ export class MockDataProvider implements IDataProvider {
     this.payments = !empty && useOperationalFixtures ? structuredClone(INITIAL_SEEDED_DATA.payments) : [];
     this.cashierShifts = !empty && useOperationalFixtures ? structuredClone(INITIAL_SEEDED_DATA.cashierShifts) : [];
     this.expenses = !empty && useOperationalFixtures ? structuredClone(INITIAL_SEEDED_DATA.expenses) : [];
-    this.booksInventory = empty ? [] : JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.booksInventory));
-    this.notifications = empty ? [] : JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.notifications));
+    this.booksInventory = !empty && useOperationalFixtures ? JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.booksInventory)) : [];
+    this.notifications = !empty && useOperationalFixtures ? JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.notifications)) : [];
   }
 
   // Older snapshots contain both saved records and exact copies of the initial fixtures.

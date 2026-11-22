@@ -12,7 +12,7 @@ import {
 
 export const dynamic = 'force-dynamic';
 
-type Params = { params: { centerSlug: string } };
+type Params = { params: { centerSlug: string } | Promise<{ centerSlug: string }> };
 
 function reply(body: object, status = 200) {
   return NextResponse.json(body, { status, headers: { 'Cache-Control': 'no-store' } });
@@ -47,7 +47,8 @@ function errorResponse(error: unknown) {
 
 export async function GET(req: NextRequest, { params }: Params) {
   try {
-    const { store, tenant, staff } = await context(req, params.centerSlug);
+    const { centerSlug } = await Promise.resolve(params);
+    const { store, tenant, staff } = await context(req, centerSlug);
     const [groups, classrooms] = await Promise.all([listManagedGroups(store, tenant.id), listManagedClassrooms(store, tenant.id)]);
     const branchIds = (staff.role === 'BRANCH_MANAGER' || staff.role === 'RECEPTIONIST') ? staff.branchIds : undefined;
     const allowed = staff.role === 'BRANCH_MANAGER' || staff.role === 'RECEPTIONIST'
@@ -63,7 +64,8 @@ export async function GET(req: NextRequest, { params }: Params) {
 
 export async function POST(req: NextRequest, { params }: Params) {
   try {
-    const actor = await context(req, params.centerSlug);
+    const { centerSlug } = await Promise.resolve(params);
+    const actor = await context(req, centerSlug);
     if (actor.staff.role !== 'CENTER_ADMIN' && actor.staff.role !== 'PLATFORM_OWNER') {
       throw new GroupScheduleError(403, 'صلاحية مدير السنتر مطلوبة لإدارة المجموعات والقاعات');
     }

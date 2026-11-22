@@ -4,16 +4,17 @@ import { UserRole } from '@/lib/dal/types';
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { centerSlug: string; examId: string } }
+  { params }: { params: { centerSlug: string; examId: string } | Promise<{ centerSlug: string; examId: string }> }
 ) {
   try {
+    const { centerSlug, examId } = await Promise.resolve(params);
     const dal = getDataProvider();
-    const tenant = await dal.getTenantBySlug(params.centerSlug);
+    const tenant = await dal.getTenantBySlug(centerSlug);
     if (!tenant) {
       return NextResponse.json({ error: 'Center not found' }, { status: 404 });
     }
 
-    const data = await dal.getExamById(params.examId);
+    const data = await dal.getExamById(examId);
     if (!data) {
       return NextResponse.json({ error: 'Exam not found' }, { status: 404 });
     }
@@ -33,11 +34,12 @@ export async function GET(
 
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { centerSlug: string; examId: string } }
+  { params }: { params: { centerSlug: string; examId: string } | Promise<{ centerSlug: string; examId: string }> }
 ) {
   try {
+    const { centerSlug, examId } = await Promise.resolve(params);
     const dal = getDataProvider();
-    const tenant = await dal.getTenantBySlug(params.centerSlug);
+    const tenant = await dal.getTenantBySlug(centerSlug);
     if (!tenant) {
       return NextResponse.json({ error: 'Center not found' }, { status: 404 });
     }
@@ -47,7 +49,7 @@ export async function PATCH(
 
     const result = await dal.updateExamMetadata({
       tenantId: tenant.id,
-      examId: params.examId,
+      examId,
       updates: updates || {},
       actorId,
       actorRole,

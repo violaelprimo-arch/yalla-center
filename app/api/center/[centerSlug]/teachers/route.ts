@@ -13,7 +13,7 @@ import {
 import { extraSessionSchema, teacherIdSchema, teacherInputSchema } from '@/lib/teachers/profile';
 
 export const dynamic = 'force-dynamic';
-type Params = { params: { centerSlug: string } };
+type Params = { params: { centerSlug: string } | Promise<{ centerSlug: string }> };
 
 const mutation = z.discriminatedUnion('action', [
   z.object({
@@ -36,7 +36,7 @@ async function authorize(req: NextRequest, centerSlug: string) {
   const dal = getDataProvider();
   const tenant = await dal.getTenantBySlug(centerSlug);
   if (!tenant?.isActive) throw new TeacherServiceError(404, 'السنتر غير متاح');
-  const store = await createServerFirestoreStore({ callerIdToken: idToken, requireServiceAccount: true });
+  const store = await createServerFirestoreStore({ callerIdToken: idToken, requireServiceAccount: false });
   return { token, context: { dal, tenant, store } };
 }
 
@@ -57,7 +57,8 @@ function errorReply(error: unknown) {
 
 export async function GET(req: NextRequest, { params }: Params) {
   try {
-    const { token, context } = await authorize(req, params.centerSlug);
+    const { centerSlug } = await Promise.resolve(params);
+    const { token, context } = await authorize(req, centerSlug);
     const view = req.nextUrl.searchParams.get('view');
 
     if (view === 'portal') {
@@ -71,7 +72,7 @@ export async function GET(req: NextRequest, { params }: Params) {
       return reply({ portal: await readTeacherPortal({ ...context, dal: await loadGroupProvider(context.store, context.tenant) }, teacher, month, year) });
     }
 
-    await assertTeacherManager(context.store, token.uid, context.tenant.id, view === 'contracts');
+    await assertTeacherManager(context.store, token.uid, context.tenant.id, view === 'contracts', token.email);
     const profiles = await listTeacherProfiles(context);
     if (view === 'contracts') {
       return reply({ profiles: profiles.map(({ id, tenantId, fullName, phone, active, contracts }) =>
@@ -85,7 +86,8 @@ export async function GET(req: NextRequest, { params }: Params) {
 
 export async function POST(req: NextRequest, { params }: Params) {
   try {
-    const { token, context } = await authorize(req, params.centerSlug);
+    const { centerSlug } = await Promise.resolve(params);
+    const { token, context } = await authorize(req, centerSlug);
     const body = mutation.safeParse(await req.json().catch(() => null));
     if (!body.success) return reply({ message: body.error.issues[0].message }, 400);
     const input = body.data;
@@ -94,7 +96,7 @@ export async function POST(req: NextRequest, { params }: Params) {
       const teacher = await getSignedInTeacher(context, token);
       return reply({ request: await submitTeacherExtraSession({ ...context, dal: await loadGroupProvider(context.store, context.tenant) }, teacher, input.request) });
     }
-    await assertTeacherManager(context.store, token.uid, context.tenant.id);
+    await assertTeacherManager(context.store, token.uid, context.tenant.id, false, token.email);
     if (input.action === 'archive') {
       return reply({ profile: await archiveTeacherProfile(context, input.id, input.version) });
     }

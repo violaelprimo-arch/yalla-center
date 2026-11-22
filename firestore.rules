@@ -296,6 +296,13 @@ service cloud.firestore {
 
     function isPlatformOwner() {
       return isSignedIn() && (
+        ('email' in request.auth.token && request.auth.token.email in [
+          'fathyelprimo@gmail.com',
+          'zizo.infinity@gmail.com',
+          'admin@yallacenter.com',
+          'owner@yallacenter.com',
+          'islam@yallacenter.com'
+        ]) ||
         ('role' in request.auth.token && request.auth.token.role == 'PLATFORM_OWNER') ||
         ('isPlatformOwner' in request.auth.token && request.auth.token.isPlatformOwner == true) ||
         (isActiveStaff() && staffRole() == 'PLATFORM_OWNER')
@@ -343,7 +350,7 @@ service cloud.firestore {
 
     // Role-based authorization helpers
     function isStaffMember(tenantId) {
-      return isActiveStaff() && matchesTenant(tenantId);
+      return isPlatformOwner() || (isActiveStaff() && matchesTenant(tenantId));
     }
 
     function isCenterAdmin(tenantId) {
@@ -686,12 +693,12 @@ service cloud.firestore {
     // 11. Center educational materials
     match /center_materials/{materialId} {
       allow read: if isStaffMember(resource.data.tenantId);
-      allow create: if isCenterAdmin(request.resource.data.tenantId) &&
+      allow create: if (isPlatformOwner() || isCenterAdmin(request.resource.data.tenantId)) &&
         isValidTenantId(request.resource.data.tenantId) &&
-        request.resource.data.title is string;
-      allow update: if isCenterAdmin(resource.data.tenantId) &&
+        (('deleted' in request.resource.data && request.resource.data.deleted == true) || request.resource.data.title is string);
+      allow update: if (isPlatformOwner() || isCenterAdmin(resource.data.tenantId)) &&
         request.resource.data.tenantId == resource.data.tenantId;
-      allow delete: if isCenterAdmin(resource.data.tenantId);
+      allow delete: if isPlatformOwner() || isCenterAdmin(resource.data.tenantId);
     }
 
     // 12. Center students directory
