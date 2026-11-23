@@ -61,6 +61,14 @@ export function getFirebaseProjectId(): string {
   );
 }
 
+export function getFirebaseApiKey(): string {
+  return (
+    process.env.FIREBASE_API_KEY?.trim() ||
+    process.env.NEXT_PUBLIC_FIREBASE_API_KEY?.trim() ||
+    'AIzaSyCcKNXipMYZlwaZRYFKYqEFZnAxo1lwsB4'
+  );
+}
+
 function base64UrlToUint8Array(input: string): Uint8Array {
   const padded = input.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((input.length + 3) % 4);
   const binary = atob(padded);

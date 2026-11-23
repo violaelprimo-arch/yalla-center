@@ -14,6 +14,7 @@ import type { FirestoreWriteOperation } from './firestore-rest';
 import { listMasterData } from './master-data-service';
 import {
   FirebaseAuthError,
+  getFirebaseApiKey,
   getFirebaseProjectId,
   getServiceAccountAccessToken,
   type ILessonScoreStore,
@@ -98,33 +99,66 @@ export async function listExtraSessionRequests({ tenant, store }: TeacherService
 }
 
 async function provisionUsernameAccount(uid: string, email: string, password: string) {
-  const token = await getServiceAccountAccessToken(fetch, 'https://www.googleapis.com/auth/identitytoolkit');
-  if (!token) throw new FirebaseAuthError(503, 'بيانات خدمة Firebase Authentication على الخادم مطلوبة');
-  const base = `https://identitytoolkit.googleapis.com/v1/projects/${getFirebaseProjectId()}/accounts`;
-  const post = (suffix: string, body: object) => fetch(base + suffix, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
+  const token = await getServiceAccountAccessToken(fetch, 'https://www.googleapis.com/auth/identitytoolkit').catch(() => null);
+  if (token) {
+    const base = `https://identitytoolkit.googleapis.com/v1/projects/${getFirebaseProjectId()}/accounts`;
+    const post = (suffix: string, body: object) => fetch(base + suffix, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
 
-  const created = await post('', { localId: uid, email, password });
-  const result = await created.json() as { localId?: string; error?: { message?: string } };
-  if (created.ok && result.localId === uid) return;
+    const created = await post('', { localId: uid, email, password });
+    const result = await created.json() as { localId?: string; error?: { message?: string } };
+    if (created.ok && result.localId === uid) return;
 
-  // An earlier save may have provisioned Auth before its Firestore commit failed.
-  // Recover that account only when both its deterministic UID and email match.
-  if (['EMAIL_EXISTS', 'LOCAL_ID_EXISTS', 'DUPLICATE_LOCAL_ID', 'DUPLICATE_EMAIL'].includes(result.error?.message ?? '')) {
-    const lookup = await post(':lookup', { localId: [uid] });
-    const account = await lookup.json() as { users?: Array<{ localId: string; email?: string }> };
-    if (!lookup.ok || !account.users?.some(user => user.localId === uid && user.email?.toLowerCase() === email)) {
-      throw new TeacherServiceError(409, 'اسم المستخدم مستخدم بالفعل. اختر اسمًا مختلفًا');
+    // An earlier save may have provisioned Auth before its Firestore commit failed.
+    // Recover that account only when both its deterministic UID and email match.
+    if (['EMAIL_EXISTS', 'LOCAL_ID_EXISTS', 'DUPLICATE_LOCAL_ID', 'DUPLICATE_EMAIL'].includes(result.error?.message ?? '')) {
+      const lookup = await post(':lookup', { localId: [uid] });
+      const account = await lookup.json() as { users?: Array<{ localId: string; email?: string }> };
+      if (!lookup.ok || !account.users?.some(user => user.localId === uid && user.email?.toLowerCase() === email)) {
+        throw new TeacherServiceError(409, 'اسم المستخدم مستخدم بالفعل. اختر اسمًا مختلفًا');
+      }
+      return;
     }
+
+    if (result.error?.message?.startsWith('WEAK_PASSWORD')) {
+      throw new TeacherServiceError(400, 'كلمة المرور لا تستوفي سياسة Firebase للمشروع');
+    }
+    throw new TeacherServiceError(503, 'تعذّر إنشاء حساب المعلم في Firebase Authentication. راجع تفعيل البريد وكلمة المرور وصلاحيات حساب الخدمة');
+  }
+
+  // Fallback to client Identity Toolkit REST API accounts:signUp with project API key
+  const apiKey = getFirebaseApiKey();
+  const signUpRes = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${apiKey}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password, returnSecureToken: true }),
+  });
+  const signUpData = await signUpRes.json() as { localId?: string; error?: { message?: string } };
+  if (signUpRes.ok && signUpData.localId) {
     return;
   }
 
-  if (result.error?.message?.startsWith('WEAK_PASSWORD')) {
+  if (signUpData.error?.message === 'EMAIL_EXISTS') {
+    // If account already exists with this exact email & password, verify credentials via signInWithPassword
+    const signInRes = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${apiKey}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password, returnSecureToken: true }),
+    });
+    const signInData = await signInRes.json() as { localId?: string; error?: { message?: string } };
+    if (signInRes.ok && signInData.localId) {
+      return;
+    }
+    throw new TeacherServiceError(409, 'اسم المستخدم مستخدم بالفعل. اختر اسمًا مختلفًا');
+  }
+
+  if (signUpData.error?.message?.startsWith('WEAK_PASSWORD')) {
     throw new TeacherServiceError(400, 'كلمة المرور لا تستوفي سياسة Firebase للمشروع');
   }
+
   throw new TeacherServiceError(503, 'تعذّر إنشاء حساب المعلم في Firebase Authentication. راجع تفعيل البريد وكلمة المرور وصلاحيات حساب الخدمة');
 }
 
@@ -233,7 +267,7 @@ export async function saveTeacherProfile(
 
       writes.push({
         type: 'set',
-        documentPath: `users/${uid}/profile`,
+        documentPath: `users/${uid}`,
         data: {
           uid,
           teacherId: id,

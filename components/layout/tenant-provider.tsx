@@ -49,7 +49,7 @@ export function TenantProvider({
       initialUsers.find((u) => u.role === 'CENTER_ADMIN') ||
       initialUsers[0] || {
         id: 'user-admin-default',
-        tenantId: tenant.id,
+        tenantId: tenant?.id || '',
         role: 'CENTER_ADMIN' as UserRole,
         fullName: 'أ. محمود التهامي (مدير السنتر)',
         email: 'admin@almaher.edu.eg',
@@ -58,7 +58,7 @@ export function TenantProvider({
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       },
-    [initialUsers, tenant.id]
+    [initialUsers, tenant?.id]
   );
 
   const [currentUser, setCurrentUser] = useState<User>(defaultAdmin);

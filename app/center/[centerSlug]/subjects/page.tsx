@@ -40,11 +40,14 @@ export default function SubjectsManagementPage() {
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingSubject, setEditingSubject] = useState<Subject | null>(null);
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<{
+    nameAr: string;
+    code: string;
+    selectedGrades: Array<{ stage: string; grade: string }>;
+  }>({
     nameAr: '',
     code: '',
-    stage: '',
-    grade: '',
+    selectedGrades: [],
   });
   const [formError, setFormError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
@@ -86,13 +89,6 @@ export default function SubjectsManagementPage() {
     return stage?.grades || [];
   }, [stages, selectedStageFilter]);
 
-  // Grades available for modal form's selected stage
-  const formAvailableGrades = useMemo(() => {
-    if (!formData.stage) return [];
-    const stage = stages.find((s) => s.id === formData.stage);
-    return stage?.grades || [];
-  }, [stages, formData.stage]);
-
   // Filtered subjects list
   const filteredSubjects = useMemo(() => {
     return subjects.filter((s) => {
@@ -117,35 +113,33 @@ export default function SubjectsManagementPage() {
     setFormError('');
     if (subject) {
       setEditingSubject(subject);
+      // Find all matching grades for this subject name (or current subject grade)
+      const matching = subjects.filter(
+        (s) => s.nameAr.trim().toLowerCase() === subject.nameAr.trim().toLowerCase() || s.id === subject.id
+      );
+      const initialGrades = matching.map((s) => ({ stage: s.stage, grade: s.grade }));
+      // Ensure at least the current subject grade is included
+      if (!initialGrades.some((g) => g.stage === subject.stage && g.grade === subject.grade)) {
+        initialGrades.push({ stage: subject.stage, grade: subject.grade });
+      }
       setFormData({
         nameAr: subject.nameAr,
         code: subject.code || '',
-        stage: subject.stage,
-        grade: subject.grade,
+        selectedGrades: initialGrades,
       });
     } else {
       setEditingSubject(null);
-      const defaultStage = stages[0]?.id || '';
-      const defaultGrade = stages[0]?.grades?.[0]?.id || '';
+      const defaultGrades: Array<{ stage: string; grade: string }> = [];
+      if (stages[0]?.id && stages[0]?.grades?.[0]?.id) {
+        defaultGrades.push({ stage: stages[0].id, grade: stages[0].grades[0].id });
+      }
       setFormData({
         nameAr: '',
         code: '',
-        stage: defaultStage,
-        grade: defaultGrade,
+        selectedGrades: defaultGrades,
       });
     }
     setIsModalOpen(true);
-  };
-
-  // Stage change in modal updates available grades and picks first grade
-  const handleFormStageChange = (newStageId: string) => {
-    const stage = stages.find((s) => s.id === newStageId);
-    const firstGradeId = stage?.grades?.[0]?.id || '';
-    setFormData((prev) => ({
-      ...prev,
-      stage: newStageId,
-      grade: firstGradeId,
-    }));
   };
 
   // Submit Modal
@@ -158,40 +152,23 @@ export default function SubjectsManagementPage() {
       setFormError('اسم المادة مطلوب');
       return;
     }
-    if (!formData.stage) {
-      setFormError('المرحلة التعليمية مطلوبة');
-      return;
-    }
-    if (!formData.grade) {
-      setFormError('الصف الدراسي مطلوب');
-      return;
-    }
-
-    // Client-side check for duplicate name in the same grade
-    const duplicate = subjects.find(
-      (s) =>
-        s.grade === formData.grade &&
-        s.nameAr.trim().toLowerCase() === trimmedName.toLowerCase() &&
-        s.id !== editingSubject?.id
-    );
-    if (duplicate) {
-      setFormError('يوجد مادة بنفس الاسم في هذا الصف بالفعل');
+    if (formData.selectedGrades.length === 0) {
+      setFormError('اختر صفًا دراسيًا واحدًا على الأقل للمادة');
       return;
     }
 
     try {
       setIsSaving(true);
       await save({
-        action: 'saveSubject',
+        action: 'saveSubjectMultiGrade',
         subject: {
           id: editingSubject?.id,
           nameAr: trimmedName,
           code: formData.code.trim(),
-          stage: formData.stage,
-          grade: formData.grade,
+          grades: formData.selectedGrades,
         },
       });
-      showToast('success', editingSubject ? 'تم تعديل المادة الدراسية بنجاح' : 'تم إضافة المادة الدراسية بنجاح');
+      showToast('success', editingSubject ? 'تم حفظ وتحديث المادة الدراسية بنجاح' : 'تم إضافة المادة الدراسية بالصفوف المحددة بنجاح');
       setIsModalOpen(false);
     } catch (cause) {
       setFormError(cause instanceof Error ? cause.message : 'تعذّر حفظ المادة الدراسية');
@@ -457,51 +434,6 @@ export default function SubjectsManagementPage() {
                 </div>
               )}
 
-              {/* Stage Selection */}
-              <div>
-                <label className="block text-xs font-semibold text-foreground mb-1">
-                  المرحلة التعليمية <span className="text-rose-500">*</span>
-                </label>
-                <select
-                  required
-                  value={formData.stage}
-                  onChange={(e) => handleFormStageChange(e.target.value)}
-                  className="w-full px-3 py-2 text-sm rounded-xl bg-background border border-border text-foreground focus:outline-none focus:border-brand-cyan-500"
-                >
-                  <option value="" disabled>
-                    اختر المرحلة التعليمية
-                  </option>
-                  {stages.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.nameAr}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Grade Selection */}
-              <div>
-                <label className="block text-xs font-semibold text-foreground mb-1">
-                  الصف الدراسي <span className="text-rose-500">*</span>
-                </label>
-                <select
-                  required
-                  value={formData.grade}
-                  disabled={!formData.stage || formAvailableGrades.length === 0}
-                  onChange={(e) => setFormData({ ...formData, grade: e.target.value })}
-                  className="w-full px-3 py-2 text-sm rounded-xl bg-background border border-border text-foreground focus:outline-none focus:border-brand-cyan-500 disabled:opacity-50"
-                >
-                  <option value="" disabled>
-                    {formAvailableGrades.length === 0 ? 'لا توجد صفوف لهذه المرحلة' : 'اختر الصف الدراسي'}
-                  </option>
-                  {formAvailableGrades.map((g) => (
-                    <option key={g.id} value={g.id}>
-                      {g.nameAr}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
               {/* Subject Name */}
               <div>
                 <label className="block text-xs font-semibold text-foreground mb-1">
@@ -531,8 +463,113 @@ export default function SubjectsManagementPage() {
                 />
               </div>
 
+              {/* Multi-Grade Selection Grouped by Stage */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-xs font-semibold text-foreground">
+                    الصفوف الدراسية والمراحل <span className="text-rose-500">*</span>
+                  </label>
+                  <span className="text-[11px] text-brand-cyan-600 dark:text-brand-cyan-400 font-medium">
+                    تم تحديد {formData.selectedGrades.length} صف دراسي
+                  </span>
+                </div>
+
+                <div className="space-y-3 max-h-60 overflow-y-auto border border-border rounded-xl p-3 bg-background/50">
+                  {stages.map((stage) => {
+                    const stageGrades = stage.grades || [];
+                    if (stageGrades.length === 0) return null;
+
+                    const allStageSelected = stageGrades.every((g) =>
+                      formData.selectedGrades.some((sg) => sg.stage === stage.id && sg.grade === g.id)
+                    );
+
+                    const toggleStageAll = () => {
+                      if (allStageSelected) {
+                        setFormData((prev) => ({
+                          ...prev,
+                          selectedGrades: prev.selectedGrades.filter((sg) => sg.stage !== stage.id),
+                        }));
+                      } else {
+                        const otherGrades = formData.selectedGrades.filter((sg) => sg.stage !== stage.id);
+                        const newGrades = stageGrades.map((g) => ({ stage: stage.id, grade: g.id }));
+                        setFormData((prev) => ({
+                          ...prev,
+                          selectedGrades: [...otherGrades, ...newGrades],
+                        }));
+                      }
+                    };
+
+                    return (
+                      <div key={stage.id} className="border border-border/70 rounded-xl p-2.5 bg-card/40">
+                        <div className="flex items-center justify-between pb-2 mb-2 border-b border-border/50 text-xs font-bold text-foreground">
+                          <div className="flex items-center gap-1.5">
+                            <GraduationCap className="w-3.5 h-3.5 text-brand-cyan-500" />
+                            <span>{stage.nameAr}</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={toggleStageAll}
+                            className="text-[11px] text-brand-cyan-600 hover:text-brand-cyan-500 dark:text-brand-cyan-400 hover:underline font-normal"
+                          >
+                            {allStageSelected ? 'إلغاء تحديد الكل' : 'تحديد كل صفوف المرحلة'}
+                          </button>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          {stageGrades.map((g) => {
+                            const isChecked = formData.selectedGrades.some(
+                              (sg) => sg.stage === stage.id && sg.grade === g.id
+                            );
+
+                            const toggleGrade = () => {
+                              if (isChecked) {
+                                setFormData((prev) => ({
+                                  ...prev,
+                                  selectedGrades: prev.selectedGrades.filter(
+                                    (sg) => !(sg.stage === stage.id && sg.grade === g.id)
+                                  ),
+                                }));
+                              } else {
+                                setFormData((prev) => ({
+                                  ...prev,
+                                  selectedGrades: [...prev.selectedGrades, { stage: stage.id, grade: g.id }],
+                                }));
+                              }
+                            };
+
+                            return (
+                              <button
+                                type="button"
+                                key={g.id}
+                                onClick={toggleGrade}
+                                className={`flex items-center gap-2 p-2 rounded-lg text-xs font-medium border text-right transition-colors ${
+                                  isChecked
+                                    ? 'bg-brand-cyan-500/15 border-brand-cyan-500/40 text-brand-cyan-300'
+                                    : 'bg-background hover:bg-muted/50 border-border text-muted-foreground hover:text-foreground'
+                                }`}
+                              >
+                                <div
+                                  className={`w-4 h-4 rounded flex items-center justify-center border text-[10px] shrink-0 ${
+                                    isChecked
+                                      ? 'bg-brand-cyan-600 border-brand-cyan-500 text-white font-bold'
+                                      : 'border-border bg-card'
+                                  }`}
+                                >
+                                  {isChecked ? '✓' : ''}
+                                </div>
+                                <span className="truncate">{g.nameAr}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
               <div className="p-2.5 rounded-lg bg-muted text-muted-foreground text-[11px] leading-relaxed">
-                يُسمح بنفس اسم المادة في صفوف مختلفة، ولكن يمنع تكرار اسم المادة داخل نفس الصف.
+                يمكنك تحديد أكثر من صف دراسي لإضافة المادة إليها دفعة واحدة مع مشاركة الكود ومسمى المادة.
               </div>
 
               <div className="flex items-center justify-end gap-2 pt-2 border-t border-border">

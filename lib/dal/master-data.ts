@@ -58,6 +58,18 @@ export const masterDataActionSchema = z.discriminatedUnion('action', [
       grade: id,
     }),
   }),
+  z.object({
+    action: z.literal('saveSubjectMultiGrade'),
+    subject: z.object({
+      id: id.optional(),
+      nameAr: name('اسم المادة مطلوب'),
+      code: z.string().optional(),
+      grades: z.array(z.object({
+        stage: id,
+        grade: id,
+      })).min(1, 'اختر صفًا دراسيًا واحدًا على الأقل'),
+    }),
+  }),
   z.object({ action: z.literal('deleteSubject'), subjectId: id }),
   z.object({
     action: z.literal('saveBranch'),
@@ -111,6 +123,38 @@ async function editCatalog(dal: MockDataProvider, tenantId: string, input: Maste
         throw new MasterDataError(400, 'اختر صفًا دراسيًا تابعًا للمرحلة المحددة');
       }
       return { subject: await dal.saveSubject(tenantId, input.subject) };
+    }
+    case 'saveSubjectMultiGrade': {
+      const { nameAr, code, grades } = input.subject;
+      for (const item of grades) {
+        if (!dal.stages.some(st => st.tenantId === tenantId && st.id === item.stage && st.grades.some(row => row.id === item.grade))) {
+          throw new MasterDataError(400, 'أحد الصفوف الدراسية غير تابع للمرحلة المحددة');
+        }
+      }
+      const targetNameAr = nameAr.trim();
+      const existingMatching = dal.subjects.filter(s =>
+        s.tenantId === tenantId &&
+        (s.id === input.subject.id || s.nameAr.trim().toLowerCase() === targetNameAr.toLowerCase())
+      );
+
+      const saved = [];
+      for (const { stage, grade } of grades) {
+        const found = existingMatching.find(s => s.stage === stage && s.grade === grade);
+        if (found) {
+          found.nameAr = targetNameAr;
+          if (code !== undefined) found.code = code;
+          saved.push(found);
+        } else {
+          const newSubj = await dal.saveSubject(tenantId, {
+            nameAr: targetNameAr,
+            code: code || '',
+            stage,
+            grade,
+          });
+          saved.push(newSubj);
+        }
+      }
+      return { subjects: saved };
     }
     case 'deleteSubject':
       return checkDeletion(await dal.deleteSubject(tenantId, input.subjectId));

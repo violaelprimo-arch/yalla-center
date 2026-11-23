@@ -169,4 +169,27 @@ describe('Master Data API', () => {
     await POST_GROUPS(request('admin', { action: 'deleteGroups', groups: [{ id: 'grp-math-sat', version: 0 }] }), { params });
     expect((await write({ action: 'deleteSubject', subjectId: original.subjectId })).status).toBe(200);
   });
+
+  it('creates and updates a single subject across multiple grades simultaneously via saveSubjectMultiGrade', async () => {
+    const catalogBefore = await (await read()).json();
+    const secStage = catalogBefore.data.stages.find((s: { grades: unknown[] }) => s.grades?.length >= 2);
+    const stageId = secStage ? secStage.id : catalogBefore.data.stages[0].id;
+    const gradesList = (secStage ? secStage.grades : catalogBefore.data.stages[0].grades).slice(0, 2);
+
+    const multiGradeResponse = await write({
+      action: 'saveSubjectMultiGrade',
+      subject: {
+        nameAr: 'اللغة الفرنسية العامة',
+        code: 'FR-ALL',
+        grades: gradesList.map((g: { id: string }) => ({ stage: stageId, grade: g.id })),
+      },
+    });
+    const body = await multiGradeResponse.json();
+    expect(multiGradeResponse.status).toBe(200);
+    expect(body.success).toBe(true);
+
+    const catalog = await (await read()).json();
+    const frenchSubjects = catalog.data.subjects.filter((s: { nameAr: string }) => s.nameAr === 'اللغة الفرنسية العامة');
+    expect(frenchSubjects).toHaveLength(gradesList.length);
+  });
 });

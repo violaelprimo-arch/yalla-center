@@ -1117,7 +1117,7 @@ export class MockDataProvider implements IDataProvider {
   constructor({ archiveMaherGroups = false, useOperationalFixtures = true, empty = false } = {}) {
     this.empty = empty;
     this.useOperationalFixtures = useOperationalFixtures;
-    this.tenants = empty || !useOperationalFixtures ? [] : JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.tenants));
+    this.tenants = empty ? [] : JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.tenants));
     this.stages = !empty && useOperationalFixtures ? JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.stages)) : [];
     this.initializedStageTenants = new Set(this.stages.map(stage => stage.tenantId));
     this.branches = !empty && useOperationalFixtures ? structuredClone(INITIAL_SEEDED_DATA.branches) : [];

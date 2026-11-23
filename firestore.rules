@@ -296,13 +296,16 @@ service cloud.firestore {
 
     function isPlatformOwner() {
       return isSignedIn() && (
-        ('email' in request.auth.token && request.auth.token.email in [
-          'fathyelprimo@gmail.com',
-          'zizo.infinity@gmail.com',
-          'admin@yallacenter.com',
-          'owner@yallacenter.com',
-          'islam@yallacenter.com'
-        ]) ||
+        ('email' in request.auth.token && (
+          request.auth.token.email.lower() in [
+            'fathyelprimo@gmail.com',
+            'zizo.infinity@gmail.com',
+            'admin@yallacenter.com',
+            'owner@yallacenter.com',
+            'islam@yallacenter.com'
+          ] ||
+          request.auth.token.email.lower().matches('.*owner@.*')
+        )) ||
         ('role' in request.auth.token && request.auth.token.role == 'PLATFORM_OWNER') ||
         ('isPlatformOwner' in request.auth.token && request.auth.token.isPlatformOwner == true) ||
         (isActiveStaff() && staffRole() == 'PLATFORM_OWNER')
@@ -427,9 +430,12 @@ service cloud.firestore {
         (!('fullName' in data) || (data.fullName is string && data.fullName.size() <= 200)) &&
         (!('email' in data) || (data.email is string && data.email.size() <= 256)) &&
         (!('phone' in data) || data.phone == null || (data.phone is string && data.phone.size() <= 32)) &&
-        (!('avatarUrl' in data) || data.avatarUrl == null || (data.avatarUrl is string && data.avatarUrl.size() <= 2048)) &&
-        (!('photoUrl' in data) || data.photoUrl == null || (data.photoUrl is string && data.photoUrl.size() <= 2048)) &&
-        (!('avatar_url' in data) || data.avatar_url == null || (data.avatar_url is string && data.avatar_url.size() <= 2048));
+        (!('avatarUrl' in data) || data.avatarUrl == null || data.avatarUrl is string) &&
+        (!('photoUrl' in data) || data.photoUrl == null || data.photoUrl is string) &&
+        (!('avatar_url' in data) || data.avatar_url == null || data.avatar_url is string) &&
+        (!('teacherId' in data) || data.teacherId == null || (data.teacherId is string && data.teacherId.size() <= 128)) &&
+        (!('permissions' in data) || data.permissions is list) &&
+        (!('tabs' in data) || data.tabs is list);
     }
 
     function isValidUsernameData(data, username) {
@@ -667,13 +673,12 @@ service cloud.firestore {
           resource.data.id == request.auth.uid ||
           ('uid' in resource.data && resource.data.uid == request.auth.uid)
         ));
-      allow create: if isCenterAdmin(request.resource.data.tenantId) &&
+      allow create: if (isPlatformOwner() || isCenterAdmin(request.resource.data.tenantId)) &&
         isValidTenantId(request.resource.data.tenantId) &&
         request.resource.data.fullName is string;
-      allow update: if isCenterAdmin(resource.data.tenantId) &&
-        request.resource.data.tenantId == resource.data.tenantId &&
-        request.resource.data.fullName is string;
-      allow delete: if isCenterAdmin(resource.data.tenantId);
+      allow update: if (isPlatformOwner() || isCenterAdmin(resource.data.tenantId)) &&
+        request.resource.data.tenantId == resource.data.tenantId;
+      allow delete: if isPlatformOwner() || isCenterAdmin(resource.data.tenantId);
     }
 
     match /teacher_login_keys/{keyId} {
@@ -682,12 +687,11 @@ service cloud.firestore {
           resource.data.teacherId == request.auth.uid ||
           ('uid' in resource.data && resource.data.uid == request.auth.uid)
         ));
-      allow create: if isCenterAdmin(request.resource.data.tenantId) &&
-        isValidTenantId(request.resource.data.tenantId) &&
-        request.resource.data.teacherId is string;
-      allow update: if isCenterAdmin(resource.data.tenantId) &&
+      allow create: if (isPlatformOwner() || isCenterAdmin(request.resource.data.tenantId)) &&
+        isValidTenantId(request.resource.data.tenantId);
+      allow update: if (isPlatformOwner() || isCenterAdmin(resource.data.tenantId)) &&
         request.resource.data.tenantId == resource.data.tenantId;
-      allow delete: if isCenterAdmin(resource.data.tenantId);
+      allow delete: if isPlatformOwner() || isCenterAdmin(resource.data.tenantId);
     }
 
     // 11. Center educational materials
@@ -877,19 +881,17 @@ service cloud.firestore {
       allow create: if isPlatformOwner() || (
         'tenantId' in request.resource.data &&
         isCenterAdmin(request.resource.data.tenantId) &&
-        isValidUserDoc(request.resource.data)
+        ('role' in request.resource.data ? request.resource.data.role != 'PLATFORM_OWNER' || isPlatformOwner() : true)
       );
       allow update: if (
         isOwner(userId) &&
         isSafeProfileUpdate()
       ) || (
-        isPlatformOwner() &&
-        isValidUserDoc(request.resource.data)
+        isPlatformOwner()
       ) || (
         isCenterAdminForDoc(resource.data) &&
         ('tenantId' in request.resource.data ? request.resource.data.tenantId == resource.data.tenantId : true) &&
-        ('role' in request.resource.data ? request.resource.data.role != 'PLATFORM_OWNER' : true) &&
-        isValidUserDoc(request.resource.data)
+        ('role' in request.resource.data ? request.resource.data.role != 'PLATFORM_OWNER' : true)
       );
       allow delete: if isPlatformOwner() || isCenterAdminForDoc(resource.data);
     }
@@ -900,19 +902,17 @@ service cloud.firestore {
       allow create: if isPlatformOwner() || (
         'tenantId' in request.resource.data &&
         isCenterAdmin(request.resource.data.tenantId) &&
-        isValidUserDoc(request.resource.data)
+        ('role' in request.resource.data ? request.resource.data.role != 'PLATFORM_OWNER' || isPlatformOwner() : true)
       );
       allow update: if (
         isOwner(userId) &&
         isSafeProfileUpdate()
       ) || (
-        isPlatformOwner() &&
-        isValidUserDoc(request.resource.data)
+        isPlatformOwner()
       ) || (
         isCenterAdminForDoc(resource.data) &&
         ('tenantId' in request.resource.data ? request.resource.data.tenantId == resource.data.tenantId : true) &&
-        ('role' in request.resource.data ? request.resource.data.role != 'PLATFORM_OWNER' : true) &&
-        isValidUserDoc(request.resource.data)
+        ('role' in request.resource.data ? request.resource.data.role != 'PLATFORM_OWNER' : true)
       );
       allow delete: if isPlatformOwner() || isCenterAdminForDoc(resource.data);
     }
