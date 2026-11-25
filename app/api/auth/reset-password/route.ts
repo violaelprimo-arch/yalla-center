@@ -48,8 +48,14 @@ export async function POST(req: NextRequest) {
         } else {
           const dal = getDataProvider();
           const allTenants = await dal.getTenants();
-          const defaultTenant = allTenants.find((t) => t.slug === 'elmaher') || allTenants[0];
-          targetEmail = teacherPasswordEmail(defaultTenant?.slug || 'elmaher', username);
+          const defaultTenant = allTenants[0];
+          if (!defaultTenant?.slug) {
+            return reply({
+              success: true,
+              message: 'إذا كان هذا الحساب مسجلاً في المنصة، فستصلك رسالة إعادة ضبط كلمة المرور على البريد الإلكتروني المسجل.',
+            });
+          }
+          targetEmail = teacherPasswordEmail(defaultTenant.slug, username);
         }
       } catch {
         targetEmail = `${username}@auth.yallacenter.com`;

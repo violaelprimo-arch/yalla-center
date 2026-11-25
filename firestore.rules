@@ -265,6 +265,83 @@ rules_version = '2';
 //   - tenantSlug: string (optional, max 128 chars)
 //   - createdAt: string/timestamp (optional)
 //
+// Collection: center_notifications
+// Document ID: {notifId}
+// Fields:
+//   - id: string (required, 1..128 chars, immutable)
+//   - tenantId: string (required, 1..128 chars, immutable)
+//   - recipientUserId: string (optional, max 128 chars)
+//   - recipientPhone: string (required, max 64 chars)
+//   - channel: string (required, whatsapp/fcm/sms/WHATSAPP/FCM/SMS)
+//   - templateName: string (required, 1..128 chars)
+//   - payload: map (required, max 50 keys)
+//   - status: string (required, queued/sent/delivered/failed)
+//   - retryCount: number (required, 0..100)
+//   - errorMessage: string (optional, max 1000 chars)
+//   - scheduledAt: string/timestamp (required)
+//   - sentAt: string/timestamp (optional)
+//
+// Collection: teacher_rates
+// Document ID: {rateId}
+// Fields:
+//   - id: string (required, 1..128 chars, immutable)
+//   - tenantId: string (required, 1..128 chars, immutable)
+//   - teacherId: string (required, 1..128 chars, immutable)
+//   - groupId: string (optional, max 128 chars)
+//   - subjectId: string (optional, max 128 chars)
+//   - model: string (required, center/fixed_session/private/per_attendee)
+//   - fixedRatePerStudent: number (optional, 0..100000)
+//   - teacherPercentage: number (optional, 0..100)
+//   - centerPercentage: number (optional, 0..100)
+//   - splitPercentage: number (optional, 0..100)
+//   - effectiveFrom: string/timestamp (optional)
+//   - isActive: bool (required)
+//   - createdAt: string/timestamp (optional)
+//   - updatedAt: string/timestamp (optional)
+//
+// Collection: teacher_payroll
+// Document ID: {payrollId}
+// Fields:
+//   - id: string (required, 1..128 chars, immutable)
+//   - tenantId: string (required, 1..128 chars, immutable)
+//   - teacherId: string (required, 1..128 chars, immutable)
+//   - payrollMonth / periodMonth: number (optional, 1..12)
+//   - payrollYear / periodYear: number (optional, 2020..2100)
+//   - conductedSessions, totalAttendance, averageAttendance: number (optional, >= 0)
+//   - calculatedCompensation, bonuses, deductions, netPayroll: number (optional, >= 0)
+//   - totalCenterAttendancePay, totalPrivateRevenueShare, grossEarned, totalAdvancesDeducted, netPayable: number (optional, >= 0)
+//   - lessonCompensation: map (optional)
+//   - status: string (required, draft/reviewed/approved/paid)
+//   - approvedByUserId: string (optional, max 128 chars)
+//   - approvedAt, paidAt, createdAt, updatedAt: string/timestamp (optional)
+//   - paymentMethod: string (optional, max 64 chars)
+//
+// Collection: teacher_advances
+// Document ID: {advanceId}
+// Fields:
+//   - id: string (required, 1..128 chars, immutable)
+//   - tenantId: string (required, 1..128 chars, immutable)
+//   - teacherId: string (required, 1..128 chars, immutable)
+//   - amount: number (required, > 0 && <= 1000000)
+//   - reason: string (optional, max 500 chars)
+//   - disbursedByUserId: string (required, 1..128 chars)
+//   - payrollId: string (optional, max 128 chars)
+//   - status: string (required, pending/settled)
+//   - disbursedAt, paidAt, createdAt, updatedAt: string/timestamp (optional)
+//
+// Collection: books_inventory
+// Document ID: {bookId}
+// Fields:
+//   - id: string (required, 1..128 chars, immutable)
+//   - tenantId: string (required, 1..128 chars, immutable)
+//   - subjectId: string (required, 1..128 chars)
+//   - grade: string (required, 1..128 chars)
+//   - title: string (required, 1..200 chars)
+//   - unitCost: number (required, 0..100000)
+//   - sellingPrice: number (required, 0..100000)
+//   - quantityInStock: number (required, 0..1000000)
+//   - createdAt, updatedAt: string/timestamp (optional)
+//
 // ===============================================================
 
 service cloud.firestore {
@@ -296,16 +373,6 @@ service cloud.firestore {
 
     function isPlatformOwner() {
       return isSignedIn() && (
-        ('email' in request.auth.token && (
-          request.auth.token.email.lower() in [
-            'fathyelprimo@gmail.com',
-            'zizo.infinity@gmail.com',
-            'admin@yallacenter.com',
-            'owner@yallacenter.com',
-            'islam@yallacenter.com'
-          ] ||
-          request.auth.token.email.lower().matches('.*owner@.*')
-        )) ||
         ('role' in request.auth.token && request.auth.token.role == 'PLATFORM_OWNER') ||
         ('isPlatformOwner' in request.auth.token && request.auth.token.isPlatformOwner == true) ||
         (isActiveStaff() && staffRole() == 'PLATFORM_OWNER')
@@ -365,30 +432,45 @@ service cloud.firestore {
     }
 
     function isStudentOpsStaff(tenantId) {
-      return isActiveStaff() && matchesTenant(tenantId) && (
-        staffRole() == 'PLATFORM_OWNER' ||
-        staffRole() == 'CENTER_ADMIN' ||
-        staffRole() == 'BRANCH_MANAGER' ||
-        staffRole() == 'RECEPTIONIST'
+      return isPlatformOwner() || (
+        isActiveStaff() && matchesTenant(tenantId) && (
+          staffRole() == 'PLATFORM_OWNER' ||
+          staffRole() == 'CENTER_ADMIN' ||
+          staffRole() == 'BRANCH_MANAGER' ||
+          staffRole() == 'RECEPTIONIST'
+        )
       );
     }
 
     function isSessionAllowedRole() {
-      return isActiveStaff() && (
-        staffRole() == 'PLATFORM_OWNER' ||
-        staffRole() == 'CENTER_ADMIN' ||
-        staffRole() == 'BRANCH_MANAGER' ||
-        staffRole() == 'RECEPTIONIST' ||
-        staffRole() == 'TEACHER'
+      return isPlatformOwner() || (
+        isActiveStaff() && (
+          staffRole() == 'PLATFORM_OWNER' ||
+          staffRole() == 'CENTER_ADMIN' ||
+          staffRole() == 'BRANCH_MANAGER' ||
+          staffRole() == 'RECEPTIONIST' ||
+          staffRole() == 'TEACHER'
+        )
       );
     }
 
     function isFinanceStaff(tenantId) {
-      return isActiveStaff() && matchesTenant(tenantId) && (
-        staffRole() == 'PLATFORM_OWNER' ||
-        staffRole() == 'CENTER_ADMIN' ||
-        staffRole() == 'ACCOUNTANT' ||
-        staffRole() == 'RECEPTIONIST'
+      return isPlatformOwner() || (
+        isActiveStaff() && matchesTenant(tenantId) && (
+          staffRole() == 'PLATFORM_OWNER' ||
+          staffRole() == 'CENTER_ADMIN' ||
+          staffRole() == 'ACCOUNTANT' ||
+          staffRole() == 'RECEPTIONIST'
+        )
+      );
+    }
+
+    function isTeacherFinanceManager(tenantId) {
+      return isPlatformOwner() || (
+        isActiveStaff() && matchesTenant(tenantId) && (
+          staffRole() == 'CENTER_ADMIN' ||
+          staffRole() == 'ACCOUNTANT'
+        )
       );
     }
 
@@ -451,6 +533,298 @@ service cloud.firestore {
         (!('tenantSlug' in data) || (data.tenantSlug is string && data.tenantSlug.size() <= 128));
     }
 
+    function isValidStaffMembership(data, uid) {
+      let allowedKeys = [
+        'uid',
+        'email',
+        'displayName',
+        'role',
+        'tenantId',
+        'branchIds',
+        'teacherId',
+        'isActive',
+        'createdAt',
+        'updatedAt'
+      ];
+      let validRoles = [
+        'PLATFORM_OWNER',
+        'CENTER_ADMIN',
+        'BRANCH_MANAGER',
+        'RECEPTIONIST',
+        'ACCOUNTANT',
+        'TEACHER'
+      ];
+      return data.keys().hasAll(['uid', 'role', 'tenantId', 'isActive']) &&
+        data.keys().hasOnly(allowedKeys) &&
+        data.uid is string &&
+        data.uid == uid &&
+        data.uid.size() > 0 &&
+        data.uid.size() <= 128 &&
+        data.role is string &&
+        data.role in validRoles &&
+        data.tenantId is string &&
+        data.tenantId.size() <= 128 &&
+        (data.role == 'PLATFORM_OWNER' || isValidTenantId(data.tenantId)) &&
+        data.isActive is bool &&
+        (!('email' in data) || data.email == null || (data.email is string && data.email.size() <= 256)) &&
+        (!('displayName' in data) || data.displayName == null || (data.displayName is string && data.displayName.size() <= 200)) &&
+        (!('branchIds' in data) || (data.branchIds is list && data.branchIds.size() <= 100)) &&
+        (!('teacherId' in data) || data.teacherId == null || (data.teacherId is string && data.teacherId.size() <= 128)) &&
+        (!('createdAt' in data) || (data.createdAt is string && data.createdAt.size() <= 64) || data.createdAt is timestamp) &&
+        (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() <= 64) || data.updatedAt is timestamp);
+    }
+
+    function isValidNotification(data) {
+      let allowedKeys = [
+        'id',
+        'tenantId',
+        'recipientUserId',
+        'recipientPhone',
+        'channel',
+        'templateName',
+        'payload',
+        'status',
+        'retryCount',
+        'errorMessage',
+        'scheduledAt',
+        'sentAt',
+        'createdAt',
+        'updatedAt'
+      ];
+      return data.keys().hasAll([
+          'id',
+          'tenantId',
+          'recipientPhone',
+          'channel',
+          'templateName',
+          'payload',
+          'status',
+          'retryCount',
+          'scheduledAt'
+        ]) &&
+        data.keys().hasOnly(allowedKeys) &&
+        data.id is string &&
+        data.id.size() > 0 &&
+        data.id.size() <= 128 &&
+        isValidTenantId(data.tenantId) &&
+        data.recipientPhone is string &&
+        data.recipientPhone.size() <= 64 &&
+        (!('recipientUserId' in data) || data.recipientUserId == null || (data.recipientUserId is string && data.recipientUserId.size() <= 128)) &&
+        data.channel is string &&
+        data.channel in ['whatsapp', 'fcm', 'sms', 'WHATSAPP', 'FCM', 'SMS'] &&
+        data.templateName is string &&
+        data.templateName.size() > 0 &&
+        data.templateName.size() <= 128 &&
+        data.payload is map &&
+        data.payload.keys().size() <= 50 &&
+        data.status is string &&
+        data.status in ['queued', 'sent', 'delivered', 'failed'] &&
+        data.retryCount is number &&
+        data.retryCount >= 0 &&
+        data.retryCount <= 100 &&
+        (!('errorMessage' in data) || data.errorMessage == null || (data.errorMessage is string && data.errorMessage.size() <= 1000)) &&
+        ((data.scheduledAt is string && data.scheduledAt.size() > 0 && data.scheduledAt.size() <= 64) || data.scheduledAt is timestamp) &&
+        (!('sentAt' in data) || data.sentAt == null || (data.sentAt is string && data.sentAt.size() <= 64) || data.sentAt is timestamp) &&
+        (!('createdAt' in data) || (data.createdAt is string && data.createdAt.size() <= 64) || data.createdAt is timestamp) &&
+        (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() <= 64) || data.updatedAt is timestamp);
+    }
+
+    function isValidTeacherRate(data) {
+      let allowedKeys = [
+        'id',
+        'tenantId',
+        'teacherId',
+        'groupId',
+        'subjectId',
+        'model',
+        'fixedRatePerStudent',
+        'teacherPercentage',
+        'centerPercentage',
+        'splitPercentage',
+        'effectiveFrom',
+        'isActive',
+        'createdAt',
+        'updatedAt'
+      ];
+      return data.keys().hasAll(['id', 'tenantId', 'teacherId', 'model', 'isActive']) &&
+        data.keys().hasOnly(allowedKeys) &&
+        data.id is string &&
+        data.id.size() > 0 &&
+        data.id.size() <= 128 &&
+        isValidTenantId(data.tenantId) &&
+        data.teacherId is string &&
+        data.teacherId.size() > 0 &&
+        data.teacherId.size() <= 128 &&
+        (!('groupId' in data) || data.groupId == null || (data.groupId is string && data.groupId.size() <= 128)) &&
+        (!('subjectId' in data) || data.subjectId == null || (data.subjectId is string && data.subjectId.size() <= 128)) &&
+        data.model is string &&
+        data.model in ['center', 'fixed_session', 'private', 'per_attendee'] &&
+        (!('fixedRatePerStudent' in data) || (data.fixedRatePerStudent is number && data.fixedRatePerStudent >= 0 && data.fixedRatePerStudent <= 100000)) &&
+        (!('teacherPercentage' in data) || (data.teacherPercentage is number && data.teacherPercentage >= 0 && data.teacherPercentage <= 100)) &&
+        (!('centerPercentage' in data) || (data.centerPercentage is number && data.centerPercentage >= 0 && data.centerPercentage <= 100)) &&
+        (!('splitPercentage' in data) || data.splitPercentage == null || (data.splitPercentage is number && data.splitPercentage >= 0 && data.splitPercentage <= 100)) &&
+        (!('effectiveFrom' in data) || (data.effectiveFrom is string && data.effectiveFrom.size() <= 64) || data.effectiveFrom is timestamp) &&
+        data.isActive is bool &&
+        (!('createdAt' in data) || (data.createdAt is string && data.createdAt.size() <= 64) || data.createdAt is timestamp) &&
+        (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() <= 64) || data.updatedAt is timestamp);
+    }
+
+    function isValidTeacherPayroll(data) {
+      let allowedKeys = [
+        'id',
+        'tenantId',
+        'teacherId',
+        'payrollMonth',
+        'payrollYear',
+        'periodMonth',
+        'periodYear',
+        'conductedSessions',
+        'totalAttendance',
+        'averageAttendance',
+        'calculatedCompensation',
+        'bonuses',
+        'deductions',
+        'netPayroll',
+        'totalCenterAttendancePay',
+        'totalPrivateRevenueShare',
+        'grossEarned',
+        'totalAdvancesDeducted',
+        'netPayable',
+        'lessonCompensation',
+        'status',
+        'approvedByUserId',
+        'approvedAt',
+        'paidAt',
+        'paymentMethod',
+        'createdAt',
+        'updatedAt'
+      ];
+      return data.keys().hasAll(['id', 'tenantId', 'teacherId', 'status']) &&
+        data.keys().hasOnly(allowedKeys) &&
+        data.id is string &&
+        data.id.size() > 0 &&
+        data.id.size() <= 128 &&
+        isValidTenantId(data.tenantId) &&
+        data.teacherId is string &&
+        data.teacherId.size() > 0 &&
+        data.teacherId.size() <= 128 &&
+        data.status is string &&
+        data.status in ['draft', 'reviewed', 'approved', 'paid'] &&
+        (!('payrollMonth' in data) || (data.payrollMonth is number && data.payrollMonth >= 1 && data.payrollMonth <= 12)) &&
+        (!('periodMonth' in data) || (data.periodMonth is number && data.periodMonth >= 1 && data.periodMonth <= 12)) &&
+        (!('payrollYear' in data) || (data.payrollYear is number && data.payrollYear >= 2020 && data.payrollYear <= 2100)) &&
+        (!('periodYear' in data) || (data.periodYear is number && data.periodYear >= 2020 && data.periodYear <= 2100)) &&
+        (!('conductedSessions' in data) || (data.conductedSessions is number && data.conductedSessions >= 0 && data.conductedSessions <= 10000)) &&
+        (!('totalAttendance' in data) || (data.totalAttendance is number && data.totalAttendance >= 0 && data.totalAttendance <= 1000000)) &&
+        (!('averageAttendance' in data) || (data.averageAttendance is number && data.averageAttendance >= 0 && data.averageAttendance <= 100000)) &&
+        (!('calculatedCompensation' in data) || (data.calculatedCompensation is number && data.calculatedCompensation >= 0 && data.calculatedCompensation <= 10000000)) &&
+        (!('bonuses' in data) || (data.bonuses is number && data.bonuses >= 0 && data.bonuses <= 10000000)) &&
+        (!('deductions' in data) || (data.deductions is number && data.deductions >= 0 && data.deductions <= 10000000)) &&
+        (!('netPayroll' in data) || (data.netPayroll is number && data.netPayroll >= 0 && data.netPayroll <= 10000000)) &&
+        (!('totalCenterAttendancePay' in data) || (data.totalCenterAttendancePay is number && data.totalCenterAttendancePay >= 0 && data.totalCenterAttendancePay <= 10000000)) &&
+        (!('totalPrivateRevenueShare' in data) || (data.totalPrivateRevenueShare is number && data.totalPrivateRevenueShare >= 0 && data.totalPrivateRevenueShare <= 10000000)) &&
+        (!('grossEarned' in data) || (data.grossEarned is number && data.grossEarned >= 0 && data.grossEarned <= 10000000)) &&
+        (!('totalAdvancesDeducted' in data) || (data.totalAdvancesDeducted is number && data.totalAdvancesDeducted >= 0 && data.totalAdvancesDeducted <= 10000000)) &&
+        (!('netPayable' in data) || (data.netPayable is number && data.netPayable >= 0 && data.netPayable <= 10000000)) &&
+        (!('lessonCompensation' in data) || data.lessonCompensation == null || (data.lessonCompensation is map && data.lessonCompensation.keys().size() <= 10)) &&
+        (!('approvedByUserId' in data) || data.approvedByUserId == null || (data.approvedByUserId is string && data.approvedByUserId.size() <= 128)) &&
+        (!('paymentMethod' in data) || data.paymentMethod == null || (data.paymentMethod is string && data.paymentMethod.size() <= 64)) &&
+        (!('approvedAt' in data) || data.approvedAt == null || (data.approvedAt is string && data.approvedAt.size() <= 64) || data.approvedAt is timestamp) &&
+        (!('paidAt' in data) || data.paidAt == null || (data.paidAt is string && data.paidAt.size() <= 64) || data.paidAt is timestamp) &&
+        (!('createdAt' in data) || (data.createdAt is string && data.createdAt.size() <= 64) || data.createdAt is timestamp) &&
+        (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() <= 64) || data.updatedAt is timestamp);
+    }
+
+    function isValidTeacherAdvance(data) {
+      let allowedKeys = [
+        'id',
+        'tenantId',
+        'teacherId',
+        'amount',
+        'reason',
+        'disbursedByUserId',
+        'disbursedAt',
+        'paidAt',
+        'payrollId',
+        'status',
+        'createdAt',
+        'updatedAt'
+      ];
+      return data.keys().hasAll(['id', 'tenantId', 'teacherId', 'amount', 'disbursedByUserId', 'status']) &&
+        data.keys().hasOnly(allowedKeys) &&
+        data.id is string &&
+        data.id.size() > 0 &&
+        data.id.size() <= 128 &&
+        isValidTenantId(data.tenantId) &&
+        data.teacherId is string &&
+        data.teacherId.size() > 0 &&
+        data.teacherId.size() <= 128 &&
+        data.amount is number &&
+        data.amount > 0 &&
+        data.amount <= 1000000 &&
+        (!('reason' in data) || data.reason == null || (data.reason is string && data.reason.size() <= 500)) &&
+        data.disbursedByUserId is string &&
+        data.disbursedByUserId.size() > 0 &&
+        data.disbursedByUserId.size() <= 128 &&
+        (!('payrollId' in data) || data.payrollId == null || (data.payrollId is string && data.payrollId.size() <= 128)) &&
+        data.status is string &&
+        data.status in ['pending', 'settled'] &&
+        (!('disbursedAt' in data) || (data.disbursedAt is string && data.disbursedAt.size() <= 64) || data.disbursedAt is timestamp) &&
+        (!('paidAt' in data) || (data.paidAt is string && data.paidAt.size() <= 64) || data.paidAt is timestamp) &&
+        (!('createdAt' in data) || (data.createdAt is string && data.createdAt.size() <= 64) || data.createdAt is timestamp) &&
+        (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() <= 64) || data.updatedAt is timestamp);
+    }
+
+    function isValidBookInventoryItem(data) {
+      let allowedKeys = [
+        'id',
+        'tenantId',
+        'subjectId',
+        'grade',
+        'title',
+        'unitCost',
+        'sellingPrice',
+        'quantityInStock',
+        'createdAt',
+        'updatedAt'
+      ];
+      return data.keys().hasAll([
+          'id',
+          'tenantId',
+          'subjectId',
+          'grade',
+          'title',
+          'unitCost',
+          'sellingPrice',
+          'quantityInStock'
+        ]) &&
+        data.keys().hasOnly(allowedKeys) &&
+        data.id is string &&
+        data.id.size() > 0 &&
+        data.id.size() <= 128 &&
+        isValidTenantId(data.tenantId) &&
+        data.subjectId is string &&
+        data.subjectId.size() > 0 &&
+        data.subjectId.size() <= 128 &&
+        data.grade is string &&
+        data.grade.size() > 0 &&
+        data.grade.size() <= 128 &&
+        data.title is string &&
+        data.title.size() > 0 &&
+        data.title.size() <= 200 &&
+        data.unitCost is number &&
+        data.unitCost >= 0 &&
+        data.unitCost <= 100000 &&
+        data.sellingPrice is number &&
+        data.sellingPrice >= 0 &&
+        data.sellingPrice <= 100000 &&
+        data.quantityInStock is number &&
+        data.quantityInStock >= 0 &&
+        data.quantityInStock <= 1000000 &&
+        (!('createdAt' in data) || (data.createdAt is string && data.createdAt.size() <= 64) || data.createdAt is timestamp) &&
+        (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() <= 64) || data.updatedAt is timestamp);
+    }
+
     // ===============================================================
     // Collection Match Rules
     // ===============================================================
@@ -470,18 +844,31 @@ service cloud.firestore {
       allow read: if isSignedIn() && (
         request.auth.uid == uid ||
         isPlatformOwner() ||
-        (isCenterAdmin(resource.data.tenantId))
+        isCenterAdmin(resource.data.tenantId)
       );
-      allow create: if isSignedIn() && (
-        isPlatformOwner() ||
-        request.auth.uid == uid ||
-        isCenterAdmin(request.resource.data.tenantId)
-      );
-      allow update: if isPlatformOwner() || (
+      allow create: if isSignedIn() &&
+        isValidStaffMembership(request.resource.data, uid) && (
+          isPlatformOwner() || (
+            isCenterAdmin(request.resource.data.tenantId) &&
+            isValidTenantId(request.resource.data.tenantId) &&
+            request.resource.data.uid == uid &&
+            request.resource.data.role != 'PLATFORM_OWNER'
+          )
+        );
+      allow update: if isSignedIn() &&
+        isValidStaffMembership(request.resource.data, uid) && (
+          isPlatformOwner() || (
+            isCenterAdmin(resource.data.tenantId) &&
+            resource.data.role != 'PLATFORM_OWNER' &&
+            request.resource.data.tenantId == resource.data.tenantId &&
+            request.resource.data.uid == resource.data.uid &&
+            request.resource.data.role != 'PLATFORM_OWNER'
+          )
+        );
+      allow delete: if isPlatformOwner() || (
         isCenterAdmin(resource.data.tenantId) &&
-        request.resource.data.tenantId == resource.data.tenantId
+        resource.data.role != 'PLATFORM_OWNER'
       );
-      allow delete: if isPlatformOwner() || isCenterAdmin(resource.data.tenantId);
     }
 
     // 2. Master data: Educational stages & grades (${tenantId}~${stageId})
@@ -940,7 +1327,99 @@ service cloud.firestore {
       allow delete: if isPlatformOwner() || isCenterAdminForDoc(resource.data);
     }
 
-    // 23. Default closed guardrail
+    // 23. Center notifications queue & delivery logs
+    match /center_notifications/{notifId} {
+      allow read: if isStaffMember(resource.data.tenantId) || (
+        isSignedIn() &&
+        'recipientUserId' in resource.data &&
+        resource.data.recipientUserId == request.auth.uid
+      );
+      allow create: if isStaffMember(request.resource.data.tenantId) &&
+        isValidTenantId(request.resource.data.tenantId) &&
+        isValidNotification(request.resource.data);
+      allow update: if isCenterAdmin(resource.data.tenantId) &&
+        request.resource.data.tenantId == resource.data.tenantId &&
+        request.resource.data.id == resource.data.id &&
+        request.resource.data.recipientPhone == resource.data.recipientPhone &&
+        request.resource.data.channel == resource.data.channel &&
+        request.resource.data.templateName == resource.data.templateName &&
+        request.resource.data.scheduledAt == resource.data.scheduledAt &&
+        isValidNotification(request.resource.data);
+      allow delete: if isPlatformOwner() || isCenterAdmin(resource.data.tenantId);
+    }
+
+    // 24. Teacher contractual compensation rates (peer financial privacy enforced)
+    match /teacher_rates/{rateId} {
+      allow read: if isTeacherFinanceManager(resource.data.tenantId) || (
+        isActiveStaff() &&
+        matchesTenant(resource.data.tenantId) &&
+        staffRole() == 'TEACHER' &&
+        matchesTeacher(resource.data.teacherId)
+      );
+      allow create: if isTeacherFinanceManager(request.resource.data.tenantId) &&
+        isValidTenantId(request.resource.data.tenantId) &&
+        isValidTeacherRate(request.resource.data);
+      allow update: if isTeacherFinanceManager(resource.data.tenantId) &&
+        request.resource.data.tenantId == resource.data.tenantId &&
+        request.resource.data.id == resource.data.id &&
+        request.resource.data.teacherId == resource.data.teacherId &&
+        isValidTeacherRate(request.resource.data);
+      allow delete: if isPlatformOwner() || isCenterAdmin(resource.data.tenantId);
+    }
+
+    // 25. Teacher monthly payroll ledgers (peer financial privacy enforced)
+    match /teacher_payroll/{payrollId} {
+      allow read: if isTeacherFinanceManager(resource.data.tenantId) || (
+        isActiveStaff() &&
+        matchesTenant(resource.data.tenantId) &&
+        staffRole() == 'TEACHER' &&
+        matchesTeacher(resource.data.teacherId)
+      );
+      allow create: if isTeacherFinanceManager(request.resource.data.tenantId) &&
+        isValidTenantId(request.resource.data.tenantId) &&
+        isValidTeacherPayroll(request.resource.data);
+      allow update: if isTeacherFinanceManager(resource.data.tenantId) &&
+        request.resource.data.tenantId == resource.data.tenantId &&
+        request.resource.data.id == resource.data.id &&
+        request.resource.data.teacherId == resource.data.teacherId &&
+        (resource.data.status != 'paid' || request.resource.data.status == 'paid') &&
+        isValidTeacherPayroll(request.resource.data);
+      allow delete: if isPlatformOwner() || isCenterAdmin(resource.data.tenantId);
+    }
+
+    // 26. Teacher salary advances
+    match /teacher_advances/{advanceId} {
+      allow read: if isTeacherFinanceManager(resource.data.tenantId) || (
+        isActiveStaff() &&
+        matchesTenant(resource.data.tenantId) &&
+        staffRole() == 'TEACHER' &&
+        matchesTeacher(resource.data.teacherId)
+      );
+      allow create: if isTeacherFinanceManager(request.resource.data.tenantId) &&
+        isValidTenantId(request.resource.data.tenantId) &&
+        isValidTeacherAdvance(request.resource.data);
+      allow update: if isTeacherFinanceManager(resource.data.tenantId) &&
+        request.resource.data.tenantId == resource.data.tenantId &&
+        request.resource.data.id == resource.data.id &&
+        request.resource.data.teacherId == resource.data.teacherId &&
+        isValidTeacherAdvance(request.resource.data);
+      allow delete: if isPlatformOwner() || isCenterAdmin(resource.data.tenantId);
+    }
+
+    // 27. Books & booklets inventory
+    match /books_inventory/{bookId} {
+      allow read: if isStaffMember(resource.data.tenantId);
+      allow create: if (isFinanceStaff(request.resource.data.tenantId) || isCenterAdmin(request.resource.data.tenantId)) &&
+        isValidTenantId(request.resource.data.tenantId) &&
+        isValidBookInventoryItem(request.resource.data);
+      allow update: if (isFinanceStaff(resource.data.tenantId) || isCenterAdmin(resource.data.tenantId)) &&
+        request.resource.data.tenantId == resource.data.tenantId &&
+        request.resource.data.id == resource.data.id &&
+        isValidBookInventoryItem(request.resource.data);
+      allow delete: if isPlatformOwner() || isCenterAdmin(resource.data.tenantId);
+    }
+
+    // 28. Default closed guardrail
     match /{document=**} {
       allow read, write: if false;
     }

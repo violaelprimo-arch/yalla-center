@@ -27,18 +27,27 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { SaasPlatformService } from '@/lib/saas/service';
 import type { CenterExtended } from '@/lib/saas/types';
+import { getDataProvider } from '@/lib/dal/factory';
 
 export default function CenterAdminPortalPage() {
-  const { tenant, branches, currentRole, currentUser, groupData } = useTenant();
+  const { tenant, branches, currentRole, currentUser, groupData, masterData } = useTenant();
   const { groups, classrooms } = groupData;
   const [centerSaaS, setCenterSaaS] = useState<CenterExtended | null>(null);
+  const [studentsCount, setStudentsCount] = useState<number>(0);
 
   useEffect(() => {
     const c = SaasPlatformService.getCenterBySlug(tenant.slug);
     if (c) {
       setCenterSaaS(c);
     }
-  }, [tenant.slug]);
+    const token = masterData.auth.idToken;
+    if (process.env.NODE_ENV === 'test' || token) {
+      getDataProvider(token || undefined)
+        .getUsers(tenant.id, { role: 'STUDENT' })
+        .then((users) => setStudentsCount(users.length))
+        .catch(() => setStudentsCount(0));
+    }
+  }, [tenant.slug, tenant.id, masterData.auth.idToken]);
 
   const activeBranches = branches.filter((b) => b.isActive !== false);
   const activeGroups = groups.filter((g) => g.isActive !== false);
@@ -88,10 +97,10 @@ export default function CenterAdminPortalPage() {
           </div>
           <div className="mt-3 flex items-baseline justify-between">
             <span className="text-2xl font-black text-foreground">
-              {centerSaaS?.studentsCount || 450}
+              {studentsCount}
             </span>
             <span className="text-[10px] text-muted-foreground">
-              الحد الأقصى: {centerSaaS?.maxStudents === -1 ? 'مفتوح' : centerSaaS?.maxStudents || 1000}
+              الحد الأقصى: {centerSaaS?.maxStudents === -1 ? 'مفتوح' : centerSaaS?.maxStudents || 'غير مقيد'}
             </span>
           </div>
         </div>
@@ -122,7 +131,7 @@ export default function CenterAdminPortalPage() {
           </div>
           <div className="mt-3 flex items-baseline justify-between">
             <span className="text-2xl font-black text-purple-600 dark:text-purple-400">
-              {centerSaaS?.aiBalance ?? 500}
+              {centerSaaS?.aiBalance ?? 0}
             </span>
             <span className="text-[10px] text-muted-foreground">وحدة بنك الأسئلة</span>
           </div>
@@ -136,11 +145,11 @@ export default function CenterAdminPortalPage() {
             </div>
           </div>
           <div className="mt-3 flex items-baseline justify-between">
-            <Badge variant="success" className="text-xs">
-              {centerSaaS?.status === 'active' ? 'نشط ومفعل' : 'قيد التجربة'}
+            <Badge variant={tenant.isActive ? 'success' : 'warning'} className="text-xs">
+              {tenant.isActive ? 'نشط ومفعل' : 'موقوف'}
             </Badge>
             <span className="text-[10px] text-muted-foreground">
-              ينتهي في {centerSaaS?.subscriptionEndDate ? new Date(centerSaaS.subscriptionEndDate).toLocaleDateString('ar-EG') : '2027'}
+              باقة {tenant.subscriptionPlan?.toUpperCase() || 'PRO'}
             </span>
           </div>
         </div>

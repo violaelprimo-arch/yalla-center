@@ -72,7 +72,7 @@ export async function GET(req: NextRequest, { params }: Params) {
       return reply({ portal: await readTeacherPortal({ ...context, dal: await loadGroupProvider(context.store, context.tenant) }, teacher, month, year) });
     }
 
-    await assertTeacherManager(context.store, token.uid, context.tenant.id, view === 'contracts', token.email);
+    await assertTeacherManager(context.store, token.uid, context.tenant.id, view === 'contracts', token.email, token.rawClaims);
     const profiles = await listTeacherProfiles(context);
     if (view === 'contracts') {
       return reply({ profiles: profiles.map(({ id, tenantId, fullName, phone, active, contracts }) =>
@@ -96,7 +96,7 @@ export async function POST(req: NextRequest, { params }: Params) {
       const teacher = await getSignedInTeacher(context, token);
       return reply({ request: await submitTeacherExtraSession({ ...context, dal: await loadGroupProvider(context.store, context.tenant) }, teacher, input.request) });
     }
-    await assertTeacherManager(context.store, token.uid, context.tenant.id, false, token.email);
+    await assertTeacherManager(context.store, token.uid, context.tenant.id, false, token.email, token.rawClaims);
     if (input.action === 'archive') {
       return reply({ profile: await archiveTeacherProfile(context, input.id, input.version) });
     }

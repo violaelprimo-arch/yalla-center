@@ -21,13 +21,13 @@ function reply(body: object, status = 200) {
 async function context(req: NextRequest, slug: string) {
   const token = extractBearerToken(req.headers.get('authorization'));
   if (!token) throw new GroupScheduleError(401, 'سجّل الدخول بحساب السنتر');
-  const { uid, email } = await verifyFirebaseIdToken(token);
+  const { uid, email, rawClaims } = await verifyFirebaseIdToken(token);
   if (uid.includes('/')) throw new GroupScheduleError(401, 'معرّف الحساب غير صالح');
-  const dal = getDataProvider();
+  const dal = getDataProvider(token);
   const tenant = await dal.getTenantBySlug(slug);
   if (!tenant?.isActive) throw new GroupScheduleError(404, 'السنتر غير موجود');
   const store = await createServerFirestoreStore({ callerIdToken: token, requireServiceAccount: false });
-  const staff = await groupStaff(store, tenant, uid, email);
+  const staff = await groupStaff(store, tenant, uid, email, rawClaims);
   return { dal, tenant, store, staff };
 }
 

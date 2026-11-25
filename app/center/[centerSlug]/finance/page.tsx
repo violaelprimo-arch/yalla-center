@@ -70,7 +70,7 @@ type TabKey = 'shifts' | 'invoices' | 'payments' | 'payroll' | 'expenses';
 export default function FinancePage() {
   const { tenant, branches, currentUser, currentRole, masterData, groupData } = useTenant();
   const { auth, data: { subjects } } = masterData;
-  const dal = useMemo(() => getDataProvider(), []);
+  const dal = useMemo(() => getDataProvider(auth.idToken || undefined), [auth.idToken]);
 
   // Active Tab
   const [activeTab, setActiveTab] = useState<TabKey>('shifts');
@@ -131,6 +131,10 @@ export default function FinancePage() {
 
   // Load All Finance Data
   const loadFinanceData = useCallback(async () => {
+    if (process.env.NODE_ENV !== 'test' && !auth.idToken) {
+      if (!auth.loading) setIsLoading(false);
+      return;
+    }
     setIsLoading(true);
     setActionError(null);
     try {
@@ -171,7 +175,7 @@ export default function FinancePage() {
     } finally {
       setIsLoading(false);
     }
-  }, [dal, tenant.id]);
+  }, [dal, tenant.id, auth.idToken, auth.loading]);
 
   useEffect(() => {
     loadFinanceData();

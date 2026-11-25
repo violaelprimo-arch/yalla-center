@@ -52,7 +52,8 @@ interface StatsData {
 }
 
 export default function NotificationsPage() {
-  const { tenant } = useTenant();
+  const { tenant, masterData } = useTenant();
+  const token = masterData.auth.idToken;
 
   const [logs, setLogs] = useState<NotificationItem[]>([]);
   const [stats, setStats] = useState<StatsData>({
@@ -75,9 +76,16 @@ export default function NotificationsPage() {
 
   // Fetch Notifications from Endpoint
   const fetchNotifications = useCallback(async () => {
+    if (process.env.NODE_ENV !== 'test' && !token) {
+      if (!masterData.auth.loading) setIsLoading(false);
+      return;
+    }
     setIsLoading(true);
     try {
-      const res = await fetch(`/api/center/${tenant.slug}/notifications`);
+      const res = await fetch(`/api/center/${tenant.slug}/notifications`, {
+        cache: 'no-store',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
       const data = await res.json();
       if (data.success) {
         setLogs(data.logs || []);
@@ -88,7 +96,7 @@ export default function NotificationsPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [tenant.slug]);
+  }, [tenant.slug, token, masterData.auth.loading]);
 
   useEffect(() => {
     fetchNotifications();
@@ -100,12 +108,15 @@ export default function NotificationsPage() {
     try {
       const res = await fetch(`/api/center/${tenant.slug}/notifications`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({ action: 'flush_queue' }),
       });
       const data = await res.json();
       if (data.success) {
-        setActionSuccessMessage('تمت معالجة طابور الإرسال في وضع المحاكاة بنجاح');
+        setActionSuccessMessage('تمت معالجة طابور الإرسال بنجاح');
         setTimeout(() => setActionSuccessMessage(null), 3500);
         await fetchNotifications();
       }
@@ -121,7 +132,10 @@ export default function NotificationsPage() {
     try {
       const res = await fetch(`/api/center/${tenant.slug}/notifications/resend`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({ notificationId }),
       });
       const data = await res.json();

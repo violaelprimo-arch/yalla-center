@@ -4,32 +4,61 @@ import { useEffect, useRef, useState } from 'react';
 import type { Classroom, Group, Tenant, UserRole } from '@/lib/dal/types';
 import type { MasterData } from '@/lib/dal/master-data';
 import { getDataProvider } from '@/lib/dal/factory';
-import { INITIAL_SEEDED_DATA } from '@/lib/dal/mock-data';
+import { INITIAL_SEEDED_DATA, MockDataProvider } from '@/lib/dal/mock-data';
 import { getFreshFirebaseIdToken, type FirebaseAuthSessionState } from '@/lib/firebase/client';
 import { readDemoTeacherProfiles } from '@/lib/teachers/client';
 import {
-  archiveClassroom, archiveGroup, buildClassroom, buildGroup, classroomInputSchema, groupConflictMessage,
-  mergeManagedRecords, type ClassroomInput, type GroupInput,
+  archiveClassroom,
+  archiveGroup,
+  buildClassroom,
+  buildGroup,
+  classroomInputSchema,
+  groupConflictMessage,
+  mergeManagedRecords,
+  type ClassroomInput,
+  type GroupInput,
 } from './group-schedule';
 
 function parseSavedGroups(raw: string | null, tenantId: string): Group[] {
   const snapshot = raw === null ? [] : JSON.parse(raw);
   const records = Array.isArray(snapshot) ? snapshot : snapshot?.groups;
-  if (!Array.isArray(records) || !records.every(row => row && row.tenantId === tenantId &&
-    typeof row.id === 'string' && typeof row.nameAr === 'string' && typeof row.subjectId === 'string' &&
-    typeof row.isActive === 'boolean')) {
+  if (
+    !Array.isArray(records) ||
+    !records.every(
+      row =>
+        row &&
+        row.tenantId === tenantId &&
+        typeof row.id === 'string' &&
+        typeof row.nameAr === 'string' &&
+        typeof row.subjectId === 'string' &&
+        typeof row.isActive === 'boolean'
+    )
+  ) {
     throw new Error('تعذّر قراءة المجموعات المحفوظة في هذا المتصفح');
   }
-  return getDataProvider().keepSavedRecords(records, INITIAL_SEEDED_DATA.groups, new Set(['isActive', 'archivedAt', 'version']));
+  const dal = getDataProvider();
+  return dal instanceof MockDataProvider
+    ? dal.keepSavedRecords(records, INITIAL_SEEDED_DATA.groups, new Set(['isActive', 'archivedAt', 'version']))
+    : records;
 }
 
 function parseSavedClassrooms(raw: string | null, tenantId: string): Classroom[] {
   const rooms = raw === null ? [] : JSON.parse(raw);
-  if (!Array.isArray(rooms) || !rooms.every(room => room?.tenantId === tenantId && typeof room.id === 'string' &&
-    classroomInputSchema.safeParse(room).success)) {
+  if (
+    !Array.isArray(rooms) ||
+    !rooms.every(
+      room =>
+        room?.tenantId === tenantId &&
+        typeof room.id === 'string' &&
+        classroomInputSchema.safeParse(room).success
+    )
+  ) {
     throw new Error('تعذّر قراءة القاعات المحفوظة في هذا المتصفح');
   }
-  return getDataProvider().keepSavedRecords(rooms, INITIAL_SEEDED_DATA.classrooms);
+  const dal = getDataProvider();
+  return dal instanceof MockDataProvider
+    ? dal.keepSavedRecords(rooms, INITIAL_SEEDED_DATA.classrooms)
+    : rooms;
 }
 
 function writeDemoData(key: string, data: object, label: string) {
@@ -51,21 +80,38 @@ export function readDemoSchedule(tenantId: string) {
   const dal = getDataProvider();
   const storedGroups = parseSavedGroups(groups, tenantId);
   const storedRooms = parseSavedClassrooms(rooms, tenantId);
-  dal.setManagedGroups(tenantId, storedGroups);
-  dal.setManagedClassrooms(tenantId, storedRooms);
+  if (dal instanceof MockDataProvider) {
+    dal.setManagedGroups(tenantId, storedGroups);
+    dal.setManagedClassrooms(tenantId, storedRooms);
+  }
 
   function verifyCurrent() {
-    if (storage.getItem(groupKey) !== groups || storage.getItem(roomKey) !== rooms ||
-      storage.getItem(catalogKey) !== catalog) throw new Error(groupConflictMessage);
+    if (
+      storage.getItem(groupKey) !== groups ||
+      storage.getItem(roomKey) !== rooms ||
+      storage.getItem(catalogKey) !== catalog
+    ) {
+      throw new Error(groupConflictMessage);
+    }
   }
 
   return { storedGroups, storedRooms, verifyCurrent };
 }
 
-async function requestGroups<T>(slug: string, token: string, input?: object, signal?: AbortSignal): Promise<T> {
+async function requestGroups<T>(
+  slug: string,
+  token: string,
+  input?: object,
+  signal?: AbortSignal
+): Promise<T> {
   const response = await fetch(`/api/center/${encodeURIComponent(slug)}/groups`, {
-    cache: 'no-store', signal, method: input ? 'POST' : 'GET',
-    headers: { Authorization: `Bearer ${token}`, ...(input ? { 'Content-Type': 'application/json' } : {}) },
+    cache: 'no-store',
+    signal,
+    method: input ? 'POST' : 'GET',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      ...(input ? { 'Content-Type': 'application/json' } : {}),
+    },
     body: input ? JSON.stringify(input) : undefined,
   });
   const result = await response.json().catch(() => null);
@@ -73,24 +119,56 @@ async function requestGroups<T>(slug: string, token: string, input?: object, sig
   return result as T;
 }
 
-export function useCenterGroups(tenant: Tenant, catalog: MasterData, auth: FirebaseAuthSessionState, role: UserRole) {
+export function useCenterGroups(
+  tenant: Tenant,
+  catalog: MasterData,
+  auth: FirebaseAuthSessionState,
+  role: UserRole
+) {
   const token = auth.idToken;
-  const demo = !auth.configured || !token;
+  const isProduction =
+    process.env.DATA_PROVIDER_MODE === 'production' ||
+    process.env.DATA_PROVIDER_MODE === 'firebase' ||
+    process.env.NODE_ENV === 'production';
+  const demo = !isProduction && (!auth.configured || !token);
   const account = auth.user?.uid ?? token ?? (demo ? 'demo' : null);
   const { id: tenantId, slug } = tenant;
   const key = `yc-center-groups-v1:${tenantId}`;
   const roomsKey = `yc-center-classrooms-v1:${tenantId}`;
-  const [state, setState] = useState<{ tenantId: string; account: string | null; groups: Group[]; canEdit: boolean; error?: string }>();
+  const [state, setState] = useState<{
+    tenantId: string;
+    account: string | null;
+    groups: Group[];
+    canEdit: boolean;
+    error?: string;
+  }>();
   const [classrooms, setClassrooms] = useState<Classroom[]>([]);
   const [revision, setRevision] = useState(0);
   const managedGroups = useRef<Group[]>([]);
   const managedClassrooms = useRef<Classroom[]>([]);
   const request = useRef(0);
-  const current = state?.tenantId === tenantId && (demo || token) ? state : undefined;
-  const canEdit = Boolean(current && !current.error && (demo
-    ? ['CENTER_ADMIN', 'PLATFORM_OWNER'].includes(role) : token && current.canEdit));
+  const current = state?.tenantId === tenantId && (demo || token || state?.error) ? state : undefined;
+  const canEdit = Boolean(
+    current &&
+      !current.error &&
+      (demo ? ['CENTER_ADMIN', 'PLATFORM_OWNER'].includes(role) : token && current.canEdit)
+  );
 
   useEffect(() => {
+    if (!demo && !token) {
+      if (!auth.loading) {
+        setState({
+          tenantId,
+          account: null,
+          groups: [],
+          canEdit: false,
+          error: 'يلزم تسجيل الدخول بحساب السنتر لتحميل المجموعات والقاعات',
+        });
+        setClassrooms([]);
+      }
+      return;
+    }
+
     const controller = new AbortController();
     async function load() {
       const sequence = ++request.current;
@@ -98,23 +176,39 @@ export function useCenterGroups(tenant: Tenant, catalog: MasterData, auth: Fireb
       const dal = getDataProvider();
       try {
         const stored = demo
-          ? { groups: parseSavedGroups(window.localStorage.getItem(key), tenantId),
-            classrooms: parseSavedClassrooms(window.localStorage.getItem(roomsKey), tenantId), canEdit: true }
-          : await requestGroups<{ groups: Group[]; classrooms: Classroom[]; canEdit: boolean }>(slug, token!, undefined, controller.signal);
+          ? {
+              groups: parseSavedGroups(window.localStorage.getItem(key), tenantId),
+              classrooms: parseSavedClassrooms(window.localStorage.getItem(roomsKey), tenantId),
+              canEdit: true,
+            }
+          : await requestGroups<{ groups: Group[]; classrooms: Classroom[]; canEdit: boolean }>(
+              slug,
+              token!,
+              undefined,
+              controller.signal
+            );
         if (!active()) return;
         managedGroups.current = stored.groups;
         managedClassrooms.current = stored.classrooms;
-        dal.setManagedGroups(tenantId, stored.groups);
-        dal.setManagedClassrooms(tenantId, stored.classrooms);
-        const [groups, rooms] = await Promise.all([dal.getGroups(tenantId), dal.getClassrooms(tenantId)]);
-        if (!active()) return;
-        setState({ tenantId, account, groups, canEdit: stored.canEdit });
-        setClassrooms(rooms);
+        if (dal instanceof MockDataProvider) {
+          dal.setManagedGroups(tenantId, stored.groups);
+          dal.setManagedClassrooms(tenantId, stored.classrooms);
+          const [groups, rooms] = await Promise.all([dal.getGroups(tenantId), dal.getClassrooms(tenantId)]);
+          if (!active()) return;
+          setState({ tenantId, account, groups, canEdit: stored.canEdit });
+          setClassrooms(rooms);
+        } else {
+          setState({ tenantId, account, groups: stored.groups, canEdit: stored.canEdit });
+          setClassrooms(stored.classrooms);
+        }
       } catch (cause) {
         if (!active()) return;
         const error = cause instanceof Error ? cause.message : 'تعذّر تحميل المجموعات';
-        setState(previous => previous?.tenantId === tenantId && previous.account === account ? { ...previous, error }
-          : { tenantId, account, error, groups: [], canEdit: false });
+        setState(previous =>
+          previous?.tenantId === tenantId && previous.account === account
+            ? { ...previous, error }
+            : { tenantId, account, error, groups: [], canEdit: false }
+        );
       }
     }
     const sync = (event: StorageEvent) => {
@@ -132,22 +226,29 @@ export function useCenterGroups(tenant: Tenant, catalog: MasterData, auth: Fireb
     request.current += 1;
     const dal = getDataProvider();
     managedGroups.current = records;
-    dal.setManagedGroups(tenantId, records);
-    setState({ tenantId, account, groups: await dal.getGroups(tenantId), canEdit: true });
+    if (dal instanceof MockDataProvider) {
+      dal.setManagedGroups(tenantId, records);
+      setState({ tenantId, account, groups: await dal.getGroups(tenantId), canEdit: true });
+    } else {
+      setState({ tenantId, account, groups: records, canEdit: true });
+    }
   }
 
   async function applyClassrooms(records: Classroom[]) {
     request.current += 1;
     const dal = getDataProvider();
     managedClassrooms.current = records;
-    dal.setManagedClassrooms(tenantId, records);
-    setClassrooms(await dal.getClassrooms(tenantId));
+    if (dal instanceof MockDataProvider) {
+      dal.setManagedClassrooms(tenantId, records);
+      setClassrooms(await dal.getClassrooms(tenantId));
+    } else {
+      setClassrooms(records);
+    }
   }
 
   async function save(input: GroupInput) {
     if (!canEdit) throw new Error('صلاحية مدير السنتر مطلوبة لحفظ المجموعة');
     const activeToken = token || (await getFreshFirebaseIdToken());
-    const isProduction = process.env.DATA_PROVIDER_MODE === 'production' || process.env.NODE_ENV === 'production';
     if (activeToken) {
       const { group } = await requestGroups<{ group: Group }>(slug, activeToken, input);
       await applyGroups(mergeManagedRecords(managedGroups.current, [group]));
@@ -160,15 +261,29 @@ export function useCenterGroups(tenant: Tenant, catalog: MasterData, auth: Fireb
     const dal = getDataProvider();
     const snapshot = readDemoSchedule(tenantId);
     const [groups, classrooms, users] = await Promise.all([
-      dal.getGroups(tenantId), dal.getClassrooms(tenantId), dal.getUsers(tenantId, { role: 'TEACHER' }),
+      dal.getGroups(tenantId),
+      dal.getClassrooms(tenantId),
+      dal.getUsers(tenantId, { role: 'TEACHER' }),
     ]);
-    const teachers = new Map(users.map(user => [user.id, {
-      id: user.id, fullName: user.fullName, isActive: user.isActive,
-    }]));
-    for (const profile of readDemoTeacherProfiles(tenantId)) teachers.set(profile.id, {
-      id: profile.id, fullName: profile.fullName, isActive: profile.active,
+    const teachers = new Map(
+      users.map(user => [
+        user.id,
+        { id: user.id, fullName: user.fullName, isActive: user.isActive },
+      ])
+    );
+    for (const profile of readDemoTeacherProfiles(tenantId)) {
+      teachers.set(profile.id, {
+        id: profile.id,
+        fullName: profile.fullName,
+        isActive: profile.active,
+      });
+    }
+    const group = buildGroup(tenantId, input, {
+      ...catalog,
+      groups,
+      classrooms,
+      teachers: [...teachers.values()],
     });
-    const group = buildGroup(tenantId, input, { ...catalog, groups, classrooms, teachers: [...teachers.values()] });
     const next = mergeManagedRecords(snapshot.storedGroups, [group]);
     snapshot.verifyCurrent();
     writeDemoData(key, { groups: next }, 'المجموعات');
@@ -180,9 +295,11 @@ export function useCenterGroups(tenant: Tenant, catalog: MasterData, auth: Fireb
     if (!canEdit) throw new Error('صلاحية مدير السنتر مطلوبة لحذف المجموعات');
     const targets = selection.map(group => ({ id: group.id, version: group.version ?? 0 }));
     const activeToken = token || (await getFreshFirebaseIdToken());
-    const isProduction = process.env.DATA_PROVIDER_MODE === 'production' || process.env.NODE_ENV === 'production';
     if (activeToken) {
-      const { groups } = await requestGroups<{ groups: Group[] }>(slug, activeToken, { action: 'deleteGroups', groups: targets });
+      const { groups } = await requestGroups<{ groups: Group[] }>(slug, activeToken, {
+        action: 'deleteGroups',
+        groups: targets,
+      });
       await applyGroups(mergeManagedRecords(managedGroups.current, groups));
       return;
     }
@@ -208,9 +325,11 @@ export function useCenterGroups(tenant: Tenant, catalog: MasterData, auth: Fireb
     if (!canEdit) throw new Error('صلاحية مدير السنتر مطلوبة لحفظ القاعة');
     const parsed = classroomInputSchema.parse(input);
     const activeToken = token || (await getFreshFirebaseIdToken());
-    const isProduction = process.env.DATA_PROVIDER_MODE === 'production' || process.env.NODE_ENV === 'production';
     if (activeToken) {
-      const { room } = await requestGroups<{ room: Classroom }>(slug, activeToken, { action: 'saveClassroom', room: parsed });
+      const { room } = await requestGroups<{ room: Classroom }>(slug, activeToken, {
+        action: 'saveClassroom',
+        room: parsed,
+      });
       await applyClassrooms(mergeManagedRecords(managedClassrooms.current, [room]));
       return room;
     }
@@ -219,7 +338,12 @@ export function useCenterGroups(tenant: Tenant, catalog: MasterData, auth: Fireb
     }
 
     const snapshot = readDemoSchedule(tenantId);
-    const room = buildClassroom(tenantId, parsed, catalog.branches, await getDataProvider().getClassrooms(tenantId));
+    const room = buildClassroom(
+      tenantId,
+      parsed,
+      catalog.branches,
+      await getDataProvider().getClassrooms(tenantId)
+    );
     const next = mergeManagedRecords(snapshot.storedRooms, [room]);
     snapshot.verifyCurrent();
     writeDemoData(roomsKey, next, 'القاعات');
@@ -230,10 +354,12 @@ export function useCenterGroups(tenant: Tenant, catalog: MasterData, auth: Fireb
   async function deleteClassroom(room: Classroom) {
     if (!canEdit) throw new Error('صلاحية مدير السنتر مطلوبة لحذف القاعة');
     const activeToken = token || (await getFreshFirebaseIdToken());
-    const isProduction = process.env.DATA_PROVIDER_MODE === 'production' || process.env.NODE_ENV === 'production';
     if (activeToken) {
       const input = { id: room.id, branchId: room.branchId };
-      const { room: archived } = await requestGroups<{ room: Classroom }>(slug, activeToken, { action: 'deleteClassroom', room: input });
+      const { room: archived } = await requestGroups<{ room: Classroom }>(slug, activeToken, {
+        action: 'deleteClassroom',
+        room: input,
+      });
       await applyClassrooms(mergeManagedRecords(managedClassrooms.current, [archived]));
       return;
     }
@@ -243,7 +369,10 @@ export function useCenterGroups(tenant: Tenant, catalog: MasterData, auth: Fireb
 
     const dal = getDataProvider();
     const snapshot = readDemoSchedule(tenantId);
-    const [rooms, groups] = await Promise.all([dal.getClassrooms(tenantId, room.branchId), dal.getGroups(tenantId)]);
+    const [rooms, groups] = await Promise.all([
+      dal.getClassrooms(tenantId, room.branchId),
+      dal.getGroups(tenantId),
+    ]);
     const existing = rooms.find(item => item.id === room.id);
     if (!existing) throw new Error('القاعة غير موجودة في هذا الفرع');
     const next = mergeManagedRecords(snapshot.storedRooms, [archiveClassroom(existing, groups)]);
@@ -253,9 +382,16 @@ export function useCenterGroups(tenant: Tenant, catalog: MasterData, auth: Fireb
   }
 
   return {
-    groups: current?.groups ?? [], classrooms: current ? classrooms : [], canEdit, save, deleteGroups,
-    saveClassroom, deleteClassroom, error: current?.error,
-    ready: Boolean(current && !current.error), loading: auth.loading || Boolean((demo || token) && !current),
+    groups: current?.groups ?? [],
+    classrooms: current ? classrooms : [],
+    canEdit,
+    save,
+    deleteGroups,
+    saveClassroom,
+    deleteClassroom,
+    error: current?.error,
+    ready: Boolean(current && !current.error),
+    loading: auth.loading || Boolean((demo || token) && !current),
     refresh: () => setRevision(value => value + 1),
   };
 }

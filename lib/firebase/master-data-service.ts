@@ -8,9 +8,13 @@ import {
   type MasterDataAction,
 } from '@/lib/dal/master-data';
 import type { Material, Tenant } from '@/lib/dal/types';
-import { INITIAL_SEEDED_DATA, MockDataProvider } from '@/lib/dal/mock-data';
+import { MockDataProvider } from '@/lib/dal/mock-data';
 import type { FirestoreWriteOperation, StructuredFilter } from './firestore-rest';
-import type { ILessonScoreStore, StaffMembershipRecord } from './server';
+import {
+  hasPlatformOwnerClaim,
+  type ILessonScoreStore,
+  type StaffMembershipRecord,
+} from './server';
 
 export interface MasterDataContext {
   tenant: Tenant;
@@ -23,8 +27,13 @@ export async function authorizeMasterData(
   uid: string,
   tenantId: string,
   requireAdmin: boolean,
-  verifiedEmail?: string
+  _verifiedEmail?: string,
+  rawClaims?: Record<string, unknown>
 ) {
+  if (hasPlatformOwnerClaim(rawClaims)) {
+    return true;
+  }
+
   let membership: { exists: boolean; data?: StaffMembershipRecord } = { exists: false };
   try {
     const fetched = await store.getDocument<StaffMembershipRecord>(`staff_memberships/${uid}`);
@@ -41,21 +50,12 @@ export async function authorizeMasterData(
     }
   }
 
-  // Explicit verified platform owner list
-  const emailLower = (verifiedEmail || membership.data?.email || '').toLowerCase().trim();
-  const VERIFIED_PLATFORM_OWNERS = new Set([
-    'fathyelprimo@gmail.com',
-    'zizo.infinity@gmail.com',
-    'admin@yallacenter.com',
-    'owner@yallacenter.com',
-  ]);
-  if (VERIFIED_PLATFORM_OWNERS.has(emailLower)) {
-    return true;
-  }
-
-  throw new MasterDataError(403, requireAdmin
-    ? 'صلاحية مدير السنتر مطلوبة لتعديل البيانات الأساسية'
-    : 'غير مصرح بالوصول إلى بيانات هذا السنتر');
+  throw new MasterDataError(
+    403,
+    requireAdmin
+      ? 'صلاحية مدير السنتر مطلوبة لتعديل البيانات الأساسية'
+      : 'غير مصرح بالوصول إلى بيانات هذا السنتر'
+  );
 }
 
 async function readCatalog({ tenant, store, dal }: MasterDataContext) {
@@ -71,18 +71,29 @@ async function readCatalog({ tenant, store, dal }: MasterDataContext) {
   ]);
 
   const stored: MasterData = {
-    stages: stages.filter(row => row.id !== revisionId)
-      .map(row => row.data).sort((a, b) => a.order - b.order),
+    stages: stages
+      .filter(row => row.id !== revisionId && Boolean(row.data?.nameAr))
+      .map(row => row.data)
+      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0)),
     subjects: subjects.map(row => row.data),
     branches: branches.map(row => row.data),
   };
-  const catalog = revision || stored.stages.length ? stored : {
-    ...await readMasterData(dal, tenantId),
-    ...(stored.subjects.length ? { subjects: stored.subjects } : {}),
-    ...(stored.branches.length ? { branches: stored.branches } : {}),
-  };
-  const data = dal instanceof MockDataProvider
-    ? { ...catalog, branches: dal.keepSavedRecords(catalog.branches, INITIAL_SEEDED_DATA.branches) } : catalog;
+
+  // Only allow operational fixtures in isolated unit/integration tests; never reseed production!
+  const allowTestFixtures =
+    process.env.NODE_ENV === 'test' &&
+    dal instanceof MockDataProvider &&
+    dal.useOperationalFixtures;
+
+  const data =
+    !revision && !stored.stages.length && allowTestFixtures
+      ? {
+          ...(await readMasterData(dal, tenantId)),
+          ...(stored.subjects.length ? { subjects: stored.subjects } : {}),
+          ...(stored.branches.length ? { branches: stored.branches } : {}),
+        }
+      : stored;
+
   return { data, stored, revision, revisionPath: `master_stages/${revisionId}` };
 }
 
@@ -93,7 +104,7 @@ export async function listMasterData(context: MasterDataContext): Promise<Master
 function catalogWrites<T extends { id: string }>(
   path: string,
   previous: T[],
-  next: T[],
+  next: T[]
 ): FirestoreWriteOperation[] {
   const existing = new Map(previous.map(record => [record.id, record]));
   const writes: FirestoreWriteOperation[] = [];
@@ -114,8 +125,12 @@ function catalogWrites<T extends { id: string }>(
   return writes;
 }
 
-export async function saveMasterData(context: MasterDataContext, input: MasterDataAction,
-  dependencyWrites: FirestoreWriteOperation[] = [], currentMaterials?: Material[]) {
+export async function saveMasterData(
+  context: MasterDataContext,
+  input: MasterDataAction,
+  dependencyWrites: FirestoreWriteOperation[] = [],
+  currentMaterials?: Material[]
+) {
   const { tenant, dal, store } = context;
   const { data, stored, revision, revisionPath } = await readCatalog(context);
   const change = await changeMasterData(dal, tenant.id, data, input, currentMaterials);

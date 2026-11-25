@@ -625,7 +625,7 @@ describe('Challenger M2-1: Empirical Security Guardrails Stress Testing', () => 
     });
 
     describe('B. Next.js Middleware Route Guarding (middleware.ts)', () => {
-      it('blocks Center A user visiting Center B route with HTTP 403 Forbidden (header-based)', () => {
+      it('blocks Center A user visiting Center B route with HTTP 403 Forbidden (header-based)', async () => {
         const req = new NextRequest('http://localhost:3000/center/al-rowad/students', {
           headers: {
             'x-user-id': centerAdminMaher.id,
@@ -634,33 +634,33 @@ describe('Challenger M2-1: Empirical Security Guardrails Stress Testing', () => 
           },
         });
 
-        const res = middleware(req);
+        const res = await middleware(req);
         expect(res.status).toBe(403);
       });
 
-      it('blocks Center A student visiting Center B route with HTTP 403 Forbidden (cookie-based)', () => {
+      it('blocks Center A student visiting Center B route with HTTP 403 Forbidden (cookie-based)', async () => {
         const req = new NextRequest('http://localhost:3000/center/al-rowad/sessions', {
           headers: {
             cookie: 'yc_tenant=al-maher; yc_role=STUDENT; yc_user_id=user-student-1001',
           },
         });
 
-        const res = middleware(req);
+        const res = await middleware(req);
         expect(res.status).toBe(403);
       });
 
-      it('blocks Center A teacher visiting Center B route with HTTP 403 Forbidden (cookie-based)', () => {
+      it('blocks Center A teacher visiting Center B route with HTTP 403 Forbidden (cookie-based)', async () => {
         const req = new NextRequest('http://localhost:3000/center/al-rowad/materials', {
           headers: {
             cookie: 'yc_tenant=al-maher; yc_role=TEACHER; yc_user_id=user-teacher-math',
           },
         });
 
-        const res = middleware(req);
+        const res = await middleware(req);
         expect(res.status).toBe(403);
       });
 
-      it('allows Center A user visiting Center A route (status 200 / next)', () => {
+      it('allows Center A user visiting Center A route (status 200 / next)', async () => {
         const req = new NextRequest('http://localhost:3000/center/al-maher/students', {
           headers: {
             'x-user-id': centerAdminMaher.id,
@@ -669,11 +669,11 @@ describe('Challenger M2-1: Empirical Security Guardrails Stress Testing', () => 
           },
         });
 
-        const res = middleware(req);
+        const res = await middleware(req);
         expect(res.status).toBe(200);
       });
 
-      it('allows PLATFORM_OWNER to visit any center route regardless of cookie', () => {
+      it('allows PLATFORM_OWNER to visit any center route regardless of cookie', async () => {
         const req = new NextRequest('http://localhost:3000/center/al-rowad/branches', {
           headers: {
             'x-user-id': platformOwner.id,
@@ -682,11 +682,11 @@ describe('Challenger M2-1: Empirical Security Guardrails Stress Testing', () => 
           },
         });
 
-        const res = middleware(req);
+        const res = await middleware(req);
         expect(res.status).toBe(200);
       });
 
-      it('redirects unauthorized non-PLATFORM_OWNER visiting /owner to their center', () => {
+      it('redirects unauthorized non-PLATFORM_OWNER visiting /owner to their center', async () => {
         const req = new NextRequest('http://localhost:3000/owner', {
           headers: {
             'x-user-id': centerAdminMaher.id,
@@ -695,12 +695,12 @@ describe('Challenger M2-1: Empirical Security Guardrails Stress Testing', () => 
           },
         });
 
-        const res = middleware(req);
+        const res = await middleware(req);
         expect(res.status).toBe(307); // NextResponse.redirect defaults to 307
         expect(res.headers.get('location')).toBe('http://localhost:3000/center/al-maher');
       });
 
-      it('allows PLATFORM_OWNER visiting /owner route without redirection', () => {
+      it('allows PLATFORM_OWNER visiting /owner route without redirection', async () => {
         const req = new NextRequest('http://localhost:3000/owner', {
           headers: {
             'x-user-id': platformOwner.id,
@@ -708,7 +708,7 @@ describe('Challenger M2-1: Empirical Security Guardrails Stress Testing', () => 
           },
         });
 
-        const res = middleware(req);
+        const res = await middleware(req);
         expect(res.status).toBe(200);
       });
     });

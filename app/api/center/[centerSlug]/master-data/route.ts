@@ -31,11 +31,11 @@ async function resolveContext(req: NextRequest, centerSlug: string, requireAdmin
 
   const bearer = extractBearerToken(req.headers.get('authorization'));
   if (!bearer) throw new MasterDataError(401, 'سجّل الدخول بحساب إدارة السنتر للمتابعة');
-  const { uid, email } = await verifyFirebaseIdToken(bearer);
+  const { uid, email, rawClaims } = await verifyFirebaseIdToken(bearer);
   if (uid.includes('/')) throw new MasterDataError(401, 'معرّف الحساب غير صالح');
 
   const store = await createServerFirestoreStore({ callerIdToken: bearer });
-  const canEdit = await authorizeMasterData(store, uid, tenant.id, requireAdmin, email);
+  const canEdit = await authorizeMasterData(store, uid, tenant.id, requireAdmin, email, rawClaims);
   return { tenant, store, dal, canEdit };
 }
 
@@ -73,7 +73,7 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
     const materialWrite = parsed.data.action === 'deleteSubject'
       ? await materialRevisionWrite(context.store, context.tenant.id) : undefined;
     const [dal, materials] = await Promise.all([
-      scheduleWrite ? loadGroupProvider(context.store, context.tenant) : context.dal,
+      scheduleWrite ? loadGroupProvider(context.store, context.tenant, context.dal) : context.dal,
       materialWrite ? readManagedMaterials(context.store, context.dal, context.tenant.id) : undefined,
     ]);
     const dependencyWrites = [scheduleWrite, materialWrite].filter(write => write !== undefined);

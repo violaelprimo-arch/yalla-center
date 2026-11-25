@@ -126,7 +126,9 @@ export default function ReceptionScanPage() {
 
   // Load Tenant Foundation Data
   const loadTenantData = useCallback(async () => {
-    const dal = getDataProvider();
+    const token = masterData.auth.idToken;
+    if (process.env.NODE_ENV !== 'test' && !token) return;
+    const dal = getDataProvider(undefined, token || undefined);
     try {
       const [sess, users] = await Promise.all([
         dal.getSessions(tenant.id),
@@ -140,7 +142,7 @@ export default function ReceptionScanPage() {
     } catch {
       // transient load error
     }
-  }, [tenant.id]);
+  }, [tenant.id, masterData.auth.idToken]);
 
   useEffect(() => {
     if (groupData.ready) void loadTenantData();
@@ -150,7 +152,9 @@ export default function ReceptionScanPage() {
   const refreshSessionData = useCallback(async () => {
     const request = ++statsRequest.current;
     if (!selectedSession) return;
-    const dal = getDataProvider();
+    const token = masterData.auth.idToken;
+    if (process.env.NODE_ENV !== 'test' && !token) return;
+    const dal = getDataProvider(undefined, token || undefined);
 
     try {
       const [stats, atts, enrollments, allUsers] = await Promise.all([
@@ -187,7 +191,7 @@ export default function ReceptionScanPage() {
     } catch {
       // transient refresh error
     }
-  }, [selectedSession, tenant.id]);
+  }, [selectedSession, tenant.id, masterData.auth.idToken]);
 
   useEffect(() => {
     setSessionStats(null);
@@ -209,7 +213,7 @@ export default function ReceptionScanPage() {
       }
 
       setIsProcessingScan(true);
-      const dal = getDataProvider();
+      const dal = getDataProvider(undefined, masterData.auth.idToken || undefined);
 
       try {
         const result = await dal.recordAttendanceScan(
@@ -288,7 +292,7 @@ export default function ReceptionScanPage() {
         setManualCodeInput('');
       }
     },
-    [selectedSession, tenant.id, selectedGroup, refreshSessionData, canRecordAttendance]
+    [selectedSession, tenant.id, selectedGroup, refreshSessionData, canRecordAttendance, masterData.auth.idToken]
   );
 
   const handleManualFormSubmit = (e: React.FormEvent) => {
@@ -305,7 +309,7 @@ export default function ReceptionScanPage() {
 
   const handlePayment = async (amount: number, method: PaymentMethod, notes: string) => {
     if (!paymentStudent || !canRecordAttendance) throw new Error('تعذّر تسجيل السداد');
-    const updatedStudent = await getDataProvider().collectStudentPayment({
+    const updatedStudent = await getDataProvider(undefined, masterData.auth.idToken || undefined).collectStudentPayment({
       tenantId: tenant.id, studentId: paymentStudent.id, sessionId: selectedSession?.id, amountPaid: amount,
       paymentMethod: method, cashierUserId: currentUser.id, notes,
     });

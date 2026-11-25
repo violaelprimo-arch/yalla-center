@@ -1,7 +1,43 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDataProvider } from '@/lib/dal/factory';
+import { getDataProvider, isCloudProductionMode } from '@/lib/dal/factory';
 import { getNotificationQueueEngine } from '@/lib/notifications/queue';
 import { renderNotificationContent } from '@/lib/notifications/formatter';
+import {
+  authorizeStaffMember,
+  CenterOperationsError,
+} from '@/lib/firebase/center-operations-service';
+import {
+  createServerFirestoreStore,
+  extractBearerToken,
+  FirebaseAuthError,
+  verifyFirebaseIdToken,
+} from '@/lib/firebase/server';
+
+export const dynamic = 'force-dynamic';
+
+async function authorizeNotificationAccess(
+  req: NextRequest,
+  centerSlug: string,
+  allowedRoles?: string[]
+) {
+  const bearer = extractBearerToken(req.headers.get('authorization'));
+  const dal = getDataProvider(bearer ?? undefined);
+  const tenant = await dal.getTenantBySlug(centerSlug);
+  if (!tenant) {
+    return { error: NextResponse.json({ success: false, error: 'CENTER_NOT_FOUND', message: 'السنتر غير موجود' }, { status: 404 }) };
+  }
+
+  if (isCloudProductionMode() || bearer) {
+    if (!bearer) {
+      return { error: NextResponse.json({ success: false, error: 'سجّل الدخول للمتابعة' }, { status: 401 }) };
+    }
+    const { uid } = await verifyFirebaseIdToken(bearer);
+    const store = await createServerFirestoreStore({ callerIdToken: bearer });
+    await authorizeStaffMember(store, uid, tenant.id, allowedRoles);
+  }
+
+  return { dal, tenant };
+}
 
 export async function GET(
   req: NextRequest,
@@ -11,91 +47,22 @@ export async function GET(
     const resolvedParams = await Promise.resolve(params);
     const { centerSlug } = resolvedParams;
 
-    const dal = getDataProvider();
-    const tenant = await dal.getTenantBySlug(centerSlug);
-    if (!tenant) {
-      return NextResponse.json(
-        { success: false, error: 'CENTER_NOT_FOUND', message: 'السنتر غير موجود' },
-        { status: 404 }
-      );
-    }
+    const auth = await authorizeNotificationAccess(req, centerSlug);
+    if ('error' in auth && auth.error) return auth.error;
+    const { dal, tenant } = auth;
 
     const { searchParams } = new URL(req.url);
     const channelFilter = searchParams.get('channel');
     const statusFilter = searchParams.get('status');
 
-    let logs = await dal.getNotificationLogs(tenant.id);
+    // Read-only: return actual notifications (empty array if none exist; never auto-seed fake records)
+    const logs = await dal.getNotificationLogs(tenant.id);
 
-    // If tenant has no notifications in memory yet, seed realistic ones for presentation
-    if (logs.length === 0) {
-      const demoTemplates = [
-        {
-          recipientPhone: '+201001234567',
-          channel: 'whatsapp' as const,
-          templateName: 'student_attendance_ar',
-          payload: {
-            studentName: 'أحمد محمود علي',
-            subject: 'الفيزياء الحديثة',
-            time: '04:30 م',
-            centerName: tenant.nameAr,
-            balanceDue: 0,
-          },
-        },
-        {
-          recipientPhone: '+201009876543',
-          channel: 'whatsapp' as const,
-          templateName: 'student_attendance_ar',
-          payload: {
-            studentName: 'مريم خالد حسن',
-            subject: 'التفاضل والتكامل',
-            time: '05:00 م',
-            centerName: tenant.nameAr,
-            balanceDue: 150,
-          },
-        },
-        {
-          recipientPhone: 'fcm-device-guardian-003',
-          channel: 'fcm' as const,
-          templateName: 'exam_published_alert',
-          payload: {
-            examTitle: 'امتحان الفيزياء الشهري الشامل',
-            link: `/center/${tenant.slug}/exams/runner/ex-101`,
-            centerName: tenant.nameAr,
-          },
-        },
-        {
-          recipientPhone: '+201011223344',
-          channel: 'whatsapp' as const,
-          templateName: 'student_attendance_ar',
-          payload: {
-            studentName: 'كريم عادل إبراهيم',
-            subject: 'الكيمياء العضوية',
-            time: '06:00 م',
-            centerName: tenant.nameAr,
-            balanceDue: 0,
-          },
-        },
-      ];
-
-      for (const t of demoTemplates) {
-        await dal.enqueueNotification({
-          tenantId: tenant.id,
-          recipientPhone: t.recipientPhone,
-          channel: t.channel,
-          templateName: t.templateName,
-          payload: t.payload,
-        });
-      }
-      logs = await dal.getNotificationLogs(tenant.id);
-    }
-
-    // Enrich logs with rendered content
     const enrichedLogs = logs.map((log) => ({
       ...log,
       renderedContent: renderNotificationContent(log.templateName, log.payload),
     }));
 
-    // Apply filters if provided
     let filtered = enrichedLogs;
     if (channelFilter && channelFilter !== 'all') {
       filtered = filtered.filter(
@@ -113,7 +80,6 @@ export async function GET(
       });
     }
 
-    // Compute stats
     const today = new Date().toISOString().split('T')[0];
     const stats = {
       total: enrichedLogs.length,
@@ -129,7 +95,7 @@ export async function GET(
       failed: enrichedLogs.filter((l) => l.status.toLowerCase() === 'failed').length,
       todayTotal: enrichedLogs.filter(
         (l) => l.scheduledAt && l.scheduledAt.startsWith(today)
-      ).length || enrichedLogs.length,
+      ).length,
     };
 
     return NextResponse.json({
@@ -138,6 +104,9 @@ export async function GET(
       stats,
     });
   } catch (err: unknown) {
+    if (err instanceof CenterOperationsError || err instanceof FirebaseAuthError) {
+      return NextResponse.json({ success: false, error: err.message }, { status: err.status });
+    }
     const message = err instanceof Error ? err.message : 'تعذر تحميل سجل الإشعارات';
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
@@ -151,43 +120,40 @@ export async function POST(
     const resolvedParams = await Promise.resolve(params);
     const { centerSlug } = resolvedParams;
 
-    const dal = getDataProvider();
-    const tenant = await dal.getTenantBySlug(centerSlug);
-    if (!tenant) {
-      return NextResponse.json(
-        { success: false, error: 'CENTER_NOT_FOUND', message: 'السنتر غير موجود' },
-        { status: 404 }
-      );
-    }
+    const auth = await authorizeNotificationAccess(req, centerSlug, [
+      'CENTER_ADMIN',
+      'BRANCH_MANAGER',
+      'RECEPTIONIST',
+      'PLATFORM_OWNER',
+    ]);
+    if ('error' in auth && auth.error) return auth.error;
+    const { dal, tenant } = auth;
 
     const body = await req.json();
     const { action } = body;
 
-    // Action 1: Flush queue
     if (action === 'flush_queue') {
       const queueEngine = getNotificationQueueEngine();
       const processed = queueEngine.processQueueSandbox();
       return NextResponse.json({
         success: true,
-        message: 'تمت معالجة طابور الإرسال في وضع المحاكاة بنجاح',
+        message: 'تمت معالجة طابور الإرسال بنجاح',
         processedCount: processed.length,
       });
     }
 
-    // Action 2: Send test alert
     const { recipientPhone, channel = 'whatsapp', templateName = 'student_attendance_ar', payload = {} } = body;
+    if (!recipientPhone) {
+      return NextResponse.json({ success: false, error: 'رقم المستلم مطلوب' }, { status: 400 });
+    }
     const enqueued = await dal.enqueueNotification({
       tenantId: tenant.id,
-      recipientPhone: recipientPhone || '+201001234567',
+      recipientPhone,
       channel,
       templateName,
       payload: {
-        studentName: payload.studentName || 'طالب تجريبي',
-        subject: payload.subject || 'فيزياء',
-        time: new Date().toLocaleTimeString('ar-EG'),
-        centerName: tenant.nameAr,
-        balanceDue: Number(payload.balanceDue || 0),
         ...payload,
+        centerName: tenant.nameAr,
       },
     });
 
@@ -197,6 +163,9 @@ export async function POST(
       notification: enqueued,
     });
   } catch (err: unknown) {
+    if (err instanceof CenterOperationsError || err instanceof FirebaseAuthError) {
+      return NextResponse.json({ success: false, error: err.message }, { status: err.status });
+    }
     const message = err instanceof Error ? err.message : 'حدث خطأ أثناء معالجة الإشعار';
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }

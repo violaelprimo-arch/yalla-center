@@ -1,5 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDataProvider } from '@/lib/dal/factory';
+import { getDataProvider, isCloudProductionMode } from '@/lib/dal/factory';
+import {
+  authorizeStaffMember,
+  CenterOperationsError,
+} from '@/lib/firebase/center-operations-service';
+import {
+  createServerFirestoreStore,
+  extractBearerToken,
+  FirebaseAuthError,
+  verifyFirebaseIdToken,
+} from '@/lib/firebase/server';
+
+export const dynamic = 'force-dynamic';
 
 export async function POST(
   req: NextRequest,
@@ -9,13 +21,28 @@ export async function POST(
     const resolvedParams = await Promise.resolve(params);
     const { centerSlug } = resolvedParams;
 
-    const dal = getDataProvider();
+    const bearer = extractBearerToken(req.headers.get('authorization'));
+    const dal = getDataProvider(bearer ?? undefined);
     const tenant = await dal.getTenantBySlug(centerSlug);
     if (!tenant) {
       return NextResponse.json(
         { success: false, error: 'CENTER_NOT_FOUND', message: 'السنتر غير موجود' },
         { status: 404 }
       );
+    }
+
+    if (isCloudProductionMode() || bearer) {
+      if (!bearer) {
+        return NextResponse.json({ success: false, error: 'سجّل الدخول للمتابعة' }, { status: 401 });
+      }
+      const { uid } = await verifyFirebaseIdToken(bearer);
+      const store = await createServerFirestoreStore({ callerIdToken: bearer });
+      await authorizeStaffMember(store, uid, tenant.id, [
+        'CENTER_ADMIN',
+        'BRANCH_MANAGER',
+        'RECEPTIONIST',
+        'PLATFORM_OWNER',
+      ]);
     }
 
     const body = await req.json();
@@ -40,11 +67,13 @@ export async function POST(
           { status: 404 }
         );
       }
-      target.retryCount = (target.retryCount || 0) + 1;
-      target.status = 'delivered';
-      target.errorMessage = undefined;
-      target.sentAt = new Date().toISOString();
-      updated = target;
+      updated = {
+        ...target,
+        retryCount: (target.retryCount || 0) + 1,
+        status: 'delivered',
+        errorMessage: undefined,
+        sentAt: new Date().toISOString(),
+      };
     }
 
     return NextResponse.json({
@@ -53,6 +82,9 @@ export async function POST(
       notification: updated,
     });
   } catch (err: unknown) {
+    if (err instanceof CenterOperationsError || err instanceof FirebaseAuthError) {
+      return NextResponse.json({ success: false, error: err.message }, { status: err.status });
+    }
     const message = err instanceof Error ? err.message : 'تعذر إعادة إرسال الإشعار';
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }

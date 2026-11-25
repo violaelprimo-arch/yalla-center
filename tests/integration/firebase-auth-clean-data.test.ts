@@ -95,7 +95,7 @@ describe('Firebase Auth, Clean Data & Empty States Integration', () => {
       global.fetch = originalFetch;
     });
 
-    it('resolves authenticated teacher role and directs to teacher portal', async () => {
+    it('resolves authenticated teacher role from verified staff_memberships and directs to teacher portal', async () => {
       const originalFetch = global.fetch;
       global.fetch = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
         if (String(url).includes('accounts:signInWithPassword')) {
@@ -105,6 +105,20 @@ describe('Firebase Auth, Clean Data & Empty States Integration', () => {
               localId: 'firebase-teacher-uid',
               email: 'ahmed+al-maher@teachers.yalla-center.invalid',
               displayName: 'أحمد محمود',
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } }
+          );
+        }
+        if (String(url).includes('/documents/staff_memberships/firebase-teacher-uid')) {
+          return new Response(
+            JSON.stringify({
+              name: 'projects/yalla-center/databases/(default)/documents/staff_memberships/firebase-teacher-uid',
+              fields: {
+                uid: { stringValue: 'firebase-teacher-uid' },
+                tenantId: { stringValue: 'tenant-maher-001' },
+                role: { stringValue: 'TEACHER' },
+                isActive: { booleanValue: true },
+              },
             }),
             { status: 200, headers: { 'Content-Type': 'application/json' } }
           );
@@ -125,9 +139,47 @@ describe('Firebase Auth, Clean Data & Empty States Integration', () => {
       expect(res.status).toBe(200);
       const data = await res.json();
       expect(data.authenticated).toBe(true);
+      expect(data.user.role).toBe('TEACHER');
       expect(data.user.email).toBe('ahmed+al-maher@teachers.yalla-center.invalid');
-      expect(data.defaultRedirectUrl).toContain('/center/');
+      expect(data.defaultRedirectUrl).toBe('/teacher/al-maher');
 
+      global.fetch = originalFetch;
+    });
+
+    it('rejects unverified staff or owner@ email prefix escalation without verified membership (HTTP 403)', async () => {
+      const originalFetch = global.fetch;
+      global.fetch = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+        if (String(url).includes('accounts:signInWithPassword')) {
+          return new Response(
+            JSON.stringify({
+              idToken: 'mock-spoof-token',
+              localId: 'unverified-owner-prefix-uid',
+              email: 'owner@evil-example.com',
+              displayName: 'Fake Owner',
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } }
+          );
+        }
+        if (String(url).includes('/documents/staff_memberships/')) {
+          return new Response(JSON.stringify({ error: { code: 404, status: 'NOT_FOUND' } }), {
+            status: 404,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        return originalFetch(url, init);
+      });
+
+      const req = new NextRequest('http://localhost:3000/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          identifier: 'owner@evil-example.com',
+          password: 'Password123!',
+        }),
+      });
+
+      const res = await loginHandler(req);
+      expect(res.status).toBe(403);
       global.fetch = originalFetch;
     });
 

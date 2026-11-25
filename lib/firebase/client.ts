@@ -175,6 +175,10 @@ export async function signOutFirebaseStaff(): Promise<void> {
     try {
       sessionStorage.removeItem('yc_id_token');
       document.cookie = 'yc_token=; path=/; max-age=0; SameSite=Lax';
+      document.cookie = 'yc_role=; path=/; max-age=0; SameSite=Lax';
+      document.cookie = 'yc_tenant=; path=/; max-age=0; SameSite=Lax';
+      document.cookie = 'yc_user_id=; path=/; max-age=0; SameSite=Lax';
+      await fetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
     } catch {}
   }
   const services = getFirebaseClientServices();

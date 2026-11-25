@@ -27,7 +27,7 @@ import type { Session } from '@/lib/dal/types';
 import { clockLabel, GROUP_PRICING_LABELS } from '@/lib/timetable/group-schedule';
 
 export default function CenterDashboardPage() {
-  const { tenant, branches, currentRole, currentUser, groupData } = useTenant();
+  const { tenant, branches, currentRole, currentUser, groupData, masterData } = useTenant();
   const { groups, classrooms, ready } = groupData;
   const [todaySessions, setTodaySessions] = useState<Session[]>([]);
   const clock = cairoClock();
@@ -38,12 +38,14 @@ export default function CenterDashboardPage() {
 
   useEffect(() => {
     if (!ready) return;
+    const token = masterData.auth.idToken;
+    if (process.env.NODE_ENV !== 'test' && !token) return;
     let active = true;
-    getDataProvider().getSessions(tenant.id, { date: today }).then(sessions => {
+    getDataProvider(token || undefined).getSessions(tenant.id, { date: today }).then(sessions => {
       if (active) setTodaySessions(sessions.sort((a, b) => a.startTime.localeCompare(b.startTime)));
-    });
+    }).catch(() => {});
     return () => { active = false; };
-  }, [ready, groups, tenant.id, today]);
+  }, [ready, groups, tenant.id, today, masterData.auth.idToken]);
 
   return (
     <div className="space-y-6" dir="rtl">

@@ -1117,7 +1117,7 @@ export class MockDataProvider implements IDataProvider {
   constructor({ archiveMaherGroups = false, useOperationalFixtures = true, empty = false } = {}) {
     this.empty = empty;
     this.useOperationalFixtures = useOperationalFixtures;
-    this.tenants = empty ? [] : JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.tenants));
+    this.tenants = !empty && process.env.NODE_ENV === 'test' ? JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.tenants)) : [];
     this.stages = !empty && useOperationalFixtures ? JSON.parse(JSON.stringify(INITIAL_SEEDED_DATA.stages)) : [];
     this.initializedStageTenants = new Set(this.stages.map(stage => stage.tenantId));
     this.branches = !empty && useOperationalFixtures ? structuredClone(INITIAL_SEEDED_DATA.branches) : [];
@@ -1213,6 +1213,9 @@ export class MockDataProvider implements IDataProvider {
 
   // 1. Tenants & Branches
   private ensureTenantPrerequisites(tenantId: string) {
+    if (!this.useOperationalFixtures || process.env.NODE_ENV !== 'test') {
+      return;
+    }
     if (!this.initializedStageTenants.has(tenantId)) {
       const existing = this.stages.filter(s => s.tenantId === tenantId);
       if (existing.length === 0) {
@@ -1225,189 +1228,20 @@ export class MockDataProvider implements IDataProvider {
 
   async getTenantBySlug(slug: string): Promise<Tenant | null> {
     const cleanSlug = slug.trim().toLowerCase();
-    let tenant = this.tenants.find((t) => t.slug.toLowerCase() === cleanSlug);
-    if (tenant) return tenant;
-    if (this.empty) return null;
-
-    // Check Cloud Firestore
-    try {
-      const projectId = process.env.FIREBASE_PROJECT_ID || process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || 'yalla-center';
-      const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents:runQuery`;
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          structuredQuery: {
-            from: [{ collectionId: 'tenants' }],
-            where: {
-              fieldFilter: {
-                field: { fieldPath: 'slug' },
-                op: 'EQUAL',
-                value: { stringValue: cleanSlug },
-              },
-            },
-            limit: 1,
-          },
-        }),
-      });
-
-      if (res.ok) {
-        const results = (await res.json()) as Array<{ document?: { name: string; fields?: Record<string, any> } }>;
-        const doc = results?.[0]?.document;
-        if (doc?.fields) {
-          const f = doc.fields;
-          tenant = {
-            id: f.id?.stringValue || doc.name.split('/').pop()!,
-            slug: f.slug?.stringValue || cleanSlug,
-            nameAr: f.nameAr?.stringValue || cleanSlug,
-            nameEn: f.nameEn?.stringValue,
-            logoUrl: f.logoUrl?.stringValue,
-            phone: f.phone?.stringValue,
-            address: f.address?.stringValue,
-            subscriptionPlan: (f.subscriptionPlan?.stringValue as any) || 'pro',
-            isActive: f.isActive?.booleanValue ?? true,
-            settings: {
-              currency: f.settings?.mapValue?.fields?.currency?.stringValue || 'EGP',
-              enableWhatsApp: f.settings?.mapValue?.fields?.enableWhatsApp?.booleanValue ?? true,
-              enableFCM: f.settings?.mapValue?.fields?.enableFCM?.booleanValue ?? true,
-            },
-            createdAt: f.createdAt?.stringValue || new Date().toISOString(),
-            updatedAt: f.updatedAt?.stringValue || new Date().toISOString(),
-          };
-          this.tenants.push(tenant);
-          this.ensureTenantPrerequisites(tenant.id);
-          return tenant;
-        }
-      }
-    } catch {
-      // ignore network errors
-    }
-
-    // Default fallback for real center elmaher
-    if (cleanSlug === 'elmaher') {
-      const elmaherTenant: Tenant = {
-        id: 'tenant-elmaher-001',
-        slug: 'elmaher',
-        nameAr: 'سنتر الماهر',
-        nameEn: 'El Maher Educational Center',
-        phone: '01001234567',
-        address: 'الفرع الرئيسي',
-        subscriptionPlan: 'pro',
-        isActive: true,
-        settings: { currency: 'EGP', enableWhatsApp: true, enableFCM: true },
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-      this.tenants.push(elmaherTenant);
-      this.ensureTenantPrerequisites(elmaherTenant.id);
-      return elmaherTenant;
-    }
-
-    return null;
+    const tenant = this.tenants.find((t) => t.slug.toLowerCase() === cleanSlug);
+    return tenant || null;
   }
 
   async getTenantById(id: string): Promise<Tenant | null> {
-    let tenant = this.tenants.find((t) => t.id === id);
-    if (tenant) return tenant;
-    if (this.empty) return null;
-
-    try {
-      const projectId = process.env.FIREBASE_PROJECT_ID || process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || 'yalla-center';
-      const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/tenants/${encodeURIComponent(id)}`;
-      const res = await fetch(url);
-      if (res.ok) {
-        const doc = (await res.json()) as { name: string; fields?: Record<string, any> };
-        if (doc?.fields) {
-          const f = doc.fields;
-          tenant = {
-            id: f.id?.stringValue || id,
-            slug: f.slug?.stringValue || id,
-            nameAr: f.nameAr?.stringValue || id,
-            nameEn: f.nameEn?.stringValue,
-            logoUrl: f.logoUrl?.stringValue,
-            phone: f.phone?.stringValue,
-            address: f.address?.stringValue,
-            subscriptionPlan: (f.subscriptionPlan?.stringValue as any) || 'pro',
-            isActive: f.isActive?.booleanValue ?? true,
-            settings: {
-              currency: f.settings?.mapValue?.fields?.currency?.stringValue || 'EGP',
-              enableWhatsApp: f.settings?.mapValue?.fields?.enableWhatsApp?.booleanValue ?? true,
-              enableFCM: f.settings?.mapValue?.fields?.enableFCM?.booleanValue ?? true,
-            },
-            createdAt: f.createdAt?.stringValue || new Date().toISOString(),
-            updatedAt: f.updatedAt?.stringValue || new Date().toISOString(),
-          };
-          this.tenants.push(tenant);
-          this.ensureTenantPrerequisites(tenant.id);
-          return tenant;
-        }
-      }
-    } catch {
-      // ignore network errors
-    }
-
-    if (id === 'tenant-elmaher-001') {
-      return this.getTenantBySlug('elmaher');
-    }
-
-    return null;
+    const tenant = this.tenants.find((t) => t.id === id);
+    return tenant || null;
   }
 
   async getTenants(): Promise<Tenant[]> {
     if (this.empty) return [...this.tenants];
-    try {
-      const projectId = process.env.FIREBASE_PROJECT_ID || process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || 'yalla-center';
-      const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/tenants`;
-      const res = await fetch(url);
-      if (res.ok) {
-        const body = (await res.json()) as { documents?: Array<{ name: string; fields?: Record<string, any> }> };
-        if (Array.isArray(body.documents)) {
-          for (const doc of body.documents) {
-            const f = doc.fields;
-            if (!f) continue;
-            const tenant: Tenant = {
-              id: f.id?.stringValue || doc.name.split('/').pop()!,
-              slug: f.slug?.stringValue || '',
-              nameAr: f.nameAr?.stringValue || '',
-              nameEn: f.nameEn?.stringValue,
-              logoUrl: f.logoUrl?.stringValue,
-              phone: f.phone?.stringValue,
-              address: f.address?.stringValue,
-              subscriptionPlan: (f.subscriptionPlan?.stringValue as any) || 'pro',
-              isActive: f.isActive?.booleanValue ?? true,
-              settings: {
-                currency: f.settings?.mapValue?.fields?.currency?.stringValue || 'EGP',
-                enableWhatsApp: f.settings?.mapValue?.fields?.enableWhatsApp?.booleanValue ?? true,
-                enableFCM: f.settings?.mapValue?.fields?.enableFCM?.booleanValue ?? true,
-              },
-              createdAt: f.createdAt?.stringValue || new Date().toISOString(),
-              updatedAt: f.updatedAt?.stringValue || new Date().toISOString(),
-            };
-            const existingIndex = this.tenants.findIndex((t) => t.id === tenant.id);
-            if (existingIndex >= 0) {
-              this.tenants[existingIndex] = tenant;
-            } else {
-              this.tenants.push(tenant);
-            }
-            this.ensureTenantPrerequisites(tenant.id);
-          }
-        }
-      }
-    } catch {
-      // ignore network errors
-    }
-
     if (!this.useOperationalFixtures) {
-      const filtered = this.tenants.filter(t => t.id !== 'tenant-maher-001' && t.id !== 'tenant-rowad-002');
-      if (!filtered.some(t => t.slug === 'elmaher')) {
-        const elmaher = await this.getTenantBySlug('elmaher');
-        if (elmaher && !filtered.some(t => t.id === elmaher.id)) {
-          filtered.push(elmaher);
-        }
-      }
-      return filtered;
+      return this.tenants.filter(t => t.id !== 'tenant-maher-001' && t.id !== 'tenant-rowad-002');
     }
-
     return [...this.tenants];
   }
 

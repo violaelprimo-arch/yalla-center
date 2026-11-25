@@ -17,6 +17,7 @@ import {
   getFirebaseApiKey,
   getFirebaseProjectId,
   getServiceAccountAccessToken,
+  hasPlatformOwnerClaim,
   type ILessonScoreStore,
   type StaffMembershipRecord,
   type VerifiedFirebaseToken,
@@ -57,23 +58,15 @@ async function loginPath(tenant: Tenant, mode: TeacherLogin['mode'], email: stri
   return `teacher_login_keys/${await digest(JSON.stringify([tenant.id, mode, email]))}`;
 }
 
-const VERIFIED_PLATFORM_OWNERS = new Set([
-  'fathyelprimo@gmail.com',
-  'zizo.infinity@gmail.com',
-  'admin@yallacenter.com',
-  'owner@yallacenter.com',
-  'islam@yallacenter.com',
-]);
-
 export async function assertTeacherManager(
   store: ILessonScoreStore,
   uid: string,
   tenantId: string,
   financeRead = false,
-  verifiedEmail?: string
+  _verifiedEmail?: string,
+  rawClaims?: Record<string, unknown>
 ) {
-  const emailLower = (verifiedEmail || '').toLowerCase().trim();
-  if (VERIFIED_PLATFORM_OWNERS.has(emailLower) || emailLower.startsWith('owner@')) {
+  if (hasPlatformOwnerClaim(rawClaims)) {
     return;
   }
   const membership = await store.getDocument<StaffMembershipRecord>(`staff_memberships/${uid}`);

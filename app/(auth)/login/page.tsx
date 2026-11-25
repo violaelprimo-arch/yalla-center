@@ -54,36 +54,30 @@ function LoginForm() {
   const [resetMsg, setResetMsg] = useState<string | null>(null);
   const [resetError, setResetError] = useState<string | null>(null);
 
-  // Sync cookies helper
-  const setSessionCookies = (role: string, tenantSlug: string, userId: string) => {
-    if (typeof document !== 'undefined') {
-      document.cookie = `yc_role=${role}; path=/; max-age=86400; SameSite=Lax`;
-      document.cookie = `yc_tenant=${tenantSlug}; path=/; max-age=86400; SameSite=Lax`;
-      document.cookie = `yc_user_id=${userId}; path=/; max-age=86400; SameSite=Lax`;
-    }
-  };
-
   const handleAuthenticatedUser = async (idToken: string) => {
     try {
-      const res = await fetch('/api/auth/me', {
-        headers: {
-          Authorization: `Bearer ${idToken}`,
-        },
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idToken }),
       });
       const data = await res.json();
-      if (data.authenticated && data.user) {
-        setSessionCookies(data.user.role, data.tenant?.slug || 'elmaher', data.user.uid);
-        const destination =
-          redirectParam || data.defaultRedirectUrl || `/center/${data.tenant?.slug || 'elmaher'}`;
+      if (res.ok && data.authenticated && data.user && data.defaultRedirectUrl) {
+        if (typeof window !== 'undefined') {
+          sessionStorage.setItem('yc_id_token', idToken);
+        }
+        const destination = redirectParam || data.defaultRedirectUrl;
         setSuccessMsg(`مرحبًا بك، ${data.user.displayName}. جارٍ تحويلك إلى بوابتك...`);
         setTimeout(() => {
           router.push(destination);
         }, 500);
       } else {
-        setErrorMsg('تعذّر التحقق من الصلاحيات السحابية للحساب.');
+        setErrorMsg(data?.error || 'تعذّر التحقق من الصلاحيات السحابية للحساب.');
+        setGoogleBusy(false);
       }
     } catch {
       setErrorMsg('تعذّر الاتصال بخادم التحقق من الصلاحيات.');
+      setGoogleBusy(false);
     }
   };
 
@@ -121,7 +115,6 @@ function LoginForm() {
       if (data.user && data.defaultRedirectUrl) {
         if (data.idToken && typeof window !== 'undefined') {
           sessionStorage.setItem('yc_id_token', data.idToken);
-          document.cookie = `yc_token=${data.idToken}; path=/; max-age=86400; SameSite=Lax`;
           if (data.user.email && password) {
             const services = getFirebaseClientServices();
             if (services) {
@@ -129,8 +122,6 @@ function LoginForm() {
             }
           }
         }
-        const targetTenant = data.tenant?.slug || 'elmaher';
-        setSessionCookies(data.user.role, targetTenant, data.user.uid);
         setSuccessMsg(`مرحبًا بك، ${data.user.displayName}. جارٍ تحويلك إلى بوابتك المعتمدة...`);
         const destination = redirectParam || data.defaultRedirectUrl;
         setTimeout(() => {

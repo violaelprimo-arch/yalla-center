@@ -4,6 +4,7 @@ import {
   createServerFirestoreStore,
   extractBearerToken,
   FirebaseAuthError,
+  hasPlatformOwnerClaim,
   verifyFirebaseIdToken,
   type StaffMembershipRecord,
 } from '@/lib/firebase/server';
@@ -17,14 +18,6 @@ function reply(body: object, status = 200) {
   });
 }
 
-const PLATFORM_OWNER_EMAILS = [
-  'owner@yallacenter.com',
-  'admin@yallacenter.com',
-  'islam@yallacenter.com',
-  'fathyelprimo@gmail.com',
-  'zizo.infinity@gmail.com',
-];
-
 export async function GET(req: NextRequest) {
   try {
     const bearer = extractBearerToken(req.headers.get('authorization'));
@@ -32,65 +25,57 @@ export async function GET(req: NextRequest) {
       return reply({
         authenticated: false,
         message: 'غير مسجل الدخول',
-      });
+      }, 401);
     }
 
     const verified = await verifyFirebaseIdToken(bearer);
-    const { uid, email = '', name = '' } = verified;
+    const { uid, email = '', name = '', rawClaims } = verified;
 
-    const dal = getDataProvider();
+    const dal = getDataProvider(bearer);
     const allTenants = await dal.getTenants();
-    const defaultTenant = allTenants.find((t) => t.slug === 'elmaher') || allTenants[0];
 
-    const isPlatformOwner =
-      PLATFORM_OWNER_EMAILS.includes(email.toLowerCase()) ||
-      email.toLowerCase().startsWith('owner@');
-
-    // Query Firestore for staff membership
+    // Query Firestore strictly for existing active membership (NO auto-provisioning, NO email prefix fallback!)
     let membership: StaffMembershipRecord | null = null;
     try {
       const store = await createServerFirestoreStore({ callerIdToken: bearer });
       const doc = await store.getDocument<StaffMembershipRecord>(`staff_memberships/${uid}`);
-      if (doc.exists && doc.data) {
+      if (doc.exists && doc.data?.isActive) {
         membership = doc.data;
-      } else if (isPlatformOwner) {
-        const ownerRecord: StaffMembershipRecord = {
-          uid,
-          email,
-          displayName: name || 'مالك المنصة',
-          tenantId: defaultTenant.id,
-          role: 'PLATFORM_OWNER',
-          isActive: true,
-        };
-        await store.commit([
-          {
-            type: 'set',
-            documentPath: `staff_memberships/${uid}`,
-            data: { ...ownerRecord },
-          },
-        ]).catch(() => {});
-        membership = ownerRecord;
       }
     } catch {
-      // If Firestore lookup fails or table empty, fallback gracefully
+      membership = null;
     }
 
-    // Determine Role
-    let role = membership?.role || (isPlatformOwner ? 'PLATFORM_OWNER' : 'CENTER_ADMIN');
-    if (isPlatformOwner) {
-      role = 'PLATFORM_OWNER';
+    const isOwnerClaim = hasPlatformOwnerClaim(rawClaims);
+    if (!isOwnerClaim && !membership) {
+      return reply(
+        {
+          authenticated: false,
+          error: 'الحساب غير مفعل في صلاحيات أي مركز تعليمي. تواصل مع الإدارة لتفعيل الصلاحية.',
+        },
+        403
+      );
     }
 
-    // Determine Tenant
-    let activeTenant = defaultTenant;
-    if (membership?.tenantId) {
-      const found = allTenants.find((t) => t.id === membership?.tenantId);
-      if (found) activeTenant = found;
+    const role = isOwnerClaim ? 'PLATFORM_OWNER' : membership!.role;
+    const activeTenant = membership?.tenantId
+      ? allTenants.find((t) => t.id === membership.tenantId) || null
+      : role === 'PLATFORM_OWNER'
+        ? allTenants[0] || null
+        : null;
+
+    if (role !== 'PLATFORM_OWNER' && !activeTenant) {
+      return reply(
+        {
+          authenticated: false,
+          error: 'المركز التعليمي المرتبط بهذا الحساب غير موجود أو غير مفعّل.',
+        },
+        403
+      );
     }
 
-    // Compute redirect destination
-    const tenantSlug = activeTenant?.slug || 'elmaher';
-    let defaultRedirectUrl = `/center/${tenantSlug}`;
+    const tenantSlug = activeTenant?.slug || '';
+    let defaultRedirectUrl = tenantSlug ? `/center/${tenantSlug}` : '/owner';
     if (role === 'PLATFORM_OWNER') {
       defaultRedirectUrl = '/owner';
     } else if (role === 'TEACHER') {
@@ -114,20 +99,22 @@ export async function GET(req: NextRequest) {
       user: {
         uid,
         email,
-        displayName: name || email.split('@')[0] || 'مستخدم يلا سنتر',
+        displayName: name || membership?.displayName || email.split('@')[0] || 'مستخدم يلا سنتر',
         role,
       },
-      tenant: {
-        id: activeTenant.id,
-        slug: activeTenant.slug,
-        nameAr: activeTenant.nameAr,
-      },
-      availableTenants: allTenants.map((t) => ({
-        id: t.id,
-        slug: t.slug,
-        nameAr: t.nameAr,
-        role,
-      })),
+      tenant: activeTenant
+        ? {
+            id: activeTenant.id,
+            slug: activeTenant.slug,
+            nameAr: activeTenant.nameAr,
+          }
+        : null,
+      availableTenants:
+        role === 'PLATFORM_OWNER'
+          ? allTenants.map((t) => ({ id: t.id, slug: t.slug, nameAr: t.nameAr, role }))
+          : activeTenant
+            ? [{ id: activeTenant.id, slug: activeTenant.slug, nameAr: activeTenant.nameAr, role }]
+            : [],
       defaultRedirectUrl,
     });
   } catch (error) {

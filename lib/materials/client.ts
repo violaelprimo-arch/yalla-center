@@ -9,7 +9,11 @@ import { canManageMaterials, type MaterialMutation } from './management';
 export function useCenterMaterials(tenant: Tenant, auth: FirebaseAuthSessionState, user?: User) {
   const { id: tenantId, slug } = tenant;
   const token = auth.idToken || getStoredFallbackToken();
-  const demo = !auth.configured;
+  const isProduction =
+    process.env.DATA_PROVIDER_MODE === 'production' ||
+    process.env.DATA_PROVIDER_MODE === 'firebase' ||
+    process.env.NODE_ENV === 'production';
+  const demo = !isProduction && !auth.configured;
   const scope = `${tenantId}:${demo ? 'demo' : auth.user?.uid ?? token}`;
   const endpoint = `/api/center/${encodeURIComponent(slug)}/materials`;
   const [state, setState] = useState<{ scope: string; materials: Material[]; canEdit: boolean; error?: string }>();

@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDataProvider } from '@/lib/dal/factory';
 import {
   createServerFirestoreStore,
-  getFirebaseProjectId,
+  hasPlatformOwnerClaim,
+  verifyFirebaseIdToken,
   type StaffMembershipRecord,
 } from '@/lib/firebase/server';
 import { getArabicAuthErrorMessage } from '@/lib/firebase/errors';
@@ -28,7 +29,11 @@ interface RateLimitBucket {
 }
 const rateLimitMap = new Map<string, RateLimitBucket>();
 
-function checkRateLimit(key: string, maxAttempts = 5, windowMs = 60_000): { allowed: boolean; retryAfterSec?: number } {
+function checkRateLimit(
+  key: string,
+  maxAttempts = 5,
+  windowMs = 60_000
+): { allowed: boolean; retryAfterSec?: number } {
   const now = Date.now();
   const bucket = rateLimitMap.get(key);
 
@@ -50,14 +55,6 @@ function clearRateLimit(key: string): void {
   rateLimitMap.delete(key);
 }
 
-const PLATFORM_OWNER_EMAILS = [
-  'owner@yallacenter.com',
-  'admin@yallacenter.com',
-  'islam@yallacenter.com',
-  'fathyelprimo@gmail.com',
-  'zizo.infinity@gmail.com',
-];
-
 interface SystemUsernameDoc {
   username: string;
   email: string;
@@ -74,164 +71,161 @@ export async function POST(req: NextRequest) {
       return reply({ error: 'بيانات الطلب غير صالحة' }, 400);
     }
 
-    const { identifier, password } = body as { identifier?: string; password?: string };
-    if (!identifier || typeof identifier !== 'string' || !password || typeof password !== 'string') {
-      return reply({ error: 'يرجى إدخال اسم المستخدم أو البريد الإلكتروني وكلمة المرور' }, 400);
-    }
-
-    const trimmedIdentifier = identifier.trim();
-    if (!trimmedIdentifier || !password) {
-      return reply({ error: 'يرجى إدخال اسم المستخدم أو البريد الإلكتروني وكلمة المرور' }, 400);
-    }
-
-    // Rate Limiting
-    const ip = req.headers.get('x-forwarded-for')?.split(',')[0].trim() || 'unknown-ip';
-    const rateLimitKey = `${ip}:${trimmedIdentifier.toLowerCase()}`;
-    const rateCheck = checkRateLimit(rateLimitKey);
-    if (!rateCheck.allowed) {
-      return reply(
-        { error: 'تم تجاوز الحد المسموح من محاولات تسجيل الدخول. يرجى الانتظار قليلاً والمحاولة لاحقاً.' },
-        429,
-        { 'Retry-After': String(rateCheck.retryAfterSec || 60) }
-      );
-    }
+    const { identifier, password, idToken: googleIdToken } = body as {
+      identifier?: string;
+      password?: string;
+      idToken?: string;
+    };
 
     const dal = getDataProvider();
     const allTenants = await dal.getTenants();
-    const defaultTenant = allTenants.find((t) => t.slug === 'elmaher') || allTenants[0];
 
-    // Identity Resolution: Username vs Email
-    let targetEmail = trimmedIdentifier.toLowerCase();
+    let uid: string;
+    let authenticatedEmail: string;
+    let displayName: string | undefined;
+    let idToken: string;
+    let rawClaims: Record<string, unknown> | undefined;
     let mappedTenantSlug: string | null = null;
 
-    if (targetEmail === 'owner') {
-      targetEmail = 'owner@yallacenter.com';
-    } else if (targetEmail === 'admin') {
-      targetEmail = 'admin@yallacenter.com';
-    } else if (!targetEmail.includes('@')) {
-      const username = targetEmail;
-      // Look up global username mapping in Firestore
-      try {
-        const store = await createServerFirestoreStore({ callerIdToken: '', requireServiceAccount: true });
-        const usernameDoc = await store.getDocument<SystemUsernameDoc>(`system_usernames/${username}`);
-        if (usernameDoc.exists && usernameDoc.data?.email) {
-          targetEmail = usernameDoc.data.email;
-          mappedTenantSlug = usernameDoc.data.tenantSlug || null;
-        } else {
-          // Check standard center tenant slug fallback
-          const candidateTenant = defaultTenant?.slug || 'elmaher';
+    if (googleIdToken && typeof googleIdToken === 'string') {
+      // Exchange verified Google Sign-In ID token for server session cookie
+      const verified = await verifyFirebaseIdToken(googleIdToken);
+      uid = verified.uid;
+      authenticatedEmail = verified.email || '';
+      displayName = verified.name;
+      idToken = googleIdToken;
+      rawClaims = verified.rawClaims;
+    } else {
+      if (!identifier || typeof identifier !== 'string' || !password || typeof password !== 'string') {
+        return reply({ error: 'يرجى إدخال اسم المستخدم أو البريد الإلكتروني وكلمة المرور' }, 400);
+      }
+
+      const trimmedIdentifier = identifier.trim();
+      if (!trimmedIdentifier || !password) {
+        return reply({ error: 'يرجى إدخال اسم المستخدم أو البريد الإلكتروني وكلمة المرور' }, 400);
+      }
+
+      // Rate Limiting
+      const ip = req.headers.get('x-forwarded-for')?.split(',')[0].trim() || 'unknown-ip';
+      const rateLimitKey = `${ip}:${trimmedIdentifier.toLowerCase()}`;
+      const rateCheck = checkRateLimit(rateLimitKey);
+      if (!rateCheck.allowed) {
+        return reply(
+          { error: 'تم تجاوز الحد المسموح من محاولات تسجيل الدخول. يرجى الانتظار قليلاً والمحاولة لاحقاً.' },
+          429,
+          { 'Retry-After': String(rateCheck.retryAfterSec || 60) }
+        );
+      }
+
+      let targetEmail = trimmedIdentifier.toLowerCase();
+
+      if (targetEmail === 'owner') {
+        targetEmail = 'owner@yallacenter.com';
+      } else if (targetEmail === 'admin') {
+        targetEmail = 'admin@yallacenter.com';
+      } else if (!targetEmail.includes('@')) {
+        const username = targetEmail;
+        try {
+          const store = await createServerFirestoreStore({ callerIdToken: '', requireServiceAccount: true });
+          const usernameDoc = await store.getDocument<SystemUsernameDoc>(`system_usernames/${username}`);
+          if (usernameDoc.exists && usernameDoc.data?.email) {
+            targetEmail = usernameDoc.data.email;
+            mappedTenantSlug = usernameDoc.data.tenantSlug || null;
+          } else {
+            const candidateTenant = allTenants[0]?.slug;
+            if (!candidateTenant) {
+              return reply({ error: 'تعذّر تحديد المركز لهذا الحساب. سجّل الدخول بالبريد الإلكتروني.' }, 400);
+            }
+            targetEmail = teacherPasswordEmail(candidateTenant, username);
+          }
+        } catch {
+          const candidateTenant = allTenants[0]?.slug;
+          if (!candidateTenant) {
+            return reply({ error: 'تعذّر تحديد المركز لهذا الحساب. سجّل الدخول بالبريد الإلكتروني.' }, 400);
+          }
           targetEmail = teacherPasswordEmail(candidateTenant, username);
         }
-      } catch {
-        // Fallback to standard deterministic email
-        const candidateTenant = defaultTenant?.slug || 'elmaher';
-        targetEmail = teacherPasswordEmail(candidateTenant, username);
       }
+
+      const apiKey =
+        process.env.NEXT_PUBLIC_FIREBASE_API_KEY?.trim() ||
+        process.env.FIREBASE_API_KEY?.trim() ||
+        DEFAULT_FIREBASE_WEB_CONFIG.apiKey;
+
+      const authUrl = `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${apiKey}`;
+      const authRes = await fetch(authUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: targetEmail,
+          password,
+          returnSecureToken: true,
+        }),
+      });
+
+      const authData = (await authRes.json()) as {
+        idToken?: string;
+        localId?: string;
+        email?: string;
+        displayName?: string;
+        error?: { message?: string };
+      };
+
+      if (!authRes.ok || !authData.idToken || !authData.localId) {
+        const rawCode = authData.error?.message || 'INVALID_LOGIN_CREDENTIALS';
+        const arabicMessage = getArabicAuthErrorMessage(rawCode, 'اسم المستخدم أو كلمة المرور غير صحيحة');
+        const httpStatus = rawCode.includes('TOO_MANY_ATTEMPTS') ? 429 : 401;
+        return reply({ error: arabicMessage }, httpStatus);
+      }
+
+      clearRateLimit(rateLimitKey);
+
+      uid = authData.localId;
+      authenticatedEmail = authData.email || targetEmail;
+      displayName = authData.displayName;
+      idToken = authData.idToken;
+      const verified = await verifyFirebaseIdToken(idToken).catch(() => null);
+      rawClaims = verified?.rawClaims;
     }
 
-    // Official Identity Toolkit Sign-In API
-    const apiKey =
-      process.env.NEXT_PUBLIC_FIREBASE_API_KEY?.trim() ||
-      process.env.FIREBASE_API_KEY?.trim() ||
-      DEFAULT_FIREBASE_WEB_CONFIG.apiKey;
-
-    const authUrl = `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${apiKey}`;
-    const authRes = await fetch(authUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        email: targetEmail,
-        password,
-        returnSecureToken: true,
-      }),
-    });
-
-    const authData = (await authRes.json()) as {
-      idToken?: string;
-      refreshToken?: string;
-      expiresIn?: string;
-      localId?: string;
-      email?: string;
-      displayName?: string;
-      error?: { message?: string };
-    };
-
-    if (!authRes.ok || !authData.idToken || !authData.localId) {
-      const rawCode = authData.error?.message || 'INVALID_LOGIN_CREDENTIALS';
-      const arabicMessage = getArabicAuthErrorMessage(rawCode, 'اسم المستخدم أو كلمة المرور غير صحيحة');
-      const httpStatus = rawCode.includes('TOO_MANY_ATTEMPTS') ? 429 : 401;
-      return reply({ error: arabicMessage }, httpStatus);
-    }
-
-    // Reset rate limiter on successful login
-    clearRateLimit(rateLimitKey);
-
-    const uid = authData.localId;
-    const authenticatedEmail = authData.email || targetEmail;
-    const idToken = authData.idToken;
-
-    // Check Platform Owner against explicit authorized list
-    const isPlatformOwner = PLATFORM_OWNER_EMAILS.includes(authenticatedEmail.toLowerCase().trim());
-
-    // Query Firestore for staff membership
+    // Read verified staff membership strictly from Firestore (NEVER auto-provision or trust email prefix!)
     let membership: StaffMembershipRecord | null = null;
     try {
       const store = await createServerFirestoreStore({ callerIdToken: idToken, requireServiceAccount: false });
       const doc = await store.getDocument<StaffMembershipRecord>(`staff_memberships/${uid}`);
-      if (doc.exists && doc.data) {
+      if (doc.exists && doc.data?.isActive) {
         membership = doc.data;
-      } else if (isPlatformOwner) {
-        const defaultTenant = allTenants.find((t) => t.slug === 'elmaher') || allTenants[0];
-        const ownerRecord: StaffMembershipRecord = {
-          uid,
-          email: authenticatedEmail,
-          displayName: 'مالك المنصة',
-          tenantId: defaultTenant.id,
-          role: 'PLATFORM_OWNER',
-          isActive: true,
-        };
-        await store.commit([
-          {
-            type: 'set',
-            documentPath: `staff_memberships/${uid}`,
-            data: { ...ownerRecord },
-          },
-        ]).catch(() => {});
-        membership = ownerRecord;
       }
     } catch {
-      // Graceful fallback if Firestore lookup fails
+      membership = null;
     }
 
-    // Determine Role strictly without privilege escalation
-    let role: string;
-    if (isPlatformOwner) {
-      role = 'PLATFORM_OWNER';
-    } else if (membership?.role) {
-      role = membership.role;
-    } else if (mappedTenantSlug && targetEmail.includes('@teachers.yallacenter.com')) {
-      role = 'TEACHER';
-    } else {
-      // Default to STUDENT role rather than administrative access
-      role = 'STUDENT';
-    }
+    const isOwnerClaim = hasPlatformOwnerClaim(rawClaims);
+    const role = isOwnerClaim ? 'PLATFORM_OWNER' : membership?.role || 'STUDENT';
 
-    // Determine Active Tenant
-    let activeTenant = defaultTenant;
+    let activeTenant = null;
     if (membership?.tenantId) {
-      const found = allTenants.find((t) => t.id === membership?.tenantId);
-      if (found) activeTenant = found;
+      activeTenant = allTenants.find((t) => t.id === membership?.tenantId) || null;
     } else if (mappedTenantSlug) {
-      const found = allTenants.find((t) => t.slug === mappedTenantSlug);
-      if (found) activeTenant = found;
+      activeTenant = allTenants.find((t) => t.slug === mappedTenantSlug) || null;
+    } else if (role === 'PLATFORM_OWNER') {
+      activeTenant = allTenants[0] || null;
     }
 
-    const tenantSlug = activeTenant?.slug || 'elmaher';
+    if (role !== 'PLATFORM_OWNER' && !membership) {
+      return reply(
+        { error: 'هذا الحساب غير مفعل في صلاحيات أي مركز تعليمي. تواصل مع إدارة السنتر.' },
+        403
+      );
+    }
 
-    // Compute verified portal redirect URL
-    let defaultRedirectUrl = `/center/${tenantSlug}`;
+    const tenantSlug = activeTenant?.slug || '';
+
+    let defaultRedirectUrl = tenantSlug ? `/center/${tenantSlug}` : '/login';
     if (role === 'PLATFORM_OWNER') {
       defaultRedirectUrl = '/owner';
+    } else if (!tenantSlug) {
+      return reply({ error: 'الحساب غير مرتبط بمركز تعليمي نشط' }, 403);
     } else if (role === 'TEACHER') {
       defaultRedirectUrl = `/teacher/${tenantSlug}`;
     } else if (role === 'CENTER_ADMIN') {
@@ -248,12 +242,17 @@ export async function POST(req: NextRequest) {
       defaultRedirectUrl = `/center/${tenantSlug}/parent-portal`;
     }
 
-    const cookieMaxAge = 86400 * 7; // 7 days
+    const isProd = process.env.NODE_ENV === 'production';
+    const cookieMaxAge = 86400 * 7;
+    const secureAttr = isProd ? '; Secure' : '';
+
+    // Store ONLY the cryptographically verified Firebase ID token in an HttpOnly cookie.
+    // Never rely on client-editable yc_role / yc_tenant / yc_user_id cookies for authorization.
     const cookieHeaders = [
-      `yc_role=${role}; Path=/; Max-Age=${cookieMaxAge}; SameSite=Lax`,
-      `yc_tenant=${tenantSlug}; Path=/; Max-Age=${cookieMaxAge}; SameSite=Lax`,
-      `yc_user_id=${uid}; Path=/; Max-Age=${cookieMaxAge}; SameSite=Lax`,
-      `yc_token=${idToken}; Path=/; Max-Age=${cookieMaxAge}; SameSite=Lax`,
+      `yc_token=${idToken}; Path=/; Max-Age=${cookieMaxAge}; HttpOnly; SameSite=Lax${secureAttr}`,
+      `yc_role=; Path=/; Max-Age=0; SameSite=Lax`,
+      `yc_tenant=; Path=/; Max-Age=0; SameSite=Lax`,
+      `yc_user_id=; Path=/; Max-Age=0; SameSite=Lax`,
     ];
 
     const response = NextResponse.json(
@@ -263,7 +262,7 @@ export async function POST(req: NextRequest) {
         user: {
           uid,
           email: authenticatedEmail,
-          displayName: authData.displayName || membership?.displayName || authenticatedEmail.split('@')[0],
+          displayName: displayName || membership?.displayName || authenticatedEmail.split('@')[0],
           role,
         },
         tenant: activeTenant
@@ -277,13 +276,10 @@ export async function POST(req: NextRequest) {
       },
       {
         status: 200,
-        headers: {
-          'Cache-Control': 'no-store',
-        },
+        headers: { 'Cache-Control': 'no-store' },
       }
     );
 
-    // Set cookies
     cookieHeaders.forEach((c) => {
       response.headers.append('Set-Cookie', c);
     });

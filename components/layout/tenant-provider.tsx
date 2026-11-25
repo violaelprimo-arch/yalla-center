@@ -5,6 +5,7 @@ import { Tenant, Branch, User, UserRole } from '@/lib/dal/types';
 import { useMasterDataCatalog } from '@/lib/dal/master-data-client';
 import { useCenterGroups } from '@/lib/timetable/group-client';
 import { getDataProvider } from '@/lib/dal/factory';
+import { MockDataProvider } from '@/lib/dal/mock-data';
 import { useFirebaseAuthSession } from '@/lib/firebase/client';
 
 export interface TenantContextType {
@@ -38,39 +39,52 @@ export function TenantProvider({
   branches,
   initialUsers,
 }: TenantProviderProps) {
+  const isTestEnv = process.env.NODE_ENV === 'test';
   const [preferredBranchId, setActiveBranchId] = useState<string | null>(null);
 
   const [savedUsers, setSavedUsers] = useState<User[]>();
   const availableUsers = savedUsers ?? initialUsers;
 
-  // Default initial user to Center Admin
-  const defaultAdmin = useMemo(
-    () =>
-      initialUsers.find((u) => u.role === 'CENTER_ADMIN') ||
-      initialUsers[0] || {
-        id: 'user-admin-default',
-        tenantId: tenant?.id || '',
-        role: 'CENTER_ADMIN' as UserRole,
-        fullName: 'أ. محمود التهامي (مدير السنتر)',
-        email: 'admin@almaher.edu.eg',
-        balanceDue: 0,
-        isActive: true,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      },
-    [initialUsers, tenant?.id]
-  );
+  // Never grant CENTER_ADMIN by default in production; start unprivileged until /api/auth/me verifies Firestore membership.
+  const defaultInitialUser = useMemo<User>(() => {
+    if (isTestEnv) {
+      return (
+        initialUsers.find((u) => u.role === 'CENTER_ADMIN') ||
+        initialUsers[0] || {
+          id: 'user-admin-default',
+          tenantId: tenant?.id || '',
+          role: 'CENTER_ADMIN' as UserRole,
+          fullName: 'مدير السنتر (اختبار)',
+          balanceDue: 0,
+          isActive: true,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        }
+      );
+    }
+    return {
+      id: 'unverified-session',
+      tenantId: tenant?.id || '',
+      role: 'STUDENT' as UserRole,
+      fullName: 'جارٍ التحقق من الجلسة...',
+      balanceDue: 0,
+      isActive: true,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+  }, [initialUsers, isTestEnv, tenant?.id]);
 
-  const [currentUser, setCurrentUser] = useState<User>(defaultAdmin);
+  const [currentUser, setCurrentUser] = useState<User>(defaultInitialUser);
   const [isOwnerMode, setIsOwnerMode] = useState<boolean>(false);
   const authSession = useFirebaseAuthSession();
 
-  // If user is authenticated via Firebase Auth, synchronize their live verified profile & role
+  // Synchronize live verified profile & role from server (/api/auth/me -> Firestore staff_memberships)
   useEffect(() => {
     if (!authSession.user || !authSession.idToken) return;
     let active = true;
 
     fetch('/api/auth/me', {
+      cache: 'no-store',
       headers: {
         Authorization: `Bearer ${authSession.idToken}`,
       },
@@ -79,9 +93,7 @@ export function TenantProvider({
       .then((data) => {
         if (!active || !data?.authenticated || !data.user) return;
         const verifiedRole = data.user.role as UserRole;
-        if (verifiedRole === 'PLATFORM_OWNER') {
-          setIsOwnerMode(true);
-        }
+        setIsOwnerMode(verifiedRole === 'PLATFORM_OWNER');
         setCurrentUser((prev) => ({
           ...prev,
           id: data.user.uid,
@@ -96,28 +108,47 @@ export function TenantProvider({
       active = false;
     };
   }, [authSession.user, authSession.idToken]);
-  const masterData = useMasterDataCatalog(tenant,
-    currentUser.role === 'CENTER_ADMIN' || currentUser.role === 'PLATFORM_OWNER');
+
+  const masterData = useMasterDataCatalog(
+    tenant,
+    currentUser.role === 'CENTER_ADMIN' || currentUser.role === 'PLATFORM_OWNER'
+  );
   const groupData = useCenterGroups(tenant, masterData.data, masterData.auth, currentUser.role);
+
   React.useEffect(() => {
-    if (!masterData.demo) return;
+    if (!masterData.demo || !isTestEnv) return;
     let active = true;
-    getDataProvider().getUsers(tenant.id).then(users => {
-      if (!active) return;
-      setSavedUsers(users);
-      setCurrentUser(user => users.find(saved => saved.id === user.id) ?? user);
-    });
-    return () => { active = false; };
-  }, [masterData.demo, tenant.id]);
+    getDataProvider()
+      .getUsers(tenant.id)
+      .then((users) => {
+        if (!active) return;
+        setSavedUsers(users);
+        setCurrentUser((user) => users.find((saved) => saved.id === user.id) ?? user);
+      });
+    return () => {
+      active = false;
+    };
+  }, [isTestEnv, masterData.demo, tenant.id]);
+
   React.useEffect(() => {
-    if (masterData.ready) getDataProvider().setMasterData(tenant.id, masterData.data);
+    if (!masterData.ready) return;
+    const dal = getDataProvider();
+    if (dal instanceof MockDataProvider) {
+      dal.setMasterData(tenant.id, masterData.data);
+    }
   }, [masterData.ready, masterData.data, tenant.id]);
+
   const currentBranches = masterData.ready || !masterData.demo ? masterData.data.branches : branches;
 
-  const activeBranch = currentBranches.find(branch => branch.id === preferredBranchId) ?? currentBranches[0] ?? null;
+  const activeBranch =
+    currentBranches.find((branch) => branch.id === preferredBranchId) ?? currentBranches[0] ?? null;
 
   const switchRole = (role: UserRole) => {
-    // Helper to sync cookies for seamless client-to-server middleware alignment in demo
+    // Role switching is strictly limited to isolated test suites; never permitted in production.
+    if (!isTestEnv) {
+      return;
+    }
+
     const syncCookies = (targetUser: User) => {
       if (typeof document !== 'undefined') {
         document.cookie = `yc_role=${targetUser.role}; path=/; max-age=86400; SameSite=Lax`;
@@ -131,9 +162,8 @@ export function TenantProvider({
       const ownerUser: User = {
         id: 'user-owner-001',
         role: 'PLATFORM_OWNER',
-        fullName: 'م. إسلام خليل (مدير المنصة)',
+        fullName: 'مالك المنصة (اختبار)',
         email: 'owner@yallacenter.com',
-        avatarUrl: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e',
         balanceDue: 0,
         isActive: true,
         createdAt: new Date().toISOString(),
@@ -150,13 +180,11 @@ export function TenantProvider({
       setCurrentUser(foundUser);
       syncCookies(foundUser);
     } else {
-      // Synthesize demo user if none exists in seed
       const synthUser: User = {
         id: `demo-${role.toLowerCase()}`,
         tenantId: tenant.id,
         role,
-        fullName: `مستخدم تجريبي (${role})`,
-        avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb',
+        fullName: `مستخدم (${role})`,
         balanceDue: 0,
         isActive: true,
         createdAt: new Date().toISOString(),

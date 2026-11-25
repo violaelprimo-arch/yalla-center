@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDataProvider } from '@/lib/dal/factory';
+import { getDataProvider, isCloudProductionMode } from '@/lib/dal/factory';
+import { extractBearerToken, FirebaseAuthError, verifyFirebaseIdToken } from '@/lib/firebase/server';
+
+export const dynamic = 'force-dynamic';
 
 export async function POST(
   request: NextRequest,
@@ -7,10 +10,21 @@ export async function POST(
 ) {
   try {
     const { centerSlug } = await Promise.resolve(params);
-    const dal = getDataProvider();
+    const bearer =
+      extractBearerToken(request.headers.get('authorization')) ||
+      request.cookies.get('yc_token')?.value ||
+      '';
+    const dal = getDataProvider(bearer || undefined);
     const tenant = await dal.getTenantBySlug(centerSlug);
     if (!tenant) {
       return NextResponse.json({ error: 'Center not found' }, { status: 404 });
+    }
+
+    if (isCloudProductionMode()) {
+      if (!bearer) {
+        return NextResponse.json({ error: 'يلزم تسجيل الدخول لتسليم الامتحان' }, { status: 401 });
+      }
+      await verifyFirebaseIdToken(bearer);
     }
 
     const body = await request.json();
@@ -32,6 +46,9 @@ export async function POST(
       percentage: result.percentage,
     });
   } catch (error: any) {
+    if (error instanceof FirebaseAuthError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
     return NextResponse.json(
       { error: error.message || 'Failed to submit exam' },
       { status: 400 }

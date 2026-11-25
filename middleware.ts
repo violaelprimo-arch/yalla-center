@@ -1,97 +1,70 @@
 /**
- * Yalla Center - Tenant Resolution & Route Guarding Middleware
+ * Yalla Center - Tenant Resolution & Cryptographically Verified Route Guarding Middleware
  * Path: middleware.ts
- *
- * Enforces tenant isolation between centers, guards /owner platform super-admin portal,
- * and sets contextual headers for downstream handlers.
  */
 
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import {
+  createServerFirestoreStore,
+  extractBearerToken,
+  hasPlatformOwnerClaim,
+  verifyFirebaseIdToken,
+  type StaffMembershipRecord,
+} from '@/lib/firebase/server';
+import { getDataProvider } from '@/lib/dal/factory';
 
-export function middleware(request: NextRequest) {
+export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Skip static files, Next.js internal routes, login page, and public brand assets
   if (
     pathname.startsWith('/_next') ||
     pathname.startsWith('/brand') ||
     pathname.startsWith('/favicon.ico') ||
     pathname.startsWith('/login') ||
-    pathname.startsWith('/api/auth')
+    pathname.startsWith('/api/auth') ||
+    pathname.startsWith('/api/version')
   ) {
     return NextResponse.next();
   }
 
-  // Resolve user identity from cookies or development/test headers
-  const isProd = process.env.NODE_ENV === 'production';
-  const tokenCookie = request.cookies.get('yc_token')?.value;
-  const hasAuth =
-    (Boolean(request.cookies.get('yc_role')?.value) && (Boolean(tokenCookie) || !isProd)) ||
-    (!isProd && request.headers.has('x-user-role'));
+  const isTestEnv = process.env.NODE_ENV === 'test';
+  const requestHeaders = new Headers(request.headers);
 
-  const userRole =
-    request.cookies.get('yc_role')?.value ||
-    (!isProd ? request.headers.get('x-user-role') : null) ||
-    (process.env.NODE_ENV === 'test' ? 'CENTER_ADMIN' : '');
+  // Always strip client-spoofed authorization headers in non-test environments
+  if (!isTestEnv) {
+    requestHeaders.delete('x-user-id');
+    requestHeaders.delete('x-user-role');
+    requestHeaders.delete('x-tenant-slug');
+  }
 
-  const userTenantSlug =
-    request.cookies.get('yc_tenant')?.value ||
-    (!isProd ? request.headers.get('x-tenant-slug') : null) ||
-    (process.env.NODE_ENV === 'test' ? 'al-maher' : '');
+  if (isTestEnv) {
+    const userRole =
+      request.cookies.get('yc_role')?.value ||
+      request.headers.get('x-user-role') ||
+      'CENTER_ADMIN';
+    const userTenantSlug =
+      request.cookies.get('yc_tenant')?.value ||
+      request.headers.get('x-tenant-slug') ||
+      'al-maher';
+    const userId =
+      request.cookies.get('yc_user_id')?.value ||
+      request.headers.get('x-user-id') ||
+      'user-admin-maher';
 
-  const userId =
-    request.cookies.get('yc_user_id')?.value ||
-    (!isProd ? request.headers.get('x-user-id') : null) ||
-    (process.env.NODE_ENV === 'test' ? 'user-admin-maher' : '');
-
-  // 1. Platform Owner Portal Guard (/owner)
-  if (pathname.startsWith('/owner')) {
-    if (!hasAuth && process.env.NODE_ENV !== 'test') {
-      const loginUrl = request.nextUrl.clone();
-      loginUrl.pathname = '/login';
-      loginUrl.searchParams.set('redirect', pathname);
-      return NextResponse.redirect(loginUrl);
-    }
-    if (userRole !== 'PLATFORM_OWNER') {
-      // If unauthorized role visits /owner, redirect to their tenant center
+    if (pathname.startsWith('/owner') && userRole !== 'PLATFORM_OWNER') {
       const redirectUrl = request.nextUrl.clone();
       redirectUrl.pathname = `/center/${userTenantSlug || 'al-maher'}`;
       return NextResponse.redirect(redirectUrl);
     }
-  }
 
-  // 2. Protected Center Routes Guard - unauthenticated users must not access administrative data
-  if (pathname.startsWith('/center/')) {
-    const isPublicPortal =
-      pathname.includes('/student-portal') ||
-      pathname.includes('/parent-portal') ||
-      pathname.includes('/exams/run') ||
-      pathname.includes('/exams/runner') ||
-      pathname.includes('/exams/printable');
-
-    if (!hasAuth && !isPublicPortal && process.env.NODE_ENV !== 'test') {
-      const loginUrl = request.nextUrl.clone();
-      loginUrl.pathname = '/login';
-      loginUrl.searchParams.set('redirect', pathname);
-      return NextResponse.redirect(loginUrl);
-    }
-  }
-
-  // 3. Center Tenant Isolation Guard (/center/[centerSlug])
-  if (pathname.startsWith('/center/')) {
-    const segments = pathname.split('/').filter(Boolean);
-    // segments: ['center', '[centerSlug]', ...]
-    const requestedCenterSlug = segments[1];
-
-    if (requestedCenterSlug) {
-      // Validate cross-tenant barrier:
-      // If actor has an explicit tenant header or cookie different from requested slug,
-      // and actor is not PLATFORM_OWNER, reject with HTTP 403 Forbidden.
+    if (pathname.startsWith('/center/')) {
+      const segments = pathname.split('/').filter(Boolean);
+      const requestedCenterSlug = segments[1];
       const hasExplicitTenantConstraint =
         request.headers.has('x-tenant-slug') || request.cookies.has('yc_tenant');
-
       if (
+        requestedCenterSlug &&
         hasExplicitTenantConstraint &&
         userRole !== 'PLATFORM_OWNER' &&
         userTenantSlug !== requestedCenterSlug
@@ -102,35 +75,107 @@ export function middleware(request: NextRequest) {
             status: 403,
             message: 'Cross-tenant access rejected: غير مصرح لك بالدخول إلى بيانات هذا السنتر',
           }),
-          {
-            status: 403,
-            headers: {
-              'content-type': 'application/json',
-            },
-          }
+          { status: 403, headers: { 'content-type': 'application/json' } }
         );
       }
     }
+
+    requestHeaders.set('x-user-id', userId);
+    requestHeaders.set('x-user-role', userRole);
+    requestHeaders.set(
+      'x-tenant-slug',
+      pathname.startsWith('/center/') ? pathname.split('/').filter(Boolean)[1] || userTenantSlug : userTenantSlug
+    );
+    return NextResponse.next({ request: { headers: requestHeaders } });
   }
 
-  // Inject resolved security headers for downstream Server Components & API routes
-  const requestHeaders = new Headers(request.headers);
-  requestHeaders.set('x-user-id', userId);
-  requestHeaders.set('x-user-role', userRole);
-  if (pathname.startsWith('/center/')) {
-    const segments = pathname.split('/').filter(Boolean);
-    if (segments[1]) {
-      requestHeaders.set('x-tenant-slug', segments[1]);
+  // Production / Staging: NEVER trust client-editable yc_role / yc_tenant / yc_user_id cookies.
+  // Verify cryptographic Firebase ID token from HttpOnly yc_token cookie or Bearer header.
+  const isOwnerRoute = pathname.startsWith('/owner');
+  const isCenterRoute = pathname.startsWith('/center/');
+  const isPublicPortal =
+    pathname.includes('/student-portal') ||
+    pathname.includes('/parent-portal') ||
+    pathname.includes('/exams/run') ||
+    pathname.includes('/exams/runner') ||
+    pathname.includes('/exams/printable');
+
+  if (!isOwnerRoute && (!isCenterRoute || isPublicPortal)) {
+    return NextResponse.next({ request: { headers: requestHeaders } });
+  }
+
+  const rawToken =
+    extractBearerToken(request.headers.get('authorization')) ||
+    request.cookies.get('yc_token')?.value ||
+    '';
+
+  if (!rawToken) {
+    const loginUrl = request.nextUrl.clone();
+    loginUrl.pathname = '/login';
+    loginUrl.searchParams.set('redirect', pathname);
+    return NextResponse.redirect(loginUrl);
+  }
+
+  try {
+    const verified = await verifyFirebaseIdToken(rawToken);
+    const store = await createServerFirestoreStore({ callerIdToken: rawToken });
+
+    let membership: StaffMembershipRecord | null = null;
+    try {
+      const fetched = await store.getDocument<StaffMembershipRecord>(`staff_memberships/${verified.uid}`);
+      if (fetched.exists && fetched.data?.isActive) {
+        membership = fetched.data;
+      }
+    } catch {
+      membership = null;
     }
-  } else {
-    requestHeaders.set('x-tenant-slug', userTenantSlug);
-  }
 
-  return NextResponse.next({
-    request: {
-      headers: requestHeaders,
-    },
-  });
+    const isOwner = hasPlatformOwnerClaim(verified.rawClaims) || membership?.role === 'PLATFORM_OWNER';
+    const verifiedRole = isOwner ? 'PLATFORM_OWNER' : membership?.role || '';
+
+    if (!verifiedRole) {
+      const loginUrl = request.nextUrl.clone();
+      loginUrl.pathname = '/login';
+      loginUrl.searchParams.set('redirect', pathname);
+      return NextResponse.redirect(loginUrl);
+    }
+
+    if (isOwnerRoute && verifiedRole !== 'PLATFORM_OWNER') {
+      const dal = getDataProvider(rawToken);
+      const memberTenant = membership?.tenantId ? await dal.getTenantById(membership.tenantId).catch(() => null) : null;
+      const redirectUrl = request.nextUrl.clone();
+      redirectUrl.pathname = memberTenant?.slug ? `/center/${memberTenant.slug}` : '/login';
+      return NextResponse.redirect(redirectUrl);
+    }
+
+    if (isCenterRoute && !isPublicPortal && !isOwner) {
+      const segments = pathname.split('/').filter(Boolean);
+      const requestedCenterSlug = segments[1];
+      if (requestedCenterSlug) {
+        const dal = getDataProvider(rawToken);
+        const requestedTenant = await dal.getTenantBySlug(requestedCenterSlug).catch(() => null);
+        if (!requestedTenant || membership?.tenantId !== requestedTenant.id) {
+          return new NextResponse(
+            JSON.stringify({
+              error: 'FORBIDDEN',
+              status: 403,
+              message: 'Cross-tenant access rejected: غير مصرح لك بالدخول إلى بيانات هذا السنتر',
+            }),
+            { status: 403, headers: { 'content-type': 'application/json' } }
+          );
+        }
+      }
+    }
+
+    requestHeaders.set('x-user-id', verified.uid);
+    requestHeaders.set('x-user-role', verifiedRole);
+    return NextResponse.next({ request: { headers: requestHeaders } });
+  } catch {
+    const loginUrl = request.nextUrl.clone();
+    loginUrl.pathname = '/login';
+    loginUrl.searchParams.set('redirect', pathname);
+    return NextResponse.redirect(loginUrl);
+  }
 }
 
 export const config = {

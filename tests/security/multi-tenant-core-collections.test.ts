@@ -36,6 +36,11 @@ describe('Multi-Tenant Core Collections Security Rules Invariants', () => {
       'center_shifts',
       'comprehensive_exams',
       'exam_submissions',
+      'center_notifications',
+      'teacher_rates',
+      'teacher_payroll',
+      'teacher_advances',
+      'books_inventory',
     ];
 
     for (const col of requiredCollections) {
@@ -43,18 +48,49 @@ describe('Multi-Tenant Core Collections Security Rules Invariants', () => {
     }
   });
 
-  it('declares tenants and staff_memberships rules with platform owner & center admin RBAC', () => {
+  it('eliminates email-based platform owner escalation in isPlatformOwner()', () => {
+    const fnMatch = rules.match(/function isPlatformOwner\(\)\s*\{[\s\S]*?\n\s*\}/);
+    expect(fnMatch).not.toBeNull();
+    const fnBody = fnMatch![0];
+    expect(fnBody).not.toContain('request.auth.token.email');
+    expect(fnBody).not.toContain('owner@');
+    expect(fnBody).toContain("request.auth.token.role == 'PLATFORM_OWNER'");
+    expect(fnBody).toContain('request.auth.token.isPlatformOwner == true');
+    expect(fnBody).toContain("isActiveStaff() && staffRole() == 'PLATFORM_OWNER'");
+  });
+
+  it('declares tenants and hardened staff_memberships rules with platform owner & center admin RBAC', () => {
     expect(rules).toMatch(/match \/tenants\/\{tenantId\}\s*\{/);
     expect(rules).toMatch(/allow read:\s*if true;/);
     expect(rules).toMatch(/allow create, delete:\s*if isPlatformOwner\(\);/);
     expect(rules).toContain('isCenterAdmin(tenantId)');
     expect(rules).toContain('request.resource.data.id == resource.data.id');
 
-    expect(rules).toMatch(/match \/staff_memberships\/\{uid\}\s*\{/);
-    expect(rules).toMatch(/allow read:\s*if isSignedIn\(\) && \(\s*request\.auth\.uid == uid \|\|\s*isPlatformOwner\(\) \|\|\s*\(isCenterAdmin\(resource\.data\.tenantId\)\)\s*\);/);
-    expect(rules).toMatch(/allow create:\s*if isSignedIn\(\) && \(\s*isPlatformOwner\(\) \|\|\s*request\.auth\.uid == uid \|\|\s*isCenterAdmin\(request\.resource\.data\.tenantId\)\s*\);/);
-    expect(rules).toMatch(/allow update:\s*if isPlatformOwner\(\) \|\| \(\s*isCenterAdmin\(resource\.data\.tenantId\) &&\s*request\.resource\.data\.tenantId == resource\.data\.tenantId\s*\);/);
-    expect(rules).toMatch(/allow delete:\s*if isPlatformOwner\(\) \|\| isCenterAdmin\(resource\.data\.tenantId\);/);
+    const staffBlockMatch = rules.match(/match \/staff_memberships\/\{uid\}\s*\{[\s\S]*?\n\s*\}/);
+    expect(staffBlockMatch).not.toBeNull();
+    const staffBlock = staffBlockMatch![0];
+
+    expect(staffBlock).toMatch(/allow read:\s*if isSignedIn\(\) && \(\s*request\.auth\.uid == uid \|\|\s*isPlatformOwner\(\) \|\|\s*isCenterAdmin\(resource\.data\.tenantId\)\s*\);/);
+
+    const createClause = staffBlock.match(/allow create:[\s\S]*?allow update:/);
+    expect(createClause).not.toBeNull();
+    expect(createClause![0]).not.toContain('request.auth.uid == uid');
+    expect(createClause![0]).toContain('isValidStaffMembership(request.resource.data, uid)');
+    expect(createClause![0]).toContain('isPlatformOwner()');
+    expect(createClause![0]).toContain('isCenterAdmin(request.resource.data.tenantId)');
+    expect(createClause![0]).toContain('isValidTenantId(request.resource.data.tenantId)');
+    expect(createClause![0]).toContain('request.resource.data.uid == uid');
+    expect(createClause![0]).toContain("request.resource.data.role != 'PLATFORM_OWNER'");
+
+    const updateClause = staffBlock.match(/allow update:[\s\S]*?allow delete:/);
+    expect(updateClause).not.toBeNull();
+    expect(updateClause![0]).toContain('isValidStaffMembership(request.resource.data, uid)');
+    expect(updateClause![0]).toContain('isPlatformOwner()');
+    expect(updateClause![0]).toContain('isCenterAdmin(resource.data.tenantId)');
+    expect(updateClause![0]).toContain('request.resource.data.tenantId == resource.data.tenantId');
+    expect(updateClause![0]).toContain("request.resource.data.role != 'PLATFORM_OWNER'");
+
+    expect(staffBlock).toMatch(/allow delete:\s*if isPlatformOwner\(\) \|\| \(\s*isCenterAdmin\(resource\.data\.tenantId\) &&\s*resource\.data\.role != 'PLATFORM_OWNER'\s*\);/);
   });
 
   it('enforces multi-tenant isolation and immutable tenantId on updates for all core collections', () => {
@@ -107,6 +143,18 @@ describe('Multi-Tenant Core Collections Security Rules Invariants', () => {
     // comprehensive_exams & exam_submissions
     expect(rules).toMatch(/match \/comprehensive_exams\/\{examId\}/);
     expect(rules).toMatch(/match \/exam_submissions\/\{submissionId\}/);
+
+    // cloud-backed operational collections (notifications, teacher accounting, books inventory)
+    expect(rules).toMatch(/match \/center_notifications\/\{notifId\}/);
+    expect(rules).toContain('isValidNotification(request.resource.data)');
+    expect(rules).toMatch(/match \/teacher_rates\/\{rateId\}/);
+    expect(rules).toContain('isValidTeacherRate(request.resource.data)');
+    expect(rules).toMatch(/match \/teacher_payroll\/\{payrollId\}/);
+    expect(rules).toContain('isValidTeacherPayroll(request.resource.data)');
+    expect(rules).toMatch(/match \/teacher_advances\/\{advanceId\}/);
+    expect(rules).toContain('isValidTeacherAdvance(request.resource.data)');
+    expect(rules).toMatch(/match \/books_inventory\/\{bookId\}/);
+    expect(rules).toContain('isValidBookInventoryItem(request.resource.data)');
   });
 
   describe('Emulated Role Evaluation across Core Collections', () => {
@@ -233,6 +281,147 @@ describe('Multi-Tenant Core Collections Security Rules Invariants', () => {
       expect(isStudentOpsStaff(adminTenant1, 'tenant-1')).toBe(true);
       expect(isFinanceStaff(adminTenant1, 'tenant-1')).toBe(true);
       expect(isSessionAllowedRole(adminTenant1, 'tenant-1')).toBe(true);
+    });
+
+    it('rejects email-based platform owner escalation and self-membership privilege escalation', () => {
+      type TokenAuth = StaffAuth & {
+        email?: string;
+        tokenRole?: string;
+        tokenIsPlatformOwner?: boolean;
+      };
+
+      const isPlatformOwnerEval = (auth: TokenAuth | null): boolean => {
+        if (!auth) return false;
+        if (auth.tokenRole === 'PLATFORM_OWNER') return true;
+        if (auth.tokenIsPlatformOwner === true) return true;
+        return Boolean(auth.exists && auth.isActive === true && auth.role === 'PLATFORM_OWNER');
+      };
+
+      const canCreateStaffMembership = (
+        auth: TokenAuth | null,
+        targetUid: string,
+        data: { uid?: string; tenantId?: string; role?: string }
+      ): boolean => {
+        if (!auth) return false;
+        if (isPlatformOwnerEval(auth)) return true;
+        return (
+          isCenterAdmin(auth, data.tenantId ?? '') &&
+          typeof data.tenantId === 'string' &&
+          data.tenantId.length > 0 &&
+          data.tenantId.length <= 128 &&
+          data.uid === targetUid &&
+          data.role !== 'PLATFORM_OWNER'
+        );
+      };
+
+      const canUpdateStaffMembership = (
+        auth: TokenAuth | null,
+        existing: { uid: string; tenantId: string; role: string },
+        next: { uid: string; tenantId: string; role: string }
+      ): boolean => {
+        if (!auth) return false;
+        if (isPlatformOwnerEval(auth)) return true;
+        return (
+          isCenterAdmin(auth, existing.tenantId) &&
+          existing.role !== 'PLATFORM_OWNER' &&
+          next.tenantId === existing.tenantId &&
+          next.uid === existing.uid &&
+          next.role !== 'PLATFORM_OWNER'
+        );
+      };
+
+      // Attacker with owner@ email or hardcoded email without claims/staff doc is NOT platform owner
+      const emailAttacker: TokenAuth = {
+        uid: 'attacker-1',
+        exists: false,
+        email: 'evil-owner@gmail.com',
+      };
+      expect(isPlatformOwnerEval(emailAttacker)).toBe(false);
+      expect(
+        isPlatformOwnerEval({
+          uid: 'attacker-2',
+          exists: false,
+          email: 'owner@yallacenter.com',
+        })
+      ).toBe(false);
+
+      // Signed custom claim or active PLATFORM_OWNER membership IS platform owner
+      expect(
+        isPlatformOwnerEval({ uid: 'po-claim', exists: false, tokenRole: 'PLATFORM_OWNER' })
+      ).toBe(true);
+      expect(
+        isPlatformOwnerEval({ uid: 'po-flag', exists: false, tokenIsPlatformOwner: true })
+      ).toBe(true);
+      expect(isPlatformOwnerEval(platformOwner)).toBe(true);
+
+      // Signed-in user CANNOT self-provision staff_memberships/{uid}
+      expect(
+        canCreateStaffMembership(
+          { uid: 'new-user', exists: false },
+          'new-user',
+          { uid: 'new-user', tenantId: 'tenant-1', role: 'PLATFORM_OWNER' }
+        )
+      ).toBe(false);
+      expect(
+        canCreateStaffMembership(
+          { uid: 'new-user', exists: false },
+          'new-user',
+          { uid: 'new-user', tenantId: 'tenant-1', role: 'CENTER_ADMIN' }
+        )
+      ).toBe(false);
+
+      // Center Admin can create non-owner staff in their own tenant, but cannot escalate or cross tenants
+      expect(
+        canCreateStaffMembership(adminTenant1, 'new-rec', {
+          uid: 'new-rec',
+          tenantId: 'tenant-1',
+          role: 'RECEPTIONIST',
+        })
+      ).toBe(true);
+      expect(
+        canCreateStaffMembership(adminTenant1, 'new-po', {
+          uid: 'new-po',
+          tenantId: 'tenant-1',
+          role: 'PLATFORM_OWNER',
+        })
+      ).toBe(false);
+      expect(
+        canCreateStaffMembership(adminTenant1, 'new-rec', {
+          uid: 'other-uid',
+          tenantId: 'tenant-1',
+          role: 'RECEPTIONIST',
+        })
+      ).toBe(false);
+      expect(
+        canCreateStaffMembership(adminTenant1, 'new-rec', {
+          uid: 'new-rec',
+          tenantId: 'tenant-2',
+          role: 'RECEPTIONIST',
+        })
+      ).toBe(false);
+
+      // Center Admin cannot escalate role to PLATFORM_OWNER or change tenantId on update
+      expect(
+        canUpdateStaffMembership(
+          adminTenant1,
+          { uid: 'rec-1', tenantId: 'tenant-1', role: 'RECEPTIONIST' },
+          { uid: 'rec-1', tenantId: 'tenant-1', role: 'PLATFORM_OWNER' }
+        )
+      ).toBe(false);
+      expect(
+        canUpdateStaffMembership(
+          adminTenant1,
+          { uid: 'rec-1', tenantId: 'tenant-1', role: 'RECEPTIONIST' },
+          { uid: 'rec-1', tenantId: 'tenant-2', role: 'RECEPTIONIST' }
+        )
+      ).toBe(false);
+      expect(
+        canUpdateStaffMembership(
+          adminTenant1,
+          { uid: 'rec-1', tenantId: 'tenant-1', role: 'RECEPTIONIST' },
+          { uid: 'rec-1', tenantId: 'tenant-1', role: 'ACCOUNTANT' }
+        )
+      ).toBe(true);
     });
   });
 });

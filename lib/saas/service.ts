@@ -912,8 +912,13 @@ const STORAGE_KEYS = {
   AUDIT_LOGS: 'yc_saas_audit_logs_v2',
 };
 
+const isProductionSaasMode =
+  process.env.NODE_ENV !== 'test' ||
+  process.env.DATA_PROVIDER_MODE === 'production' ||
+  process.env.DATA_PROVIDER_MODE === 'firebase';
+
 function readStorage<T>(key: string, fallback: T): T {
-  if (typeof window === 'undefined') return fallback;
+  if (typeof window === 'undefined' || isProductionSaasMode) return fallback;
   try {
     const raw = localStorage.getItem(key);
     return raw ? JSON.parse(raw) : fallback;
@@ -923,8 +928,7 @@ function readStorage<T>(key: string, fallback: T): T {
 }
 
 function writeStorage<T>(key: string, data: T): void {
-  if (typeof window === 'undefined') return;
-  if (process.env.DATA_PROVIDER_MODE === 'production') return;
+  if (typeof window === 'undefined' || isProductionSaasMode) return;
   try {
     localStorage.setItem(key, JSON.stringify(data));
   } catch {
@@ -932,24 +936,24 @@ function writeStorage<T>(key: string, data: T): void {
   }
 }
 
-// In-memory memory caches for SSR runtime
-const isFixturesMode = process.env.NODE_ENV === 'test' || (typeof window !== 'undefined' && window.location.search.includes('fixtures=true'));
-let memoryCenters = isFixturesMode && process.env.DATA_PROVIDER_MODE !== 'production' ? [...INITIAL_CENTERS] : [];
+// In-memory memory caches (strictly isolated for NODE_ENV === 'test')
+const isFixturesMode = process.env.NODE_ENV === 'test' && !isProductionSaasMode;
+let memoryCenters = isFixturesMode ? [...INITIAL_CENTERS] : [];
 let memoryPlans = [...INITIAL_PLANS];
 let memoryWebsiteDraft = { ...INITIAL_WEBSITE_CONFIG };
 let memoryWebsitePublished = { ...INITIAL_WEBSITE_CONFIG };
-let memoryRequests = [...INITIAL_REQUESTS];
-let memoryComplaints = [...INITIAL_COMPLAINTS];
+let memoryRequests = isFixturesMode ? [...INITIAL_REQUESTS] : [];
+let memoryComplaints = isFixturesMode ? [...INITIAL_COMPLAINTS] : [];
 let memoryContactMessages: ContactMessage[] = [];
 let memorySettings = { ...INITIAL_COMMUNICATION_SETTINGS };
 let memoryAiConfig = { ...INITIAL_AI_CONFIG };
 let memoryAiLedger: AiUsageLedgerEntry[] = [];
-let memoryInvoices = [...INITIAL_INVOICES];
-let memoryPayments: OwnerPayment[] = [...INITIAL_PAYMENTS];
-let memoryMovements: CenterFinancialMovement[] = [...INITIAL_MOVEMENTS];
-let memoryExpenses: OwnerExpense[] = [...INITIAL_EXPENSES];
+let memoryInvoices = isFixturesMode ? [...INITIAL_INVOICES] : [];
+let memoryPayments: OwnerPayment[] = isFixturesMode ? [...INITIAL_PAYMENTS] : [];
+let memoryMovements: CenterFinancialMovement[] = isFixturesMode ? [...INITIAL_MOVEMENTS] : [];
+let memoryExpenses: OwnerExpense[] = isFixturesMode ? [...INITIAL_EXPENSES] : [];
 let memoryExpenseCategories: DynamicExpenseCategory[] = [...INITIAL_EXPENSE_CATEGORIES];
-let memoryAppointments = [...INITIAL_APPOINTMENTS];
+let memoryAppointments = isFixturesMode ? [...INITIAL_APPOINTMENTS] : [];
 let memorySupportSessions: SupportAccessSession[] = [];
 
 // ============================================================================
@@ -961,66 +965,10 @@ export class SaasPlatformService {
   // 1. Center Directory & Provisioning
   // --------------------------------------------------------------------------
   static getCenters(): CenterExtended[] {
-    const raw = readStorage(STORAGE_KEYS.CENTERS, memoryCenters);
-    if (process.env.DATA_PROVIDER_MODE === 'production' || process.env.NODE_ENV === 'production') {
-      const filtered = raw.filter(c => c.slug !== 'al-maher' && c.slug !== 'al-rowad' && c.id !== 'tenant-maher-001' && c.id !== 'tenant-rowad-002');
-      if (filtered.length === 0) {
-        return [
-          {
-            id: 'tenant-elmaher-001',
-            slug: 'elmaher',
-            nameAr: 'سنتر الماهر',
-            nameEn: 'El Maher Educational Center',
-            logoUrl: '',
-            phone: '+20 100 123 4567',
-            address: 'الفرع الرئيسي',
-            email: 'contact@elmaher.edu.eg',
-            adminName: 'مدير سنتر الماهر',
-            adminEmail: 'admin@elmaher.edu.eg',
-            adminPhone: '+20 100 123 4567',
-            adminUsername: 'maher_admin',
-            subscriptionPlanId: 'plan-pro',
-            planNameAr: 'باقة المحترفين (Pro)',
-            subscriptionStartDate: '2026-09-01T00:00:00.000Z',
-            subscriptionEndDate: '2027-08-31T23:59:59.000Z',
-            billingAmount: 3500,
-            billingFrequency: 'monthly',
-            paymentStatus: 'paid',
-            customPricing: null,
-            branchesCount: 1,
-            studentsCount: 0,
-            teachersCount: 0,
-            employeesCount: 1,
-            maxBranches: 3,
-            maxStudents: 500,
-            maxTeachers: 30,
-            maxEmployees: 10,
-            aiBalance: 100,
-            aiUsageTotal: 0,
-            aiEnabled: true,
-            status: 'active',
-            enabledModules: [
-              'attendance',
-              'reception',
-              'groups',
-              'exams',
-              'ai_exams',
-              'finance',
-              'materials',
-              'whatsapp',
-              'parent_portal',
-              'student_portal',
-            ],
-            showInPublicDirectory: true,
-            notes: 'السنتر المعتمد الرئيسي',
-            createdAt: '2026-01-01T00:00:00.000Z',
-            updatedAt: '2026-01-01T00:00:00.000Z',
-          },
-        ];
-      }
-      return filtered;
+    if (isProductionSaasMode) {
+      return [];
     }
-    return raw;
+    return readStorage(STORAGE_KEYS.CENTERS, memoryCenters);
   }
 
   static getCenterBySlug(slug: string): CenterExtended | null {
@@ -1132,26 +1080,7 @@ export class SaasPlatformService {
     memoryCenters = nextCenters;
     writeStorage(STORAGE_KEYS.CENTERS, nextCenters);
 
-    // Sync to Cloud Firestore API in browser environment
-    if (typeof window !== 'undefined') {
-      try {
-        const token =
-          sessionStorage.getItem('yc_id_token') ||
-          document.cookie.split('yc_token=')[1]?.split(';')[0];
-        if (token) {
-          fetch('/api/owner/centers', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${token}`,
-            },
-            body: JSON.stringify(newCenter),
-          }).catch(() => {});
-        }
-      } catch {}
-    }
-
-    // Automatically issue the initial subscription invoice
+    // Automatically issue the initial subscription invoice (in test mode)
     this.createInvoice({
       tenantId: newCenter.id,
       tenantNameAr: newCenter.nameAr,

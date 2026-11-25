@@ -53,6 +53,35 @@ export function clearFirebaseServerCachesForTests(): void {
   serviceAccountTokenCache.clear();
 }
 
+export function hasPlatformOwnerClaim(rawClaims?: Record<string, unknown>): boolean {
+  if (!rawClaims) return false;
+  return rawClaims.role === 'PLATFORM_OWNER' || rawClaims.isPlatformOwner === true;
+}
+
+export async function resolveVerifiedMembership(
+  store: ILessonScoreStore,
+  uid: string,
+  rawClaims?: Record<string, unknown>
+): Promise<StaffMembershipRecord | null> {
+  try {
+    const fetched = await store.getDocument<StaffMembershipRecord>(`staff_memberships/${uid}`);
+    if (fetched.exists && fetched.data?.isActive) {
+      return fetched.data;
+    }
+  } catch {
+    // ignore read failure and check explicit signed custom claims only
+  }
+  if (hasPlatformOwnerClaim(rawClaims)) {
+    return {
+      uid,
+      tenantId: '',
+      role: 'PLATFORM_OWNER',
+      isActive: true,
+    };
+  }
+  return null;
+}
+
 export function getFirebaseProjectId(): string {
   return (
     process.env.FIREBASE_PROJECT_ID?.trim() ||

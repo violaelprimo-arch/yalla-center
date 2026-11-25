@@ -143,7 +143,7 @@ export class FirestoreRestClient {
       ...init,
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${this.accessToken}`,
+        ...(this.accessToken ? { Authorization: `Bearer ${this.accessToken}` } : {}),
         ...(init.headers ?? {}),
       },
     });

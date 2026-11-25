@@ -5,6 +5,7 @@ import { getFreshFirebaseIdToken, useFirebaseAuthSession } from '@/lib/firebase/
 import { readDemoSchedule } from '@/lib/timetable/group-client';
 import { demoMaterialsKey, readDemoMaterials } from '@/lib/materials/demo-storage';
 import { createCenterDataProvider, getDataProvider } from './factory';
+import { MockDataProvider, INITIAL_SEEDED_DATA } from './mock-data';
 import {
   changeMasterData,
   emptyMasterData,
@@ -14,7 +15,6 @@ import {
   type MasterData,
   type MasterDataAction,
 } from './master-data';
-import { INITIAL_SEEDED_DATA } from './mock-data';
 import type { Tenant } from './types';
 
 export { masterDataStorageKey } from './master-data';
@@ -22,14 +22,29 @@ export { masterDataStorageKey } from './master-data';
 async function readDemoData(tenantId: string, raw: string | null): Promise<MasterData> {
   if (raw === null) return readMasterData(createCenterDataProvider(), tenantId);
   const parsed = JSON.parse(raw) as MasterData;
-  const ownsRecords = (records: unknown) => Array.isArray(records) &&
-    records.every(record => record?.tenantId === tenantId && typeof record.id === 'string' &&
-      typeof record.nameAr === 'string');
-  if (!parsed || !ownsRecords(parsed.branches) || !ownsRecords(parsed.subjects) ||
-    !ownsRecords(parsed.stages) || !parsed.stages.every(stage => ownsRecords(stage.grades))) {
+  const ownsRecords = (records: unknown) =>
+    Array.isArray(records) &&
+    records.every(
+      record =>
+        record?.tenantId === tenantId &&
+        typeof record.id === 'string' &&
+        typeof record.nameAr === 'string'
+    );
+  if (
+    !parsed ||
+    !ownsRecords(parsed.branches) ||
+    !ownsRecords(parsed.subjects) ||
+    !ownsRecords(parsed.stages) ||
+    !parsed.stages.every(stage => ownsRecords(stage.grades))
+  ) {
     throw new Error('تعذّر قراءة البيانات الأساسية المحفوظة في هذا المتصفح');
   }
-  return { ...parsed, branches: getDataProvider().keepSavedRecords(parsed.branches, INITIAL_SEEDED_DATA.branches) };
+  const dal = getDataProvider();
+  const branches =
+    dal instanceof MockDataProvider
+      ? dal.keepSavedRecords(parsed.branches, INITIAL_SEEDED_DATA.branches)
+      : parsed.branches;
+  return { ...parsed, branches };
 }
 
 export async function saveDemoMasterData(tenantId: string, input: MasterDataAction) {
@@ -40,9 +55,17 @@ export async function saveDemoMasterData(tenantId: string, input: MasterDataActi
   const materialKey = demoMaterialsKey(tenantId);
   const materialSnapshot = storage.getItem(materialKey);
   const catalog = await readDemoData(tenantId, raw);
-  const materials = input.action === 'deleteSubject' ? await readDemoMaterials(tenantId, materialSnapshot) : undefined;
+  const materials =
+    input.action === 'deleteSubject'
+      ? await readDemoMaterials(tenantId, materialSnapshot)
+      : undefined;
   const { data } = await changeMasterData(getDataProvider(), tenantId, catalog, input, materials);
-  if (storage.getItem(key) !== raw || (materials && storage.getItem(materialKey) !== materialSnapshot)) throw new Error(masterDataConflict);
+  if (
+    storage.getItem(key) !== raw ||
+    (materials && storage.getItem(materialKey) !== materialSnapshot)
+  ) {
+    throw new Error(masterDataConflict);
+  }
   schedule?.verifyCurrent();
   try {
     storage.setItem(key, JSON.stringify(data));
@@ -52,7 +75,12 @@ export async function saveDemoMasterData(tenantId: string, input: MasterDataActi
   return data;
 }
 
-async function requestCatalog(tenant: Tenant, token: string, input?: MasterDataAction, signal?: AbortSignal) {
+async function requestCatalog(
+  tenant: Tenant,
+  token: string,
+  input?: MasterDataAction,
+  signal?: AbortSignal
+) {
   const response = await fetch(`/api/center/${encodeURIComponent(tenant.slug)}/master-data`, {
     cache: 'no-store',
     signal,
@@ -63,8 +91,11 @@ async function requestCatalog(tenant: Tenant, token: string, input?: MasterDataA
     },
     body: input ? JSON.stringify(input) : undefined,
   });
-  const result = await response.json().catch(() => null) as {
-    success: boolean; data?: MasterData; error?: string; canEdit?: boolean;
+  const result = (await response.json().catch(() => null)) as {
+    success: boolean;
+    data?: MasterData;
+    error?: string;
+    canEdit?: boolean;
   } | null;
   if (!response.ok || !result?.success || !result.data) {
     throw new Error(result?.error ?? 'تعذّر الاتصال بخدمة البيانات الأساسية');
@@ -75,7 +106,11 @@ async function requestCatalog(tenant: Tenant, token: string, input?: MasterDataA
 export function useMasterDataCatalog(tenant: Tenant, demoAdmin: boolean) {
   const auth = useFirebaseAuthSession();
   const token = auth.idToken;
-  const demo = !auth.configured || !token;
+  const isProduction =
+    process.env.DATA_PROVIDER_MODE === 'production' ||
+    process.env.DATA_PROVIDER_MODE === 'firebase' ||
+    process.env.NODE_ENV === 'production';
+  const demo = !isProduction && (!auth.configured || !token);
   const accountId = auth.user?.uid ?? token ?? (demo ? 'demo' : null);
   const tenantId = tenant.id;
   const key = masterDataStorageKey(tenantId);
@@ -91,6 +126,17 @@ export function useMasterDataCatalog(tenant: Tenant, demoAdmin: boolean) {
   const refresh = useCallback(() => setRefreshCount(count => count + 1), []);
 
   useEffect(() => {
+    if (!demo && !token) {
+      if (!auth.loading) {
+        setState({
+          tenantId,
+          accountId: null,
+          error: 'يلزم تسجيل الدخول بحساب إدارة السنتر للوصول إلى البيانات الأساسية السحابية',
+        });
+      }
+      return;
+    }
+
     const controller = new AbortController();
     async function load() {
       const requestRevision = ++revision.current;
@@ -103,9 +149,11 @@ export function useMasterDataCatalog(tenant: Tenant, demoAdmin: boolean) {
       } catch (cause) {
         if (current()) {
           const error = cause instanceof Error ? cause.message : 'تعذّر تحميل البيانات الأساسية';
-          setState(previous => previous?.tenantId === tenantId && previous.accountId === accountId
-            ? { ...previous, error }
-            : { tenantId, accountId, error });
+          setState(previous =>
+            previous?.tenantId === tenantId && previous.accountId === accountId
+              ? { ...previous, error }
+              : { tenantId, accountId, error }
+          );
         }
       }
     }
@@ -118,12 +166,14 @@ export function useMasterDataCatalog(tenant: Tenant, demoAdmin: boolean) {
       controller.abort();
       if (demo) window.removeEventListener('storage', sync);
     };
-  }, [demo, key, tenant, tenantId, accountId, token, refreshCount]);
+  }, [auth.loading, demo, key, tenant, tenantId, accountId, token, refreshCount]);
 
-  const current = state?.tenantId === tenantId && state.accountId === accountId && (demo || token) ? state : undefined;
+  const current =
+    state?.tenantId === tenantId && state.accountId === accountId && (demo || token || state?.error)
+      ? state
+      : undefined;
   const canEdit = Boolean(current?.data && !current.error && (demo ? demoAdmin : current.canEdit));
 
-  const isProduction = process.env.DATA_PROVIDER_MODE === 'production' || process.env.NODE_ENV === 'production';
   const [saving, setSaving] = useState(false);
   const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
 
@@ -149,7 +199,11 @@ export function useMasterDataCatalog(tenant: Tenant, demoAdmin: boolean) {
   }
 
   return {
-    auth, demo: !isProduction && demo, canEdit, save, refresh,
+    auth,
+    demo,
+    canEdit,
+    save,
+    refresh,
     ready: Boolean(current?.data),
     data: current?.data ?? emptyMasterData,
     loading: auth.loading || Boolean((demo || token) && !current),

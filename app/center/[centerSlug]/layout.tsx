@@ -1,5 +1,6 @@
 import React from 'react';
 import { Metadata } from 'next';
+import { cookies } from 'next/headers';
 import { getDataProvider } from '@/lib/dal';
 import { TenantProvider } from '@/components/layout/tenant-provider';
 import { TenantLayout } from '@/components/layout/tenant-layout';
@@ -16,7 +17,7 @@ export async function generateMetadata({
 }: CenterDynamicLayoutProps): Promise<Metadata> {
   const { centerSlug } = await Promise.resolve(params);
   const dal = getDataProvider();
-  const tenant = await dal.getTenantBySlug(centerSlug);
+  const tenant = await dal.getTenantBySlug(centerSlug).catch(() => null);
 
   if (!tenant) {
     return {
@@ -35,7 +36,13 @@ export default async function CenterDynamicLayout({
   params,
 }: CenterDynamicLayoutProps) {
   const { centerSlug } = await Promise.resolve(params);
-  const dal = getDataProvider();
+  let token: string | undefined;
+  try {
+    token = cookies().get('yc_token')?.value;
+  } catch {
+    token = undefined;
+  }
+  const dal = getDataProvider(token);
   const tenant = await dal.getTenantBySlug(centerSlug);
 
   if (!tenant) {
@@ -47,8 +54,8 @@ export default async function CenterDynamicLayout({
   }
 
   const [branches, users] = await Promise.all([
-    dal.getBranches(tenant.id),
-    dal.getUsers(tenant.id),
+    dal.getBranches(tenant.id).catch(() => []),
+    dal.getUsers(tenant.id).catch(() => []),
   ]);
 
   return (

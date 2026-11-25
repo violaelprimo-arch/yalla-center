@@ -49,7 +49,6 @@ import { calculateDiscount } from '@/lib/finance/discounts';
 import { GROUP_PRICING_LABELS, slotSummary, studentGroupFee } from '@/lib/timetable/group-schedule';
 import { BrandLogo } from '@/components/brand/brand-logo';
 import { getFreshFirebaseIdToken } from '@/lib/firebase/client';
-import { saveCloudStudent, saveCloudEnrollment } from '@/lib/firebase/client-sync';
 
 const DAYS_NAMES: Record<number, string> = {
   0: 'الأحد',
@@ -80,8 +79,9 @@ function generateBarcodePattern(text: string) {
 
 export default function StudentsDirectoryPage() {
   const { tenant, masterData, groupData } = useTenant();
-  const { stages: masterStages, subjects: masterSubjects } = masterData.data;
-  const dal = useMemo(() => getDataProvider(), []);
+  const { auth, data: { stages: masterStages, subjects: masterSubjects } } = masterData;
+  const dal = useMemo(() => getDataProvider(auth.idToken || undefined), [auth.idToken]);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   // Data states
   const [students, setStudents] = useState<User[]>([]);
@@ -105,7 +105,12 @@ export default function StudentsDirectoryPage() {
 
   // Refresh handler
   const loadData = useCallback(async () => {
+    if (process.env.NODE_ENV !== 'test' && !auth.idToken) {
+      if (!auth.loading) setIsLoading(false);
+      return;
+    }
     setIsLoading(true);
+    setLoadError(null);
     try {
       const [allUsers, allEnrollments, allInvoices] = await Promise.all([
         dal.getUsers(tenant.id, { role: 'STUDENT' }),
@@ -115,10 +120,12 @@ export default function StudentsDirectoryPage() {
       setStudents(allUsers);
       setEnrollments(allEnrollments);
       setInvoices(allInvoices);
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : 'تعذّر تحميل بيانات الطلاب من السحابة');
     } finally {
       setIsLoading(false);
     }
-  }, [dal, tenant.id]);
+  }, [dal, tenant.id, auth.idToken, auth.loading]);
 
   useEffect(() => {
     loadData();
@@ -750,7 +757,7 @@ function StudentRegistrationModal({
     setErrorMessage(null);
 
     try {
-      const created = await dal.createStudent(tenantId, {
+      await dal.createStudent(tenantId, {
         fullName: fullName.trim(),
         studentCode: studentCode.trim(),
         phone: phone.trim() || undefined,
@@ -763,11 +770,6 @@ function StudentRegistrationModal({
         guardianPhone: guardianPhone.trim(),
         avatarUrl: '/brand/yalla-center-icon.png',
       });
-      getFreshFirebaseIdToken().then((token) => {
-        if (token && tenant?.slug && created) {
-          saveCloudStudent(tenant.slug, token, created).catch(() => null);
-        }
-      }).catch(() => null);
       onSuccess();
     } catch (err: any) {
       setErrorMessage(err.message || 'حدث خطأ أثناء حفظ بيانات الطالب');
@@ -1079,11 +1081,6 @@ function GroupEnrollmentModal({
       if (!res.success) {
         setErrorMessage(res.error || 'فشل في تسجيل الاشتراك');
       } else {
-        getFreshFirebaseIdToken().then((token) => {
-          if (token && tenant?.slug && res?.enrollment) {
-            saveCloudEnrollment(tenant.slug, token, res.enrollment).catch(() => null);
-          }
-        }).catch(() => null);
         onSuccess();
       }
     } catch (err: any) {

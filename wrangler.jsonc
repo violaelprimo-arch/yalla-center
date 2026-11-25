@@ -10,7 +10,11 @@
     "directory": ".open-next/assets",
     "binding": "ASSETS"
   },
+  "version_metadata": {
+    "binding": "CF_VERSION_METADATA"
+  },
   "vars": {
+    "APP_ENV": "production",
     "DATA_PROVIDER_MODE": "production",
     "FIREBASE_PROJECT_ID": "yalla-center",
     "NEXT_PUBLIC_FIREBASE_API_KEY": "AIzaSyCcKNXipMYZlwaZRYFKYqEFZnAxo1lwsB4",
@@ -21,5 +25,24 @@
     "NEXT_PUBLIC_FIREBASE_APP_ID": "1:876735697299:web:31eff284bfe9d6c8771866",
     "NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID": "G-2VCJL9XHT3",
     "NEXT_PUBLIC_FIREBASE_VAPID_KEY": "BMWN50P7wQrPxs_lmdMCchy0hbpupsLtyG2wPaljzrMyJz-BT5ORotoR99nLqOgMUdBXkT8nF1d9k-7QtVGEmVM"
+  },
+  "env": {
+    "staging": {
+      "name": "yalla-center-staging",
+      "workers_dev": true,
+      "vars": {
+        "APP_ENV": "staging",
+        "DATA_PROVIDER_MODE": "production",
+        "FIREBASE_PROJECT_ID": "yalla-center",
+        "NEXT_PUBLIC_FIREBASE_API_KEY": "AIzaSyCcKNXipMYZlwaZRYFKYqEFZnAxo1lwsB4",
+        "NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN": "yalla-center.firebaseapp.com",
+        "NEXT_PUBLIC_FIREBASE_PROJECT_ID": "yalla-center",
+        "NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET": "yalla-center.firebasestorage.app",
+        "NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID": "876735697299",
+        "NEXT_PUBLIC_FIREBASE_APP_ID": "1:876735697299:web:31eff284bfe9d6c8771866",
+        "NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID": "G-2VCJL9XHT3",
+        "NEXT_PUBLIC_FIREBASE_VAPID_KEY": "BMWN50P7wQrPxs_lmdMCchy0hbpupsLtyG2wPaljzrMyJz-BT5ORotoR99nLqOgMUdBXkT8nF1d9k-7QtVGEmVM"
+      }
+    }
   }
 }

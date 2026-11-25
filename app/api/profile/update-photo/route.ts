@@ -8,28 +8,61 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getDataProvider } from '@/lib/dal';
+import { getDataProvider, isCloudProductionMode } from '@/lib/dal/factory';
 import { validateProfilePhotoUpdate, UserSecurityContext } from '@/lib/security/rbac';
 import { UserRole } from '@/lib/dal/types';
+import {
+  createServerFirestoreStore,
+  extractBearerToken,
+  FirebaseAuthError,
+  resolveVerifiedMembership,
+  verifyFirebaseIdToken,
+} from '@/lib/firebase/server';
+
+export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
   try {
-    // 1. Resolve Actor Context from Request Headers or Cookies
-    const actorId =
-      request.headers.get('x-user-id') ||
-      request.cookies.get('yc_user_id')?.value ||
-      'user-student-1001';
+    let actorId: string;
+    let actorRole: UserRole;
+    let actorTenantSlug: string;
+    let bearerToken: string | undefined;
 
-    const actorRole = (
-      request.headers.get('x-user-role') ||
-      request.cookies.get('yc_role')?.value ||
-      'STUDENT'
-    ) as UserRole;
+    if (isCloudProductionMode()) {
+      const token =
+        extractBearerToken(request.headers.get('authorization')) ||
+        request.cookies.get('yc_token')?.value ||
+        '';
+      if (!token) {
+        return NextResponse.json(
+          { success: false, error: 'UNAUTHORIZED', message: 'يلزم تسجيل الدخول لتحديث الصورة الشخصية' },
+          { status: 401 }
+        );
+      }
+      const verified = await verifyFirebaseIdToken(token);
+      const store = await createServerFirestoreStore({ callerIdToken: token });
+      const membership = await resolveVerifiedMembership(store, verified.uid, verified.rawClaims);
+      actorId = verified.uid;
+      actorRole = (membership?.role || 'STUDENT') as UserRole;
+      actorTenantSlug = membership?.tenantId || '';
+      bearerToken = token;
+    } else {
+      actorId =
+        request.headers.get('x-user-id') ||
+        request.cookies.get('yc_user_id')?.value ||
+        'user-student-1001';
 
-    const actorTenantSlug =
-      request.headers.get('x-tenant-slug') ||
-      request.cookies.get('yc_tenant')?.value ||
-      'elmaher';
+      actorRole = (
+        request.headers.get('x-user-role') ||
+        request.cookies.get('yc_role')?.value ||
+        'STUDENT'
+      ) as UserRole;
+
+      actorTenantSlug =
+        request.headers.get('x-tenant-slug') ||
+        request.cookies.get('yc_tenant')?.value ||
+        '';
+    }
 
     const actorContext: UserSecurityContext = {
       id: actorId,
@@ -37,7 +70,6 @@ export async function POST(request: NextRequest) {
       tenantSlug: actorTenantSlug,
     };
 
-    // 2. Parse JSON Payload
     let body: any;
     try {
       body = await request.json();
@@ -65,7 +97,6 @@ export async function POST(request: NextRequest) {
 
     const targetUserId = body.userId || body.targetUserId || actorId;
 
-    // 3. Enforce Strict RBAC & Whitelist Guardrail (AC-4, AC-5)
     const guardResult = validateProfilePhotoUpdate(actorContext, targetUserId, body);
     if (!guardResult.success) {
       return NextResponse.json(
@@ -78,8 +109,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 4. Execute DAL Mutation
-    const dal = getDataProvider();
+    const dal = getDataProvider(bearerToken);
     const dalResult = await dal.updateUserProfilePhoto(
       targetUserId,
       guardResult.data!.avatarUrl,
@@ -106,6 +136,9 @@ export async function POST(request: NextRequest) {
       { status: 200 }
     );
   } catch (err: any) {
+    if (err instanceof FirebaseAuthError) {
+      return NextResponse.json({ success: false, error: 'UNAUTHORIZED', message: err.message }, { status: err.status });
+    }
     return NextResponse.json(
       {
         success: false,

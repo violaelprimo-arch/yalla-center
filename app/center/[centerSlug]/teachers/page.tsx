@@ -69,8 +69,12 @@ function TeachersDirectory() {
   const { tenant, currentRole, groupData, masterData } = useTenant();
   const { auth, data: { stages, subjects: centerSubjects } } = masterData;
   const { groups: centerGroups } = groupData;
-  const dal = useMemo(getDataProvider, []);
-  const demo = !auth.configured || !auth.idToken;
+  const dal = useMemo(() => getDataProvider(auth.idToken || undefined), [auth.idToken]);
+  const isProduction =
+    process.env.DATA_PROVIDER_MODE === 'production' ||
+    process.env.DATA_PROVIDER_MODE === 'firebase' ||
+    process.env.NODE_ENV === 'production';
+  const demo = !isProduction && (!auth.configured || !auth.idToken);
   const mayManageDemo = currentRole === 'PLATFORM_OWNER' || currentRole === 'CENTER_ADMIN';
 
   const [activeTab, setActiveTab] = useState<'directory' | 'accounting'>('directory');
@@ -103,6 +107,7 @@ function TeachersDirectory() {
 
   // Load teacher users from DAL
   useEffect(() => {
+    if (isProduction && !auth.idToken) return;
     let active = true;
     dal.getUsers(tenant.id, { role: 'TEACHER' })
       .then((users) => {
@@ -114,7 +119,7 @@ function TeachersDirectory() {
     return () => {
       active = false;
     };
-  }, [dal, tenant.id]);
+  }, [dal, tenant.id, auth.idToken, isProduction]);
 
   // Load teacher profiles & agreements
   useEffect(() => {
