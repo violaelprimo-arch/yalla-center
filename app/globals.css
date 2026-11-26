@@ -229,3 +229,129 @@
     page-break-inside: avoid !important;
   }
 }
+
+/* ============================================================================
+ * Yalla Center 2.0 (R4) — GPU-Friendly Motion, Safe Area & Reduced-Motion A11y
+ * Animations strictly animate transform and opacity for smooth 60fps compositing.
+ * ============================================================================ */
+
+@keyframes yc-fade-slide-up {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 8px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes yc-modal-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 8px, 0) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes yc-drawer-in-start {
+  from {
+    opacity: 0;
+    transform: translate3d(100%, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes yc-drawer-in-end {
+  from {
+    opacity: 0;
+    transform: translate3d(-100%, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes yc-drawer-in-bottom {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 100%, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes yc-shimmer {
+  from {
+    transform: translate3d(100%, 0, 0);
+  }
+  to {
+    transform: translate3d(-100%, 0, 0);
+  }
+}
+
+.gpu-accelerated {
+  will-change: transform, opacity;
+  transform: translateZ(0);
+}
+
+.animate-yc-page-enter {
+  animation: yc-fade-slide-up 0.22s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.animate-yc-modal {
+  animation: yc-modal-in 0.2s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.animate-yc-drawer-start {
+  animation: yc-drawer-in-start 0.24s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.animate-yc-drawer-end {
+  animation: yc-drawer-in-end 0.24s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.animate-yc-drawer-bottom {
+  animation: yc-drawer-in-bottom 0.24s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.animate-yc-shimmer {
+  animation: yc-shimmer 1.5s infinite linear;
+}
+
+/* Mobile Bottom Navigation Safe Area */
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* Accessibility: Honor User Reduced-Motion Preferences */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .card-interactive:hover,
+  .animate-yc-page-enter,
+  .animate-yc-modal,
+  .animate-yc-drawer-start,
+  .animate-yc-drawer-end,
+  .animate-yc-drawer-bottom,
+  .animate-yc-shimmer {
+    animation: none !important;
+    transform: none !important;
+  }
+}
