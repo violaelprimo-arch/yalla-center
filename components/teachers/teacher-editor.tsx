@@ -97,8 +97,10 @@ export function TeacherEditor({
 }: Props) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [step, setStep] = useState<1 | 2>(1);
+  const validSubjectIds = new Set(subjects.map((s) => s.id));
   const [input, setInput] = useState<TeacherInput>(() => ({
     ...initial,
+    subjectIds: (initial.subjectIds || []).filter((id) => validSubjectIds.size === 0 || validSubjectIds.has(id)),
     contracts: initial.contracts || [],
     permissions: initial.permissions || ['viewAccount', 'viewSchedule', 'viewStudents'],
     tabs: initial.tabs || teacherTabs,
@@ -203,8 +205,10 @@ export function TeacherEditor({
       value: 0,
     } as any));
 
+    const activeSubjectIds = new Set(subjects.map((s) => s.id));
     const payload: TeacherInput = {
       ...input,
+      subjectIds: (input.subjectIds || []).filter((id) => activeSubjectIds.size === 0 || activeSubjectIds.has(id)),
       contracts,
     };
 

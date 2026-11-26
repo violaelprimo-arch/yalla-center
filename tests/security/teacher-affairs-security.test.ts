@@ -251,4 +251,31 @@ describe('Teacher affairs permissions and compensation', () => {
       getSignedInTeacher(migratedCtx, { ...token, uid: 'other-user-uid' })
     ).rejects.toMatchObject({ status: 403 });
   });
+
+  it('allows updating an existing teacher carrying a deleted legacy subjectId while rejecting newly submitted invalid subjectIds', async () => {
+    const ctx = await context();
+    store.seed(`teacher_profiles/${tenantId}~teacher-legacy-subj`, {
+      id: 'teacher-legacy-subj',
+      tenantId,
+      fullName: 'احمد عبد العزيز',
+      phone: '01121320507',
+      subjects: ['deleted-legacy-subject-id'],
+      active: true,
+    });
+
+    // Rejects unknown new subject
+    await expect(
+      saveTeacherProfile(ctx, 'teacher-legacy-subj', 0, {
+        ...teacher,
+        subjectIds: ['unknown-invalid-subj'],
+      })
+    ).rejects.toMatchObject({ status: 400 });
+
+    // Succeeds when saving with deleted legacy subjectId + valid current subjectId, pruning the deleted ID
+    const saved = await saveTeacherProfile(ctx, 'teacher-legacy-subj', 0, {
+      ...teacher,
+      subjectIds: ['deleted-legacy-subject-id', 'sub-math-3sec'],
+    });
+    expect(saved.subjectIds).toEqual(['sub-math-3sec']);
+  });
 });

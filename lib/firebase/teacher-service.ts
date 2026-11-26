@@ -199,12 +199,14 @@ export async function saveTeacherProfile(
     throw new TeacherServiceError(400, 'اختر المراحل والصفوف من البيانات الأساسية');
   }
   const subjects = new Set(masterData.subjects.map(subject => subject.id));
-  if (input.subjectIds.some(subjectId => !subjects.has(subjectId))) {
+  const previousSubjects = new Set(previous?.subjectIds ?? []);
+  if (input.subjectIds.some(subjectId => !subjects.has(subjectId) && !previousSubjects.has(subjectId))) {
     throw new TeacherServiceError(400, 'اختر المواد من قائمة هذا السنتر');
   }
+  const cleanSubjectIds = input.subjectIds.filter(subjectId => subjects.has(subjectId));
 
   const profile: TeacherProfile = {
-    ...input, id, tenantId: tenant.id, active: true, version: version + 1, updatedAt: new Date().toISOString(),
+    ...input, subjectIds: cleanSubjectIds, id, tenantId: tenant.id, active: true, version: version + 1, updatedAt: new Date().toISOString(),
   };
   const writes: FirestoreWriteOperation[] = [
     { type: 'set', documentPath: path, data: { ...profile }, currentDocument: precondition },
