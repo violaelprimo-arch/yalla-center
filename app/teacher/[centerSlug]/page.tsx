@@ -46,8 +46,19 @@ export default function TeacherPortalPage({ params }: { params: { centerSlug: st
     setSigningIn(true);
     setSigninError('');
     try {
-      if (method === 'username') await auth.signIn(teacherPasswordEmail(centerSlug, username), password);
-      else await signInFirebaseGoogle();
+      if (method === 'username') {
+        try {
+          await auth.signIn(teacherPasswordEmail(centerSlug, username), password);
+        } catch (err) {
+          if (centerSlug === 'elmaher') {
+            await auth.signIn(teacherPasswordEmail('al-maher', username), password);
+          } else {
+            throw err;
+          }
+        }
+      } else {
+        await signInFirebaseGoogle();
+      }
       setPassword('');
     } catch {
       setSigninError(method === 'username'
@@ -68,7 +79,7 @@ export default function TeacherPortalPage({ params }: { params: { centerSlug: st
     </header>
 
     {!auth.configured && <p className="rounded-2xl border border-border bg-card p-5 text-sm text-muted-foreground">خدمة المصادقة السحابية غير متوفرة حالياً في هذه البيئة.</p>}
-    {auth.configured && !auth.idToken && !auth.loading && <section className="card-elevated mx-auto max-w-md space-y-4 rounded-2xl border border-border p-5">
+    {auth.configured && (!auth.idToken || Boolean(current?.error)) && !auth.loading && <section className="card-elevated mx-auto max-w-md space-y-4 rounded-2xl border border-border p-5">
       <h2 className="text-lg font-bold">تسجيل دخول المعلم</h2>
       <form className="space-y-3" onSubmit={event => { event.preventDefault(); void signIn('username'); }}>
         <label className="block text-sm">اسم المستخدم
@@ -85,7 +96,10 @@ export default function TeacherPortalPage({ params }: { params: { centerSlug: st
       {signinError && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{signinError}</p>}
     </section>}
     {(auth.loading || (auth.idToken && !current)) && <p role="status" className="text-sm text-muted-foreground">جارٍ تحميل بوابة المعلم…</p>}
-    {current?.error && <p role="alert" className="rounded-xl bg-red-500/10 p-3 text-sm text-red-600 dark:text-red-400">{current.error}</p>}
+    {current?.error && <div role="alert" className="rounded-xl bg-red-500/10 p-3 text-sm text-red-600 dark:text-red-400 space-y-1">
+      <p className="font-bold">{current.error}</p>
+      <p className="text-xs opacity-90">إذا كنت مسجلاً بحساب مالك المنصة أو حساب آخر، يمكنك تسجيل الدخول بحساب المعلم من النموذج أعلاه مباشرة.</p>
+    </div>}
     {portal && <>
       <div className="flex items-center gap-3">
         {portal.teacher.avatarData ? <img src={portal.teacher.avatarData} alt="" className="size-12 rounded-xl object-cover" />

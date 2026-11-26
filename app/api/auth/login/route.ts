@@ -152,24 +152,47 @@ export async function POST(req: NextRequest) {
         process.env.FIREBASE_API_KEY?.trim() ||
         DEFAULT_FIREBASE_WEB_CONFIG.apiKey;
 
-      const authUrl = `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${apiKey}`;
-      const authRes = await fetch(authUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: targetEmail,
-          password,
-          returnSecureToken: true,
-        }),
-      });
-
-      const authData = (await authRes.json()) as {
-        idToken?: string;
-        localId?: string;
-        email?: string;
-        displayName?: string;
-        error?: { message?: string };
+      const signInWithEmail = async (loginTargetEmail: string) => {
+        const authUrl = `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${apiKey}`;
+        const authRes = await fetch(authUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: loginTargetEmail,
+            password,
+            returnSecureToken: true,
+          }),
+        });
+        const authData = (await authRes.json()) as {
+          idToken?: string;
+          localId?: string;
+          email?: string;
+          displayName?: string;
+          error?: { message?: string };
+        };
+        return { authRes, authData };
       };
+
+      let { authRes, authData } = await signInWithEmail(targetEmail);
+
+      // Migrated teachers originally created under al-maher keep +al-maher in Firebase Auth
+      const primaryCode = authData.error?.message || '';
+      const candidateTenantSlug = allTenants[0]?.slug || '';
+      if (
+        (!authRes.ok || !authData.idToken) &&
+        !trimmedIdentifier.includes('@') &&
+        candidateTenantSlug === 'elmaher' &&
+        targetEmail === teacherPasswordEmail('elmaher', trimmedIdentifier) &&
+        (primaryCode.includes('INVALID_LOGIN_CREDENTIALS') || primaryCode.includes('EMAIL_NOT_FOUND'))
+      ) {
+        const legacyEmail = teacherPasswordEmail('al-maher', trimmedIdentifier);
+        const legacyAttempt = await signInWithEmail(legacyEmail);
+        if (legacyAttempt.authRes.ok && legacyAttempt.authData.idToken) {
+          authRes = legacyAttempt.authRes;
+          authData = legacyAttempt.authData;
+          targetEmail = legacyEmail;
+        }
+      }
 
       if (!authRes.ok || !authData.idToken || !authData.localId) {
         const rawCode = authData.error?.message || 'INVALID_LOGIN_CREDENTIALS';

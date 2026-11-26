@@ -6,7 +6,8 @@ import {
 } from '@/lib/firebase/teacher-service';
 import type { VerifiedFirebaseToken } from '@/lib/firebase/server';
 import {
-  emptyTeacherInput, matchTeacherContract, teacherInputSchema, type TeacherInput,
+  emptyTeacherInput, matchTeacherContract, normalizeTeacherProfile, teacherInputSchema,
+  teacherInputFrom, teacherProfileUser, type TeacherInput,
 } from '@/lib/teachers/profile';
 import { calculateTeacherSessionPay } from '@/lib/teachers/session-compensation';
 import { cairoClock } from '@/lib/attendance/reception';
@@ -148,5 +149,106 @@ describe('Teacher affairs permissions and compensation', () => {
       .toEqual({ teacherDue: 120, centerNet: 380 });
     expect(calculateTeacherSessionPay({ level: subject.grade, model: 'private', value: 62.5 }, session, 20, 500))
       .toEqual({ teacherDue: 312.5, centerNet: 187.5 });
+  });
+
+  it('normalizes legacy teacher_profiles documents missing contracts, permissions, tabs, and version', () => {
+    const normalized = normalizeTeacherProfile({
+      id: 'teacher-legacy-1',
+      tenantId: 'tenant-elmaher-001',
+      fullName: 'أ. أشرف شاهين',
+      phone: '01099887766',
+      subjects: ['subj-1'],
+    });
+    expect(normalized).toMatchObject({
+      id: 'teacher-legacy-1',
+      tenantId: 'tenant-elmaher-001',
+      subjectIds: ['subj-1'],
+      contracts: [],
+      permissions: [],
+      active: true,
+      version: 0,
+      login: null,
+    });
+    expect(normalized.tabs.length).toBeGreaterThan(0);
+    expect(() => teacherInputFrom(normalized)).not.toThrow();
+    expect(teacherProfileUser(normalized).isActive).toBe(true);
+  });
+
+  it('stores the real provisioned Firebase Auth UID in staff_memberships and teacher_login_keys', async () => {
+    const ctx = await context();
+    const realFirebaseUid = 'firebase-signup-random-uid-987';
+    const newTeacherId = 'teacher-11111111-2222-4333-8444-555555555555';
+    const provision = vi.fn(async () => realFirebaseUid);
+    const profile = await saveTeacherProfile(
+      ctx,
+      newTeacherId,
+      0,
+      { ...teacher, login: { mode: 'username', username: 'client-signup-teacher' } },
+      'StrongPass2026!',
+      provision
+    );
+
+    const membership = await store.getDocument<{ uid: string; role: string; teacherId: string }>(
+      `staff_memberships/${realFirebaseUid}`
+    );
+    expect(membership.exists).toBe(true);
+    if (membership.exists) {
+      expect(membership.data.uid).toBe(realFirebaseUid);
+      expect(membership.data.role).toBe('TEACHER');
+      expect(membership.data.teacherId).toBe(newTeacherId);
+    }
+
+    const token: VerifiedFirebaseToken = {
+      uid: realFirebaseUid,
+      email: 'client-signup-teacher+al-maher@teachers.yalla-center.invalid',
+      emailVerified: true,
+      rawClaims: { firebase: { sign_in_provider: 'password' } },
+    };
+    await expect(getSignedInTeacher(ctx, token)).resolves.toEqual(profile);
+    await expect(getSignedInTeacher(ctx, { ...token, uid: 'wrong-uid' })).rejects.toMatchObject({ status: 403 });
+  });
+
+  it('resolves legacy migrated teacher via verified staff_memberships and +al-maher email alias in elmaher', async () => {
+    const elmaherTenant = {
+      id: 'tenant-elmaher-001',
+      slug: 'elmaher',
+      nameAr: 'سنتر الماهر',
+      nameEn: 'El Maher',
+      subscriptionPlan: 'pro' as const,
+      isActive: true,
+      settings: { currency: 'EGP', enableWhatsApp: true, enableFCM: true },
+      createdAt: '2026-01-01T00:00:00Z',
+      updatedAt: '2026-01-01T00:00:00Z',
+    };
+    const migratedCtx = { dal, store, tenant: elmaherTenant };
+    store.seed('teacher_profiles/tenant-elmaher-001~teacher-ashraf', {
+      id: 'teacher-ashraf',
+      tenantId: 'tenant-elmaher-001',
+      fullName: 'أ. أشرف شاهين',
+      phone: '01099887766',
+      uid: 'uid-ashraf-real',
+      active: true,
+    });
+    store.seed('staff_memberships/uid-ashraf-real', {
+      uid: 'uid-ashraf-real',
+      tenantId: 'tenant-elmaher-001',
+      role: 'TEACHER',
+      teacherId: 'teacher-ashraf',
+      isActive: true,
+    });
+
+    const token: VerifiedFirebaseToken = {
+      uid: 'uid-ashraf-real',
+      email: 'ashraf_shaheen+al-maher@teachers.yalla-center.invalid',
+      emailVerified: true,
+      rawClaims: { firebase: { sign_in_provider: 'password' } },
+    };
+    const resolved = await getSignedInTeacher(migratedCtx, token);
+    expect(resolved.id).toBe('teacher-ashraf');
+    expect(resolved.fullName).toBe('أ. أشرف شاهين');
+
+    await expect(
+      getSignedInTeacher(migratedCtx, { ...token, uid: 'other-user-uid' })
+    ).rejects.toMatchObject({ status: 403 });
   });
 });

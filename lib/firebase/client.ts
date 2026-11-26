@@ -255,6 +255,9 @@ export function useFirebaseAuthSession(): FirebaseAuthSessionState {
       }
       try {
         const token = await nextUser.getIdToken();
+        if (typeof window !== 'undefined') {
+          sessionStorage.setItem('yc_id_token', token);
+        }
         setUser(nextUser);
         setIdToken(token);
         setError(null);

@@ -128,7 +128,7 @@ export default function ReceptionScanPage() {
   const loadTenantData = useCallback(async () => {
     const token = masterData.auth.idToken;
     if (process.env.NODE_ENV !== 'test' && !token) return;
-    const dal = getDataProvider(undefined, token || undefined);
+    const dal = getDataProvider(token || undefined);
     try {
       const [sess, users] = await Promise.all([
         dal.getSessions(tenant.id),
@@ -154,7 +154,7 @@ export default function ReceptionScanPage() {
     if (!selectedSession) return;
     const token = masterData.auth.idToken;
     if (process.env.NODE_ENV !== 'test' && !token) return;
-    const dal = getDataProvider(undefined, token || undefined);
+    const dal = getDataProvider(token || undefined);
 
     try {
       const [stats, atts, enrollments, allUsers] = await Promise.all([
@@ -213,7 +213,7 @@ export default function ReceptionScanPage() {
       }
 
       setIsProcessingScan(true);
-      const dal = getDataProvider(undefined, masterData.auth.idToken || undefined);
+      const dal = getDataProvider(masterData.auth.idToken || undefined);
 
       try {
         const result = await dal.recordAttendanceScan(
@@ -309,7 +309,7 @@ export default function ReceptionScanPage() {
 
   const handlePayment = async (amount: number, method: PaymentMethod, notes: string) => {
     if (!paymentStudent || !canRecordAttendance) throw new Error('تعذّر تسجيل السداد');
-    const updatedStudent = await getDataProvider(undefined, masterData.auth.idToken || undefined).collectStudentPayment({
+    const updatedStudent = await getDataProvider(masterData.auth.idToken || undefined).collectStudentPayment({
       tenantId: tenant.id, studentId: paymentStudent.id, sessionId: selectedSession?.id, amountPaid: amount,
       paymentMethod: method, cashierUserId: currentUser.id, notes,
     });

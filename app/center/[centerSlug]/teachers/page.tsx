@@ -105,13 +105,19 @@ function TeachersDirectory() {
     }
   }, [auth.loading, auth.idToken, mayManageDemo, tenant.slug]);
 
-  // Load teacher users from DAL
+  // Load base teachers in demo/test mode; in cloud mode, /api/center/[slug]/teachers returns all teacher_profiles
   useEffect(() => {
-    if (isProduction && !auth.idToken) return;
+    if (!demo) {
+      setBaseTeachers([]);
+      return;
+    }
     let active = true;
     dal.getUsers(tenant.id, { role: 'TEACHER' })
       .then((users) => {
-        if (active) setBaseTeachers(users.filter((user) => user.tenantId === tenant.id));
+        if (active) {
+          setBaseTeachers(users.filter((user) => user.tenantId === tenant.id));
+          setError('');
+        }
       })
       .catch(() => {
         if (active) setError('تعذّر تحميل دليل المعلمين والمواد');
@@ -119,7 +125,7 @@ function TeachersDirectory() {
     return () => {
       active = false;
     };
-  }, [dal, tenant.id, auth.idToken, isProduction]);
+  }, [dal, tenant.id, demo]);
 
   // Load teacher profiles & agreements
   useEffect(() => {

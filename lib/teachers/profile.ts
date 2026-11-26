@@ -125,9 +125,40 @@ export const emptyTeacherInput: TeacherInput = {
   login: null, permissions: [], tabs: teacherTabs,
 };
 
+export function normalizeTeacherProfile(
+  raw: Partial<TeacherProfile> & { subjects?: string[]; stages?: string[]; uid?: string }
+): TeacherProfile {
+  const subjectIds = Array.isArray(raw.subjectIds)
+    ? raw.subjectIds
+    : Array.isArray(raw.subjects)
+      ? raw.subjects
+      : [];
+  const contracts = Array.isArray(raw.contracts) ? raw.contracts : [];
+  const permissions = Array.isArray(raw.permissions) ? raw.permissions : [];
+  const tabs = Array.isArray(raw.tabs) ? raw.tabs : teacherTabs;
+
+  return {
+    id: raw.id || '',
+    tenantId: raw.tenantId || '',
+    fullName: raw.fullName || 'معلم',
+    phone: raw.phone || '',
+    phone2: raw.phone2 || '',
+    avatarData: raw.avatarData ?? null,
+    contracts,
+    subjectIds,
+    login: raw.login ?? null,
+    permissions,
+    tabs,
+    active: raw.active !== false,
+    version: typeof raw.version === 'number' ? raw.version : 0,
+    updatedAt: raw.updatedAt || new Date().toISOString(),
+  };
+}
+
 export function teacherInputFrom(profile?: TeacherProfile, teacher?: User, groups: Group[] = []): TeacherInput {
   if (profile) {
-    const { fullName, phone, phone2, avatarData, contracts, subjectIds, login, permissions, tabs } = profile;
+    const normalized = normalizeTeacherProfile(profile);
+    const { fullName, phone, phone2, avatarData, contracts, subjectIds, login, permissions, tabs } = normalized;
     return { fullName, phone, phone2, avatarData, contracts, subjectIds, login, permissions, tabs };
   }
 
@@ -163,7 +194,9 @@ export function invalidTeacherLevel(contracts: TeacherContract[], stages: Educat
 }
 
 export function canUseTeacherTab(profile: TeacherProfile, tab: TeacherTab) {
-  return profile.active && profile.tabs.includes(tab) && profile.permissions.includes(TEACHER_TABS[tab].permission);
+  const tabs = Array.isArray(profile.tabs) ? profile.tabs : [];
+  const permissions = Array.isArray(profile.permissions) ? profile.permissions : [];
+  return profile.active && tabs.includes(tab) && permissions.includes(TEACHER_TABS[tab].permission);
 }
 
 export function teacherPasswordEmail(centerSlug: string, username: string) {
@@ -171,11 +204,12 @@ export function teacherPasswordEmail(centerSlug: string, username: string) {
 }
 
 export function teacherProfileUser(profile: TeacherProfile, base?: User): User {
+  const normalized = normalizeTeacherProfile(profile);
   return {
-    ...base, id: profile.id, tenantId: profile.tenantId, role: 'TEACHER',
-    fullName: profile.fullName, phone: profile.phone, avatarUrl: profile.avatarData ?? base?.avatarUrl,
-    email: profile.login?.mode === 'google' ? profile.login.email : undefined,
-    balanceDue: base?.balanceDue ?? 0, isActive: profile.active,
-    createdAt: base?.createdAt ?? profile.updatedAt, updatedAt: profile.updatedAt,
+    ...base, id: normalized.id, tenantId: normalized.tenantId, role: 'TEACHER',
+    fullName: normalized.fullName, phone: normalized.phone, avatarUrl: normalized.avatarData ?? base?.avatarUrl,
+    email: normalized.login?.mode === 'google' ? normalized.login.email : undefined,
+    balanceDue: base?.balanceDue ?? 0, isActive: normalized.active,
+    createdAt: base?.createdAt ?? normalized.updatedAt, updatedAt: normalized.updatedAt,
   };
 }

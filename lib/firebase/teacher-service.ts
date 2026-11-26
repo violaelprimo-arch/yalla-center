@@ -4,6 +4,7 @@ import type { Tenant } from '@/lib/dal/types';
 import {
   canUseTeacherTab,
   invalidTeacherLevel,
+  normalizeTeacherProfile,
   teacherPasswordEmail,
   type ExtraSessionRequest,
   type TeacherInput,
@@ -82,7 +83,7 @@ export async function assertTeacherManager(
 export async function listTeacherProfiles({ tenant, store }: TeacherServiceContext) {
   return (await store.queryCollection<TeacherProfile>('teacher_profiles', [
     { fieldPath: 'tenantId', op: 'EQUAL', value: tenant.id },
-  ])).map(row => row.data);
+  ])).map(row => normalizeTeacherProfile(row.data));
 }
 
 export async function listExtraSessionRequests({ tenant, store }: TeacherServiceContext) {
@@ -91,7 +92,7 @@ export async function listExtraSessionRequests({ tenant, store }: TeacherService
   ])).map(row => row.data).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
-async function provisionUsernameAccount(uid: string, email: string, password: string) {
+async function provisionUsernameAccount(uid: string, email: string, password: string): Promise<string> {
   const token = await getServiceAccountAccessToken(fetch, 'https://www.googleapis.com/auth/identitytoolkit').catch(() => null);
   if (token) {
     const base = `https://identitytoolkit.googleapis.com/v1/projects/${getFirebaseProjectId()}/accounts`;
@@ -103,7 +104,7 @@ async function provisionUsernameAccount(uid: string, email: string, password: st
 
     const created = await post('', { localId: uid, email, password });
     const result = await created.json() as { localId?: string; error?: { message?: string } };
-    if (created.ok && result.localId === uid) return;
+    if (created.ok && result.localId === uid) return result.localId;
 
     // An earlier save may have provisioned Auth before its Firestore commit failed.
     // Recover that account only when both its deterministic UID and email match.
@@ -113,7 +114,7 @@ async function provisionUsernameAccount(uid: string, email: string, password: st
       if (!lookup.ok || !account.users?.some(user => user.localId === uid && user.email?.toLowerCase() === email)) {
         throw new TeacherServiceError(409, 'اسم المستخدم مستخدم بالفعل. اختر اسمًا مختلفًا');
       }
-      return;
+      return uid;
     }
 
     if (result.error?.message?.startsWith('WEAK_PASSWORD')) {
@@ -131,7 +132,7 @@ async function provisionUsernameAccount(uid: string, email: string, password: st
   });
   const signUpData = await signUpRes.json() as { localId?: string; error?: { message?: string } };
   if (signUpRes.ok && signUpData.localId) {
-    return;
+    return signUpData.localId;
   }
 
   if (signUpData.error?.message === 'EMAIL_EXISTS') {
@@ -143,7 +144,7 @@ async function provisionUsernameAccount(uid: string, email: string, password: st
     });
     const signInData = await signInRes.json() as { localId?: string; error?: { message?: string } };
     if (signInRes.ok && signInData.localId) {
-      return;
+      return signInData.localId;
     }
     throw new TeacherServiceError(409, 'اسم المستخدم مستخدم بالفعل. اختر اسمًا مختلفًا');
   }
@@ -164,10 +165,11 @@ async function expectTeacher(
     if (snapshot.data.tenantId !== tenant.id || snapshot.data.id !== id) {
       throw new TeacherServiceError(404, 'المعلم غير موجود في هذا السنتر');
     }
-    if (snapshot.data.version !== version || !snapshot.updateTime) {
+    const existingVersion = typeof snapshot.data.version === 'number' ? snapshot.data.version : 0;
+    if (existingVersion !== version || !snapshot.updateTime) {
       throw new TeacherServiceError(409, 'بيانات المعلم اتعدلت من جهاز تاني. حدّث القائمة وحاول مرة أخرى');
     }
-    return { path, previous: snapshot.data, precondition: { updateTime: snapshot.updateTime } };
+    return { path, previous: normalizeTeacherProfile(snapshot.data), precondition: { updateTime: snapshot.updateTime } };
   }
 
   if (version !== 0) throw new TeacherServiceError(409, 'حدّث قائمة المعلمين وحاول مرة أخرى');
@@ -186,7 +188,7 @@ export async function saveTeacherProfile(
   version: number,
   input: TeacherInput,
   password?: string,
-  provision = provisionUsernameAccount,
+  provision: (uid: string, email: string, password: string) => Promise<string | void> = provisionUsernameAccount,
 ): Promise<TeacherProfile> {
   const { tenant, store, dal } = context;
   const { path, previous, precondition } = await expectTeacher(context, id, version);
@@ -227,8 +229,8 @@ export async function saveTeacherProfile(
         throw new TeacherServiceError(409, 'اسم المستخدم مستخدم بالفعل في المنصة. اختر اسماً مختلفاً');
       }
 
-      uid = `yc_${await digest(JSON.stringify([tenant.id, id, email]))}`;
-      await provision(uid, email, password);
+      const defaultUid = `yc_${await digest(JSON.stringify([tenant.id, id, email]))}`;
+      uid = (await provision(defaultUid, email, password)) || defaultUid;
 
       writes.push({
         type: 'set',
@@ -313,10 +315,14 @@ export async function archiveTeacherProfile(context: TeacherServiceContext, id: 
     { type: 'set', documentPath: path, data: { ...profile }, currentDocument: precondition },
   ];
   if (previous?.login) {
-    writes.push({ type: 'delete', documentPath: await loginPath(tenant, previous.login.mode, loginEmail(tenant, previous.login)) });
+    const prevLoginPath = await loginPath(tenant, previous.login.mode, loginEmail(tenant, previous.login));
+    writes.push({ type: 'delete', documentPath: prevLoginPath });
     if (previous.login.mode === 'username') {
       const prevEmail = loginEmail(tenant, previous.login);
-      const prevUid = `yc_${await digest(JSON.stringify([tenant.id, id, prevEmail]))}`;
+      const existingLink = await store.getDocument<LoginLink>(prevLoginPath);
+      const prevUid =
+        (existingLink.exists && existingLink.data.uid) ||
+        `yc_${await digest(JSON.stringify([tenant.id, id, prevEmail]))}`;
       writes.push({
         type: 'set',
         documentPath: `staff_memberships/${prevUid}`,
@@ -344,16 +350,52 @@ export async function getSignedInTeacher({ tenant, store }: TeacherServiceContex
   const unauthorized = () => new TeacherServiceError(403, 'حساب الدخول ده مش مرتبط بمعلم نشط في هذا السنتر');
   if (!mode || !email) throw unauthorized();
 
+  const matchesMigratedUsernameEmail = (username: string) =>
+    email === teacherPasswordEmail(tenant.slug, username) ||
+    (tenant.slug === 'elmaher' && email === teacherPasswordEmail('al-maher', username));
+
   const link = await store.getDocument<LoginLink>(await loginPath(tenant, mode, email));
-  if (!link.exists || link.data.tenantId !== tenant.id || (mode === 'username' && link.data.uid !== token.uid)) {
-    throw unauthorized();
+  if (link.exists && link.data.tenantId === tenant.id && (mode !== 'username' || link.data.uid === token.uid)) {
+    const record = await store.getDocument<TeacherProfile>(profilePath(tenant.id, link.data.teacherId));
+    if (record.exists) {
+      const normalized = normalizeTeacherProfile(record.data);
+      if (
+        normalized.active &&
+        normalized.tenantId === tenant.id &&
+        normalized.login?.mode === mode &&
+        loginEmail(tenant, normalized.login) === email
+      ) {
+        return normalized;
+      }
+    }
   }
-  const record = await store.getDocument<TeacherProfile>(profilePath(tenant.id, link.data.teacherId));
-  if (!record.exists || !record.data.active || record.data.tenantId !== tenant.id ||
-    record.data.login?.mode !== mode || loginEmail(tenant, record.data.login) !== email) {
-    throw unauthorized();
+
+  // Fallback for teachers linked via verified staff_memberships (e.g., migrated al-maher -> elmaher or client signUp UID)
+  if (mode === 'username') {
+    const membership = await store.getDocument<StaffMembershipRecord>(`staff_memberships/${token.uid}`);
+    if (
+      membership.exists &&
+      membership.data.isActive &&
+      membership.data.role === 'TEACHER' &&
+      membership.data.tenantId === tenant.id &&
+      membership.data.teacherId
+    ) {
+      const record = await store.getDocument<TeacherProfile & { uid?: string }>(
+        profilePath(tenant.id, membership.data.teacherId)
+      );
+      if (record.exists) {
+        const normalized = normalizeTeacherProfile(record.data);
+        const legacyUidMatch = !normalized.login && record.data.uid === token.uid;
+        const loginMatch =
+          normalized.login?.mode === 'username' && matchesMigratedUsernameEmail(normalized.login.username);
+        if (normalized.active && normalized.tenantId === tenant.id && (loginMatch || legacyUidMatch)) {
+          return normalized;
+        }
+      }
+    }
   }
-  return record.data;
+
+  throw unauthorized();
 }
 
 export async function readTeacherPortal(context: TeacherServiceContext, teacher: TeacherProfile, month: number, year: number) {
