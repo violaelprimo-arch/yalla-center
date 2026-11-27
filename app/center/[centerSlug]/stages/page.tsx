@@ -20,6 +20,7 @@ import { MasterDataStatus } from '@/components/layout/master-data-status';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { AcademicAchievementIllustration } from '@/components/motion/educational-graphics';
 import type { EducationalStage, EducationalGrade } from '@/lib/dal/types';
 
 export default function StagesManagementPage() {
@@ -260,8 +261,8 @@ export default function StagesManagementPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border pb-5">
         <div>
           <div className="flex items-center gap-2.5">
-            <div className="w-10 h-10 rounded-xl bg-brand-cyan-500/10 border border-brand-cyan-500/30 flex items-center justify-center text-brand-cyan-400">
-              <GraduationCap className="w-5 h-5" />
+            <div className="w-12 h-12 rounded-xl bg-brand-cyan-500/10 border border-brand-cyan-500/30 flex items-center justify-center text-brand-cyan-400 p-1">
+              <AcademicAchievementIllustration size="sm" />
             </div>
             <div>
               <h1 className="text-2xl font-bold text-foreground">قائمة المراحل والصفوف التعليمية</h1>

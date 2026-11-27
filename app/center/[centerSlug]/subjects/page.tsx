@@ -21,6 +21,7 @@ import { MasterDataStatus } from '@/components/layout/master-data-status';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { EducationalSubjectBadge } from '@/components/motion/educational-graphics';
 import type { Subject } from '@/lib/dal/types';
 import { isRegisteredGroup } from '@/lib/timetable/group-schedule';
 
@@ -359,8 +360,8 @@ export default function SubjectsManagementPage() {
                   return (
                     <tr key={subject.id} className="hover:bg-muted/30 transition-colors">
                       <td className="p-3.5 px-4 font-bold text-foreground">
-                        <div className="flex items-center gap-2">
-                          <BookOpen className="w-4 h-4 text-brand-cyan-500 shrink-0" />
+                        <div className="flex items-center gap-2.5">
+                          <EducationalSubjectBadge subject={subject.nameAr} size="sm" showLabel={false} />
                           <span>{subject.nameAr}</span>
                         </div>
                       </td>
