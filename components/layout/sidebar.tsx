@@ -244,9 +244,9 @@ export function Sidebar({
   return (
     <aside
       className={cn(
-        'h-dvh fixed right-0 top-0 z-30 lg:flex flex-col bg-[#0B132B] text-[#F8FAFC] border-l border-[#1C2541] shadow-soft-lg select-none transition-all duration-300',
+        'h-dvh fixed right-0 top-0 z-30 flex-col bg-[#0B132B] text-[#F8FAFC] border-l border-[#1C2541] shadow-soft-lg select-none transition-all duration-300',
         collapsed ? 'w-64 lg:w-20' : 'w-64',
-        mobileOpen ? 'flex' : 'hidden'
+        mobileOpen ? 'flex' : 'hidden lg:flex'
       )}
       dir="rtl"
     >

@@ -28,12 +28,19 @@ export function TenantLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const { tenant, currentRole, currentUser } = useTenant();
 
+  const normalizedPath = pathname.replace(/\/+$/, '');
+  const isVerifiedSession = currentUser.id !== 'unverified-session';
   const isStudentPortalRoute =
-    pathname.startsWith(`/center/${tenant.slug}/student-portal`) || currentRole === 'STUDENT';
+    normalizedPath === `/center/${tenant.slug}/student-portal` ||
+    normalizedPath.startsWith(`/center/${tenant.slug}/student-portal/`) ||
+    (isVerifiedSession && currentRole === 'STUDENT');
   const isParentPortalRoute =
-    pathname.startsWith(`/center/${tenant.slug}/parent-portal`) || currentRole === 'PARENT';
-  const isTeacherPortalRoute =
-    pathname.startsWith(`/center/${tenant.slug}/teacher`) || currentRole === 'TEACHER';
+    normalizedPath === `/center/${tenant.slug}/parent-portal` ||
+    normalizedPath.startsWith(`/center/${tenant.slug}/parent-portal/`) ||
+    (isVerifiedSession && currentRole === 'PARENT');
+  const isTeacherSubroute =
+    normalizedPath === `/center/${tenant.slug}/teacher` ||
+    normalizedPath.startsWith(`/center/${tenant.slug}/teacher/`);
 
   const isAdminPreviewing = ['PLATFORM_OWNER', 'CENTER_ADMIN'].includes(currentRole);
 
@@ -47,8 +54,8 @@ export function TenantLayout({ children }: { children: React.ReactNode }) {
     router.push('/login');
   };
 
-  // Independent shell for Teacher (/center/[slug]/teacher re-export handles its own layout)
-  if (pathname.startsWith(`/center/${tenant.slug}/teacher`)) {
+  // Independent shell for Teacher (/center/[slug]/teacher exact route or child route, never /teachers)
+  if (isTeacherSubroute) {
     return <>{children}</>;
   }
 

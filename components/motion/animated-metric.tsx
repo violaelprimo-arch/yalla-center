@@ -155,22 +155,22 @@ export function AnimatedMetric({
             }
       }
       transition={{ duration: 0.18, ease: 'easeOut' }}
-      className={`relative p-5 rounded-2xl bg-gradient-to-br ${themeConfig.bg} bg-white dark:bg-slate-900 border ${themeConfig.border} transition-colors ${className}`}
+      className={`relative p-4 rounded-2xl bg-gradient-to-br ${themeConfig.bg} bg-white dark:bg-slate-900 border ${themeConfig.border} transition-colors ${className}`}
       dir="rtl"
     >
-      <div className="flex items-center justify-between mb-3">
-        <span className="text-sm font-medium text-slate-600 dark:text-slate-400">
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-xs font-bold text-slate-600 dark:text-slate-400 truncate">
           {label}
         </span>
         {icon && (
-          <div className={`p-2 rounded-xl ${themeConfig.iconBg}`}>
+          <div className={`p-1.5 rounded-xl shrink-0 ${themeConfig.iconBg}`}>
             {icon}
           </div>
         )}
       </div>
 
       <div className="flex items-baseline justify-between gap-2">
-        <div className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-slate-100 tracking-tight font-mono">
+        <div className="text-xl sm:text-2xl font-black text-slate-900 dark:text-slate-100 tracking-tight font-mono tabular-nums">
           <span>{prefix}</span>
           <span>
             {displayValue.toLocaleString('ar-EG', {
@@ -178,7 +178,7 @@ export function AnimatedMetric({
               maximumFractionDigits: decimals,
             })}
           </span>
-          {suffix && <span className="text-sm font-semibold mr-1">{suffix}</span>}
+          {suffix && <span className="text-xs font-semibold mr-1">{suffix}</span>}
         </div>
 
         {sparklineData && (
@@ -188,26 +188,22 @@ export function AnimatedMetric({
         )}
       </div>
 
-      {trend && (
-        <div className="mt-3 flex items-center gap-1.5 text-xs">
-          {trend.isPositive ? (
-            <span className="inline-flex items-center gap-0.5 text-emerald-600 dark:text-emerald-400 font-semibold">
-              <TrendingUp className="w-3.5 h-3.5" />
-              +{trend.value}%
-            </span>
-          ) : trend.value === 0 ? (
-            <span className="inline-flex items-center gap-0.5 text-slate-500 font-medium">
-              <Minus className="w-3.5 h-3.5" />
-              0%
-            </span>
-          ) : (
-            <span className="inline-flex items-center gap-0.5 text-rose-600 dark:text-rose-400 font-semibold">
-              <TrendingDown className="w-3.5 h-3.5" />
-              {trend.value}%
-            </span>
-          )}
+      {trend && (trend.value !== 0 || trend.periodText) && (
+        <div className="mt-2 flex items-center gap-1.5 text-[11px]">
+          {trend.value !== 0 &&
+            (trend.isPositive ? (
+              <span className="inline-flex items-center gap-0.5 text-emerald-600 dark:text-emerald-400 font-semibold">
+                <TrendingUp className="w-3.5 h-3.5" />
+                +{trend.value}%
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-0.5 text-rose-600 dark:text-rose-400 font-semibold">
+                <TrendingDown className="w-3.5 h-3.5" />
+                {trend.value}%
+              </span>
+            ))}
           {trend.periodText && (
-            <span className="text-slate-400 dark:text-slate-500">
+            <span className="text-slate-500 dark:text-slate-400 truncate">
               {trend.periodText}
             </span>
           )}

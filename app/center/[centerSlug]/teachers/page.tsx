@@ -35,7 +35,6 @@ import { Button } from '@/components/ui/button';
 import { StaggeredCardGrid } from '@/components/motion/staggered-card-grid';
 import { AnimatedMetric } from '@/components/motion/animated-metric';
 import { AnimatedTabs } from '@/components/motion/animated-tabs';
-import { EducationalSubjectBadge } from '@/components/motion/educational-graphics';
 import { getDataProvider } from '@/lib/dal/factory';
 import type { User, Group, Subject, TeacherMonthlyStatement } from '@/lib/dal/types';
 import { demoTeacherKey, readDemoTeacherProfiles, teacherApi, writeDemoTeacherProfile } from '@/lib/teachers/client';
@@ -82,7 +81,7 @@ function TeachersDirectory() {
   const mayManageDemo = currentRole === 'PLATFORM_OWNER' || currentRole === 'CENTER_ADMIN';
 
   const [activeTab, setActiveTab] = useState<'directory' | 'accounting'>('directory');
-  const [directoryView, setDirectoryView] = useState<'both' | 'cards' | 'table'>('both');
+  const [directoryView, setDirectoryView] = useState<'table' | 'cards'>('table');
   const [accountingSubTab, setAccountingSubTab] = useState<'groups' | 'statement'>('groups');
   const [selectedTeacherForAccounting, setSelectedTeacherForAccounting] = useState<string>('');
   const [baseTeachers, setBaseTeachers] = useState<User[]>();
@@ -605,144 +604,6 @@ function TeachersDirectory() {
               />
             </StaggeredCardGrid>
 
-            {/* Directory View Mode Switcher */}
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <AnimatedTabs
-                activeId={directoryView}
-                onChange={(id) => setDirectoryView(id as 'both' | 'cards' | 'table')}
-                tabs={[
-                  { id: 'both', label: 'البطاقات والجدول', icon: <Layers className="w-4 h-4" /> },
-                  { id: 'cards', label: 'بطاقات المعلمين البصرية', icon: <Briefcase className="w-4 h-4" /> },
-                  { id: 'table', label: 'الجدول التفصيلي الكامل', icon: <FileSpreadsheet className="w-4 h-4" /> },
-                ]}
-              />
-            </div>
-
-            {(directoryView === 'cards' || directoryView === 'both') && (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {visibleTeachers.length === 0 ? (
-                  <div className="md:col-span-2 lg:col-span-3 card-elevated p-10 text-center text-muted-foreground rounded-2xl border border-border">
-                    لا توجد ملفات معلمين مطابقة للفلاتر المحددة.
-                  </div>
-                ) : (
-                  visibleTeachers.map(({ teacher, profile }) => {
-                    const tGroups = centerGroups.filter((g) => g.teacherId === teacher.id && g.isActive);
-                    const subIds = new Set([...(profile?.subjectIds ?? []), ...tGroups.map((g) => g.subjectId)]);
-                    const tSubjects = centerSubjects.filter((s) => subIds.has(s.id));
-                    const avatar = profile?.avatarData || teacher.avatarUrl;
-                    return (
-                      <div
-                        key={teacher.id}
-                        className="card-elevated p-5 rounded-2xl border border-border bg-card hover:border-brand-cyan-500/40 transition-all flex flex-col justify-between space-y-4"
-                      >
-                        <div className="space-y-3">
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="flex items-center gap-3 min-w-0">
-                              <div className="w-12 h-12 rounded-2xl border border-border bg-muted overflow-hidden flex items-center justify-center shrink-0">
-                                {avatar ? (
-                                  <img src={avatar} alt={teacher.fullName} className="w-full h-full object-cover" />
-                                ) : (
-                                  <Users className="w-5 h-5 text-muted-foreground" />
-                                )}
-                              </div>
-                              <div className="min-w-0">
-                                <h3 className="text-sm font-black text-foreground truncate">{teacher.fullName}</h3>
-                                <p className="text-[11px] font-mono text-muted-foreground" dir="ltr">
-                                  {teacher.phone || 'بدون هاتف'}
-                                </p>
-                              </div>
-                            </div>
-                            <Badge variant={teacher.isActive ? 'success' : 'outline'} className="text-[10px] shrink-0">
-                              {teacher.isActive ? 'نشط' : 'معطل'}
-                            </Badge>
-                          </div>
-
-                          <div className="flex flex-wrap items-center gap-1.5">
-                            {tSubjects.slice(0, 2).map((sub) => (
-                              <div key={sub.id} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-muted/60 border border-border text-[11px] font-bold text-foreground">
-                                <BookOpen className="w-3 h-3 text-brand-cyan-500" />
-                                <span>{sub.nameAr}</span>
-                              </div>
-                            ))}
-                            {tSubjects.length > 2 && (
-                              <span className="text-[10px] text-muted-foreground font-bold">+{tSubjects.length - 2} مواد</span>
-                            )}
-                            {tSubjects[0] && (
-                              <EducationalSubjectBadge subject={tSubjects[0].nameAr} size="sm" showLabel={false} />
-                            )}
-                          </div>
-
-                          <div className="grid grid-cols-2 gap-2 text-xs pt-2 border-t border-border/60">
-                            <div className="p-2 rounded-xl bg-muted/30">
-                              <span className="text-[10px] text-muted-foreground block">المجموعات النشطة</span>
-                              <strong className="font-mono text-foreground">{tGroups.length} مجموعات</strong>
-                            </div>
-                            <div className="p-2 rounded-xl bg-muted/30">
-                              <span className="text-[10px] text-muted-foreground block">المراحل</span>
-                              <strong className="text-foreground truncate block">
-                                {(profile?.contracts || []).length > 0
-                                  ? `${profile!.contracts.length} مرحلة`
-                                  : 'مفتوح'}
-                              </strong>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center justify-between gap-2 pt-2 border-t border-border/60">
-                          <div className="flex items-center gap-1.5">
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="outline"
-                              onClick={() => setViewingProfile({ teacher, profile })}
-                              className="h-8 px-2.5 text-xs gap-1"
-                            >
-                              <Eye size={13} className="text-brand-cyan-500" />
-                              <span>الملف</span>
-                            </Button>
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="outline"
-                              onClick={() => {
-                                setSelectedTeacherForAccounting(teacher.id);
-                                setAccountingSubTab('statement');
-                                setActiveTab('accounting');
-                                loadStatement(teacher.id, statementPeriod.month, statementPeriod.year);
-                              }}
-                              className="h-8 px-2.5 text-xs gap-1"
-                            >
-                              <Wallet size={13} className="text-emerald-500" />
-                              <span>الحسابات</span>
-                            </Button>
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <button
-                              type="button"
-                              aria-label={`تعديل ${teacher.fullName}`}
-                              onClick={() => setEditor({ id: teacher.id, teacher, profile })}
-                              className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-                            >
-                              <Edit3 size={14} />
-                            </button>
-                            <button
-                              type="button"
-                              aria-label={`حذف ${teacher.fullName}`}
-                              disabled={archiving === teacher.id}
-                              onClick={() => archiveTeacher(teacher, profile)}
-                              className="p-1.5 rounded-lg text-rose-500 hover:bg-rose-500/10 transition-colors"
-                            >
-                              <Trash2 size={14} />
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-            )}
-
             {/* Filter and Search Toolbar */}
             <div className="card-elevated rounded-2xl border border-border p-4 space-y-3">
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
@@ -809,9 +670,9 @@ function TeachersDirectory() {
                 </div>
               </div>
 
-              {/* Status Filter Badges */}
-              <div className="flex items-center justify-between pt-1 border-t border-border/50 text-xs">
-                <div className="flex items-center gap-1.5">
+              {/* Status Filter Badges + View Switcher */}
+              <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-border/50 text-xs">
+                <div className="flex flex-wrap items-center gap-1.5">
                   <span className="text-muted-foreground text-[11px] font-bold">الحالة:</span>
                   {(['all', 'active', 'inactive'] as const).map((status) => (
                     <button
@@ -831,27 +692,170 @@ function TeachersDirectory() {
                   ))}
                 </div>
 
-                <span className="text-muted-foreground text-[11px]">
-                  عرض <b>{visibleTeachers.length}</b> من أصل <b>{totalTeachersCount}</b> معلم
-                </span>
+                <div className="flex flex-wrap items-center gap-3">
+                  <span className="text-muted-foreground text-[11px]">
+                    عرض <b>{visibleTeachers.length}</b> من أصل <b>{totalTeachersCount}</b> معلم
+                  </span>
+                  <AnimatedTabs
+                    activeId={directoryView}
+                    onChange={(id) => setDirectoryView(id as 'table' | 'cards')}
+                    tabs={[
+                      { id: 'table', label: 'الجدول التفصيلي', icon: <FileSpreadsheet className="w-3.5 h-3.5" /> },
+                      { id: 'cards', label: 'بطاقات المعلمين', icon: <Briefcase className="w-3.5 h-3.5" /> },
+                    ]}
+                  />
+                </div>
               </div>
             </div>
 
+            {directoryView === 'cards' && (
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                {visibleTeachers.length === 0 ? (
+                  <div className="md:col-span-2 xl:col-span-3 card-elevated p-10 text-center text-muted-foreground rounded-2xl border border-border">
+                    لا توجد ملفات معلمين مطابقة للفلاتر المحددة.
+                  </div>
+                ) : (
+                  visibleTeachers.map(({ teacher, profile }) => {
+                    const tGroups = centerGroups.filter((g) => g.teacherId === teacher.id && g.isActive);
+                    const subIds = new Set([...(profile?.subjectIds ?? []), ...tGroups.map((g) => g.subjectId)]);
+                    const tSubjects = centerSubjects.filter((s) => subIds.has(s.id));
+                    const stageLevels = new Set([
+                      ...(profile?.contracts?.map((c) => c.level) || []),
+                      ...tGroups.map((g) => g.stageId).filter(Boolean),
+                    ]);
+                    const tStages = stages.filter((st) => stageLevels.has(st.id));
+                    const avatar = profile?.avatarData || teacher.avatarUrl;
+                    return (
+                      <div
+                        key={teacher.id}
+                        className="card-elevated p-4 rounded-2xl border border-border bg-card hover:border-brand-cyan-500/40 transition-all flex flex-col justify-between gap-3.5"
+                      >
+                        <div className="space-y-3">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex items-center gap-3 min-w-0">
+                              <div className="w-11 h-11 rounded-xl border border-border bg-muted overflow-hidden flex items-center justify-center shrink-0">
+                                {avatar ? (
+                                  <img src={avatar} alt={teacher.fullName} className="w-full h-full object-cover" />
+                                ) : (
+                                  <span className="font-black text-xs text-muted-foreground">
+                                    {teacher.fullName.slice(0, 2)}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="min-w-0">
+                                <h3 className="text-sm font-black text-foreground truncate">{teacher.fullName}</h3>
+                                <p className="text-xs font-mono text-muted-foreground truncate" dir="ltr">
+                                  {teacher.phone || 'بدون هاتف'}
+                                </p>
+                              </div>
+                            </div>
+                            <Badge variant={teacher.isActive ? 'success' : 'outline'} className="text-[10px] shrink-0">
+                              {teacher.isActive ? 'نشط' : 'معطل'}
+                            </Badge>
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-1.5 min-h-[28px]">
+                            {tSubjects.slice(0, 3).map((sub) => (
+                              <span
+                                key={sub.id}
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-brand-cyan-500/10 border border-brand-cyan-500/20 text-[11px] font-bold text-brand-cyan-700 dark:text-brand-cyan-300"
+                              >
+                                <BookOpen className="w-3 h-3 shrink-0" />
+                                <span>{sub.nameAr}</span>
+                              </span>
+                            ))}
+                            {tSubjects.length > 3 && (
+                              <span className="text-[10px] text-muted-foreground font-bold">+{tSubjects.length - 3}</span>
+                            )}
+                            {tSubjects.length === 0 && (
+                              <span className="text-[11px] text-muted-foreground">بدون مواد محددة</span>
+                            )}
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-2 text-xs pt-2 border-t border-border/60">
+                            <div className="p-2 rounded-xl bg-muted/30">
+                              <span className="text-[10px] text-muted-foreground block">المجموعات النشطة</span>
+                              <strong className="font-mono text-foreground">{tGroups.length} مجموعات</strong>
+                            </div>
+                            <div className="p-2 rounded-xl bg-muted/30">
+                              <span className="text-[10px] text-muted-foreground block">المراحل</span>
+                              <strong className="text-foreground truncate block">
+                                {tStages.length > 0 ? tStages.map((s) => s.nameAr).join('، ') : 'غير محدد'}
+                              </strong>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between gap-2 pt-2 border-t border-border/60">
+                          <div className="flex items-center gap-1.5">
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={() => setViewingProfile({ teacher, profile })}
+                              className="h-8 px-2.5 text-xs gap-1"
+                            >
+                              <Eye size={13} className="text-brand-cyan-500" />
+                              <span>الملف</span>
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                setSelectedTeacherForAccounting(teacher.id);
+                                setAccountingSubTab('statement');
+                                setActiveTab('accounting');
+                                loadStatement(teacher.id, statementPeriod.month, statementPeriod.year);
+                              }}
+                              className="h-8 px-2.5 text-xs gap-1"
+                            >
+                              <Wallet size={13} className="text-emerald-500" />
+                              <span>الحسابات</span>
+                            </Button>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              aria-label={`تعديل ${teacher.fullName}`}
+                              onClick={() => setEditor({ id: teacher.id, teacher, profile })}
+                              className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                            >
+                              <Edit3 size={14} />
+                            </button>
+                            <button
+                              type="button"
+                              aria-label={`حذف ${teacher.fullName}`}
+                              disabled={archiving === teacher.id}
+                              onClick={() => archiveTeacher(teacher, profile)}
+                              className="p-1.5 rounded-lg text-rose-500 hover:bg-rose-500/10 transition-colors"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            )}
+
             {/* Advanced 9-Column Teachers Directory Table */}
-            {(directoryView === 'table' || directoryView === 'both') && (
+            {directoryView === 'table' && (
             <div className="card-elevated overflow-x-auto rounded-2xl border border-border shadow-soft-sm">
-              <table className="min-w-[980px] w-full text-start text-xs">
+              <table className="w-full text-start text-xs">
                 <thead className="bg-muted/40 text-muted-foreground border-b border-border">
                   <tr>
-                    <th className="p-3.5 text-start font-bold">صورة المعلم</th>
-                    <th className="p-3.5 text-start font-bold">اسم المعلم</th>
-                    <th className="p-3.5 text-start font-bold">الهاتف الأساسي</th>
-                    <th className="p-3.5 text-start font-bold">المراحل التعليمية</th>
-                    <th className="p-3.5 text-start font-bold">المواد الدراسية</th>
-                    <th className="p-3.5 text-start font-bold">أنظمة المحاسبة</th>
-                    <th className="p-3.5 text-start font-bold">المجموعات</th>
-                    <th className="p-3.5 text-start font-bold">حالة الحساب</th>
-                    <th className="p-3.5 text-start font-bold">الإجراءات</th>
+                    <th className="p-2.5 xl:p-3 text-start font-bold">الصورة</th>
+                    <th className="p-2.5 xl:p-3 text-start font-bold">اسم المعلم</th>
+                    <th className="p-2.5 xl:p-3 text-start font-bold">الهاتف الأساسي</th>
+                    <th className="p-2.5 xl:p-3 text-start font-bold">المراحل التعليمية</th>
+                    <th className="p-2.5 xl:p-3 text-start font-bold">المواد الدراسية</th>
+                    <th className="p-2.5 xl:p-3 text-start font-bold hidden xl:table-cell">أنظمة المحاسبة</th>
+                    <th className="p-2.5 xl:p-3 text-start font-bold">المجموعات</th>
+                    <th className="p-2.5 xl:p-3 text-start font-bold">الحالة</th>
+                    <th className="p-2.5 xl:p-3 text-start font-bold">الإجراءات</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
@@ -1000,7 +1004,7 @@ function TeachersDirectory() {
                           </td>
 
                           {/* 6. Accounting Systems */}
-                          <td className="p-3.5">
+                          <td className="p-2.5 xl:p-3 hidden xl:table-cell">
                             <div className="flex flex-wrap gap-1 max-w-[160px]">
                               {models.length > 0 ? (
                                 models.map((m) => (
