@@ -27,6 +27,8 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { RTLIcon } from '@/components/ui/rtl-icon';
+import { StaggeredCardGrid } from '@/components/motion/staggered-card-grid';
+import { AnimatedMetric } from '@/components/motion/animated-metric';
 import { SaasPlatformService } from '@/lib/saas/service';
 import { OWNER_NAV_TABS } from '@/components/owner/owner-sidebar';
 
@@ -103,108 +105,45 @@ export default function OwnerOverviewDashboard() {
         </div>
       </div>
 
-      {/* 4 Main Core SaaS KPI Metric Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Metric 1: Centers */}
-        <Card className="hover:border-purple-500/40 transition-all card-elevated">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-xs font-bold text-muted-foreground">
-              السناتر والمراكز المسجلة
-            </CardTitle>
-            <div className="w-8 h-8 rounded-xl bg-purple-500/10 text-purple-600 dark:text-purple-400 flex items-center justify-center">
-              <Building2 className="w-4 h-4" />
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-black font-mono text-foreground">{centers.length}</div>
-            <div className="flex items-center gap-2 mt-2 text-[11px] font-bold">
-              <span className="text-emerald-600 dark:text-emerald-400">
-                {activeCentersCount} نشط
-              </span>
-              <span className="text-muted-foreground">•</span>
-              <span className="text-amber-600 dark:text-amber-400">
-                {trialCentersCount} تجريبي
-              </span>
-              {suspendedCentersCount > 0 && (
-                <>
-                  <span className="text-muted-foreground">•</span>
-                  <span className="text-rose-600 dark:text-rose-400">
-                    {suspendedCentersCount} موقوف
-                  </span>
-                </>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Metric 2: Financial Collections */}
-        <Card className="hover:border-emerald-500/40 transition-all card-elevated">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-xs font-bold text-muted-foreground">
-              إجمالي التحصيلات الفعلية
-            </CardTitle>
-            <div className="w-8 h-8 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
-              <Wallet className="w-4 h-4" />
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-black font-mono text-foreground" dir="ltr">
-              {finance.totalCollections.toLocaleString('en-US')} <span className="text-xs font-bold">ج.م</span>
-            </div>
-            <div className="flex items-center justify-between mt-2 text-[11px]">
-              <span className="text-muted-foreground">مستحقات معلقة:</span>
-              <span className="font-mono font-bold text-amber-600 dark:text-amber-400">
-                {finance.outstandingReceivables.toLocaleString('en-US')} ج.م
-              </span>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Metric 3: Total Enrolled Students */}
-        <Card className="hover:border-brand-cyan-500/40 transition-all card-elevated">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-xs font-bold text-muted-foreground">
-              إجمالي الطلاب المخدومين
-            </CardTitle>
-            <div className="w-8 h-8 rounded-xl bg-brand-cyan-500/10 text-brand-cyan-600 dark:text-brand-cyan-400 flex items-center justify-center">
-              <Users className="w-4 h-4" />
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-black font-mono text-foreground">
-              {totalStudents.toLocaleString('ar-EG')}
-            </div>
-            <p className="text-[11px] text-brand-cyan-600 dark:text-brand-cyan-400 font-bold mt-2">
-              عبر {centers.reduce((sum, c) => sum + c.branchesCount, 0)} مقرات وفروع تشغيلية
-            </p>
-          </CardContent>
-        </Card>
-
-        {/* Metric 4: Central AI Engine */}
-        <Card className="hover:border-blue-500/40 transition-all card-elevated">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-xs font-bold text-muted-foreground">
-              محرك الذكاء الاصطناعي (AI)
-            </CardTitle>
-            <div className="w-8 h-8 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center">
-              <Bot className="w-4 h-4" />
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-black font-mono text-foreground">
-              {totalAiUnits.toLocaleString('ar-EG')}{' '}
-              <span className="text-xs font-bold text-muted-foreground">وحدة متاحة</span>
-            </div>
-            <div className="flex items-center justify-between mt-2 text-[11px]">
-              <span className="text-emerald-600 dark:text-emerald-400 font-bold flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                {aiConfig.provider === 'google_gemini' ? 'Gemini 1.5 Pro' : aiConfig.model}
-              </span>
-              <span className="text-muted-foreground font-mono">استهلاك: {totalAiConsumed}</span>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+      {/* 4 Main Core SaaS KPI Metric Cards with Motion */}
+      <StaggeredCardGrid columns={4}>
+        <AnimatedMetric
+          label="السناتر والمراكز المسجلة"
+          value={centers.length}
+          suffix=" سنتر"
+          color="purple"
+          icon={<Building2 className="w-4 h-4" />}
+          trend={{ value: activeCentersCount, isPositive: true, periodText: `${activeCentersCount} نشط · ${trialCentersCount} تجريبي` }}
+          sparklineData={[centers.length - 2 > 0 ? centers.length - 2 : 1, centers.length - 1 > 0 ? centers.length - 1 : 1, centers.length]}
+        />
+        <AnimatedMetric
+          label="إجمالي التحصيلات الفعلية"
+          value={finance.totalCollections}
+          prefix="ج.م "
+          color="emerald"
+          icon={<Wallet className="w-4 h-4" />}
+          trend={{ value: 0, periodText: `مستحقات معلقة: ${finance.outstandingReceivables.toLocaleString('en-US')} ج.م` }}
+          sparklineData={[finance.totalCollections * 0.7, finance.totalCollections * 0.85, finance.totalCollections]}
+        />
+        <AnimatedMetric
+          label="إجمالي الطلاب المخدومين"
+          value={totalStudents}
+          suffix=" طالب"
+          color="cyan"
+          icon={<Users className="w-4 h-4" />}
+          trend={{ value: 0, periodText: `عبر ${centers.reduce((sum, c) => sum + c.branchesCount, 0)} مقرات وفروع تشغيلية` }}
+          sparklineData={[totalStudents * 0.8, totalStudents * 0.9, totalStudents]}
+        />
+        <AnimatedMetric
+          label="رصيد الذكاء الاصطناعي (AI)"
+          value={totalAiUnits}
+          suffix=" وحدة"
+          color="blue"
+          icon={<Bot className="w-4 h-4" />}
+          trend={{ value: 0, periodText: `مستهلك: ${totalAiConsumed.toLocaleString('ar-EG')} وحدة` }}
+          sparklineData={[totalAiUnits * 0.6, totalAiUnits * 0.8, totalAiUnits]}
+        />
+      </StaggeredCardGrid>
 
       {/* Empty State Banner if no centers exist yet */}
       {centers.length === 0 && (

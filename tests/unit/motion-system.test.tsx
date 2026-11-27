@@ -128,7 +128,7 @@ describe('Motion UI Components', () => {
     render(
       <AnimatedTabs
         tabs={tabs}
-        activeTab="tab1"
+        activeId="tab1"
         onChange={() => {}}
       />
     );

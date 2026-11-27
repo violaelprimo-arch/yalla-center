@@ -35,6 +35,7 @@ import { BrandLogo } from '@/components/brand/brand-logo';
 import { BrandIcon } from '@/components/brand/brand-icon';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { CinematicHero } from '@/components/motion/cinematic-hero';
 import { SaasPlatformService } from '@/lib/saas/service';
 import type {
   WebsiteConfig,
@@ -284,6 +285,16 @@ export default function DynamicHomePage() {
           </div>
         </div>
       </header>
+
+      {/* Cinematic Hero */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 pt-6 pb-8">
+        <CinematicHero
+          onCtaClick={() => {
+            const el = document.getElementById('contact-forms');
+            if (el) el.scrollIntoView({ behavior: 'smooth' });
+          }}
+        />
+      </div>
 
       {/* Hero Section */}
       {heroSection && (

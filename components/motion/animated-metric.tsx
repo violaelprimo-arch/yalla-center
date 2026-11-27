@@ -18,7 +18,7 @@ export interface AnimatedMetricProps {
   };
   icon?: React.ReactNode;
   sparklineData?: number[];
-  color?: 'blue' | 'cyan' | 'emerald' | 'amber' | 'indigo';
+  color?: 'blue' | 'cyan' | 'emerald' | 'amber' | 'indigo' | 'purple';
   className?: string;
 }
 
@@ -28,6 +28,12 @@ const COLOR_MAP = {
     border: 'border-blue-500/20 hover:border-blue-500/40',
     iconBg: 'bg-blue-500/10 text-blue-600 dark:text-blue-400',
     line: '#3B82F6',
+  },
+  purple: {
+    bg: 'from-purple-500/10 to-fuchsia-500/5 dark:from-purple-950/40 dark:to-fuchsia-950/20',
+    border: 'border-purple-500/20 hover:border-purple-500/40',
+    iconBg: 'bg-purple-500/10 text-purple-600 dark:text-purple-400',
+    line: '#A855F7',
   },
   cyan: {
     bg: 'from-cyan-500/10 to-sky-500/5 dark:from-cyan-950/40 dark:to-sky-950/20',

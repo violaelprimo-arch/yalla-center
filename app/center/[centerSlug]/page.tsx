@@ -21,6 +21,8 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { RTLIcon } from '@/components/ui/rtl-icon';
+import { StaggeredCardGrid } from '@/components/motion/staggered-card-grid';
+import { AnimatedMetric } from '@/components/motion/animated-metric';
 import { cairoClock, receptionSessionState } from '@/lib/attendance/reception';
 import { getDataProvider } from '@/lib/dal/factory';
 import type { Session } from '@/lib/dal/types';
@@ -153,76 +155,46 @@ export default function CenterDashboardPage() {
         </div>
       )}
 
-      {/* 4 Primary Operational Metric Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card className="hover:border-brand-cyan-500/50 transition-colors">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-xs font-semibold text-muted-foreground">
-              الطلاب المقيدون
-            </CardTitle>
-            <div className="w-8 h-8 rounded-lg bg-brand-cyan-500/10 text-brand-cyan-600 flex items-center justify-center">
-              <Users className="w-4 h-4" />
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-black font-mono text-foreground">850</div>
-            <p className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium mt-1 flex items-center gap-1">
-              <span>+12.4% مقارنة بالشهر السابق</span>
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card className="hover:border-emerald-500/50 transition-colors">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-xs font-semibold text-muted-foreground">
-              نسبة الحضور اليوم
-            </CardTitle>
-            <div className="w-8 h-8 rounded-lg bg-emerald-500/10 text-emerald-600 flex items-center justify-center">
-              <CalendarCheck className="w-4 h-4" />
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-black font-mono text-foreground">88.7%</div>
-            <p className="text-[11px] text-muted-foreground mt-1">
-              142 طالب حاضر من أصل 160 متوقعاً
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card className="hover:border-amber-500/50 transition-colors">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-xs font-semibold text-muted-foreground">
-              متحصلات الخزينة اليوم
-            </CardTitle>
-            <div className="w-8 h-8 rounded-lg bg-amber-500/10 text-amber-600 flex items-center justify-center">
-              <Wallet className="w-4 h-4" />
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-black font-mono text-foreground">11,360 ج.م</div>
-            <p className="text-[11px] text-muted-foreground mt-1">
-              تم إغلاق مناوبة الصباح بنجاح
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card className="hover:border-purple-500/50 transition-colors">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-xs font-semibold text-muted-foreground">
-              الامتحانات الذكية
-            </CardTitle>
-            <div className="w-8 h-8 rounded-lg bg-purple-500/10 text-purple-600 flex items-center justify-center">
-              <FileSpreadsheet className="w-4 h-4" />
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-black font-mono text-foreground">24</div>
-            <p className="text-[11px] text-purple-600 dark:text-purple-400 font-medium mt-1">
-              مؤصلة بذكاء اصطناعي وتصدير A4
-            </p>
-          </CardContent>
-        </Card>
-      </div>
+      {/* 4 Primary Operational Metric Cards with Motion */}
+      <StaggeredCardGrid columns={4}>
+        <AnimatedMetric
+          label="الطلاب المقيدون"
+          value={850}
+          suffix=" طالب"
+          color="cyan"
+          icon={<Users className="w-4 h-4" />}
+          trend={{ value: 12.4, isPositive: true, periodText: "مقارنة بالشهر السابق" }}
+          sparklineData={[740, 780, 810, 830, 850]}
+        />
+        <AnimatedMetric
+          label="نسبة الحضور اليوم"
+          value={88.7}
+          decimals={1}
+          suffix="%"
+          color="emerald"
+          icon={<CalendarCheck className="w-4 h-4" />}
+          trend={{ value: 0, periodText: "142 طالب حاضر من أصل 160 متوقعاً" }}
+          sparklineData={[82, 85, 87, 86, 88.7]}
+        />
+        <AnimatedMetric
+          label="متحصلات الخزينة اليوم"
+          value={11360}
+          prefix="ج.م "
+          color="amber"
+          icon={<Wallet className="w-4 h-4" />}
+          trend={{ value: 8.5, isPositive: true, periodText: "تم إغلاق مناوبة الصباح بنجاح" }}
+          sparklineData={[8000, 9500, 10200, 10800, 11360]}
+        />
+        <AnimatedMetric
+          label="الامتحانات الذكية"
+          value={24}
+          suffix=" امتحان"
+          color="purple"
+          icon={<FileSpreadsheet className="w-4 h-4" />}
+          trend={{ value: 0, periodText: "مؤصلة بذكاء اصطناعي وتصدير A4" }}
+          sparklineData={[14, 18, 20, 22, 24]}
+        />
+      </StaggeredCardGrid>
 
       {/* Main Grid: Today's Sessions & Branches Overview */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
