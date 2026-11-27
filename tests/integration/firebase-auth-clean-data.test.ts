@@ -7,6 +7,8 @@ import { GET as checkUsernameHandler } from '@/app/api/center/[centerSlug]/teach
 import { saveTeacherProfile } from '@/lib/firebase/teacher-service';
 import { InMemoryTransactionalFirestoreStore } from '../helpers/in-memory-firestore';
 import { emptyTeacherInput, type TeacherInput } from '@/lib/teachers/profile';
+import { FirestoreRestClient } from '@/lib/firebase/firestore-rest';
+import { FirestoreDataProvider } from '@/lib/dal/firestore-provider';
 
 describe('Firebase Auth, Clean Data & Empty States Integration', () => {
   beforeEach(() => {
@@ -314,6 +316,69 @@ describe('Firebase Auth, Clean Data & Empty States Integration', () => {
       await expect(
         saveTeacherProfile(context, 'teacher-22222222-3333-4444-5555-666666666666', 0, secondInput, 'AnotherPass123!', provisionMock)
       ).rejects.toMatchObject({ status: 409 });
+    });
+  });
+
+  describe('TASK 3 — FirestoreRestClient fetch binding & createStudent studentCode preservation', () => {
+    it('invokes fetchImpl with globalThis receiver rather than the FirestoreRestClient instance', async () => {
+      let observedThis: unknown = undefined;
+      const strictFetchImpl = function (this: unknown, _input: RequestInfo | URL, _init?: RequestInit) {
+        observedThis = this;
+        return Promise.resolve(
+          new Response(JSON.stringify({ name: 'projects/test/databases/(default)/documents/tenants/t1', fields: {} }), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          })
+        );
+      };
+
+      const client = new FirestoreRestClient({
+        projectId: 'test-project',
+        accessToken: 'test-token',
+        fetchImpl: strictFetchImpl as typeof fetch,
+      });
+
+      const doc = await client.getDocument('tenants/t1');
+      expect(doc.exists).toBe(true);
+      expect(observedThis).toBe(globalThis);
+      expect(observedThis).not.toBe(client);
+    });
+
+    it('preserves user-provided studentCode and avatarUrl when creating a student via FirestoreDataProvider', async () => {
+      let capturedCommitBody: string | undefined;
+      const mockFetch = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+        capturedCommitBody = typeof init?.body === 'string' ? init.body : undefined;
+        return new Response(JSON.stringify({ writeResults: [{}] }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      });
+
+      vi.stubGlobal('fetch', mockFetch);
+      try {
+        const provider = new FirestoreDataProvider({ callerIdToken: 'test-token' });
+        const created = await provider.createStudent('tenant-elmaher-001', {
+          fullName: 'مريم محمد عبد الفتاح',
+          phone: '01140146898',
+          stage: 'high',
+          grade: 'الصف الثالث الثانوي',
+          division: 'علمي رياضة',
+          studentCode: '054-3240',
+          avatarUrl: 'https://example.com/avatar.png',
+          guardianName: 'محمد عبد الفتاح',
+          guardianPhone: '01126250744',
+        });
+
+        expect(created.studentCode).toBe('054-3240');
+        expect(created.avatarUrl).toBe('https://example.com/avatar.png');
+        expect(mockFetch).toHaveBeenCalledTimes(1);
+        expect(capturedCommitBody).toBeTruthy();
+        const parsed = JSON.parse(capturedCommitBody!);
+        expect(parsed.writes[0].update.fields.studentCode.stringValue).toBe('054-3240');
+        expect(parsed.writes[0].update.fields.avatarUrl.stringValue).toBe('https://example.com/avatar.png');
+      } finally {
+        vi.unstubAllGlobals();
+      }
     });
   });
 });

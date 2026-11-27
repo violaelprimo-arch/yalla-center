@@ -135,11 +135,13 @@ export class FirestoreRestClient {
     this.docPrefix = `projects/${options.projectId}/databases/(default)/documents`;
     this.baseUrl = `https://firestore.googleapis.com/v1/${this.docPrefix}`;
     this.accessToken = options.accessToken;
-    this.fetchImpl = options.fetchImpl ?? fetch;
+    const rawFetch = options.fetchImpl ?? fetch;
+    this.fetchImpl = (input, init) => rawFetch.call(globalThis, input, init);
   }
 
   private async request<T>(url: string, init: RequestInit): Promise<T> {
-    const response = await this.fetchImpl(url, {
+    const fetchFn = this.fetchImpl;
+    const response = await fetchFn(url, {
       ...init,
       headers: {
         'Content-Type': 'application/json',

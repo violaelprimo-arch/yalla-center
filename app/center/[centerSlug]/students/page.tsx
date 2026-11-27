@@ -843,10 +843,12 @@ function StudentRegistrationModal({
 
   // Auto-generate next student code on mount
   useEffect(() => {
-    dal.getUsers(tenantId, { role: 'STUDENT' }).then((students: User[]) => {
-      const nextNum = 1000 + students.length + 1;
-      setStudentCode(`STD-${nextNum}`);
-    });
+    dal.getUsers(tenantId, { role: 'STUDENT' })
+      .then((students: User[]) => {
+        const nextNum = 1000 + students.length + 1;
+        setStudentCode((prev) => prev || `STD-${nextNum}`);
+      })
+      .catch(() => {});
   }, [tenantId, dal]);
 
   const handleSubmit = async (e: React.FormEvent) => {
