@@ -23,6 +23,9 @@ import {
 import { useTenant } from '@/components/layout/tenant-provider';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { StaggeredCardGrid } from '@/components/motion/staggered-card-grid';
+import { AnimatedMetric } from '@/components/motion/animated-metric';
+import { InteractiveDonutChart } from '@/components/ui/interactive-chart';
 import {
   renderNotificationContent,
 } from '@/lib/notifications/formatter';
@@ -337,56 +340,52 @@ export default function NotificationsPage() {
         </div>
       )}
 
-      {/* 4 KPI Summary Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Pending Card */}
-        <div className="card-elevated rounded-3xl p-5 border border-amber-500/30 bg-gradient-to-b from-amber-500/10 via-card to-card text-right space-y-2 shadow-soft-sm">
-          <div className="flex items-center justify-between text-amber-600 dark:text-amber-400">
-            <span className="text-xs font-bold">قيد الانتظار</span>
-            <Clock className="w-4 h-4" />
-          </div>
-          <div className="text-2xl sm:text-3xl font-black font-mono text-foreground">
-            {stats.pending}
-          </div>
-          <p className="text-[11px] text-muted-foreground">في طابور الإرسال اللحظي</p>
-        </div>
+      {/* 4 Animated KPI Summary Cards + Delivery Chart */}
+      <StaggeredCardGrid columns={4}>
+        <AnimatedMetric
+          label="قيد الانتظار"
+          value={stats.pending}
+          color="amber"
+          icon={<Clock className="w-4 h-4" />}
+          trend={{ value: 0, periodText: 'في طابور الإرسال اللحظي' }}
+        />
+        <AnimatedMetric
+          label="تم التسليم"
+          value={stats.sent}
+          color="emerald"
+          icon={<CheckCheck className="w-4 h-4" />}
+          trend={{ value: 0, periodText: 'وصلت لأولياء الأمور بنجاح' }}
+        />
+        <AnimatedMetric
+          label="تعذر الإرسال"
+          value={stats.failed}
+          color="purple"
+          icon={<XCircle className="w-4 h-4" />}
+          trend={{ value: 0, periodText: 'بحاجة لإعادة الإرسال أو التدقيق' }}
+        />
+        <AnimatedMetric
+          label="إجمالي إشعارات اليوم"
+          value={stats.todayTotal}
+          color="cyan"
+          icon={<Send className="w-4 h-4" />}
+          trend={{ value: 0, periodText: 'حضور ومستحقات ونتائج' }}
+        />
+      </StaggeredCardGrid>
 
-        {/* Delivered Card */}
-        <div className="card-elevated rounded-3xl p-5 border border-emerald-500/30 bg-gradient-to-b from-emerald-500/10 via-card to-card text-right space-y-2 shadow-soft-sm">
-          <div className="flex items-center justify-between text-emerald-600 dark:text-emerald-400">
-            <span className="text-xs font-bold">تم التسليم</span>
-            <CheckCheck className="w-4 h-4" />
-          </div>
-          <div className="text-2xl sm:text-3xl font-black font-mono text-foreground">
-            {stats.sent}
-          </div>
-          <p className="text-[11px] text-muted-foreground">وصلت لأولياء الأمور بنجاح</p>
-        </div>
-
-        {/* Failed Card */}
-        <div className="card-elevated rounded-3xl p-5 border border-rose-500/30 bg-gradient-to-b from-rose-500/10 via-card to-card text-right space-y-2 shadow-soft-sm">
-          <div className="flex items-center justify-between text-rose-600 dark:text-rose-400">
-            <span className="text-xs font-bold">تعذر الإرسال</span>
-            <XCircle className="w-4 h-4" />
-          </div>
-          <div className="text-2xl sm:text-3xl font-black font-mono text-foreground">
-            {stats.failed}
-          </div>
-          <p className="text-[11px] text-muted-foreground">بحاجة لإعادة الإرسال أو التدقيق</p>
-        </div>
-
-        {/* Today's Total Card */}
-        <div className="card-elevated rounded-3xl p-5 border border-brand-cyan-500/30 bg-gradient-to-b from-brand-cyan-500/10 via-card to-card text-right space-y-2 shadow-soft-sm">
-          <div className="flex items-center justify-between text-brand-cyan-600 dark:text-brand-cyan-400">
-            <span className="text-xs font-bold">إجمالي إشعارات اليوم</span>
-            <Send className="w-4 h-4" />
-          </div>
-          <div className="text-2xl sm:text-3xl font-black font-mono text-foreground">
-            {stats.todayTotal}
-          </div>
-          <p className="text-[11px] text-muted-foreground">حضور ومستحقات ونتائج</p>
-        </div>
-      </div>
+      {stats.total > 0 && (
+        <InteractiveDonutChart
+          title="توزيع حالات تسليم الإشعارات"
+          subtitle="مراقبة كفاءة طابور واتساب والويب بوش"
+          height={180}
+          centerLabel="إجمالي الإشعارات"
+          centerValue={stats.total}
+          data={[
+            { id: 'sent', label: 'تم التسليم', value: stats.sent, color: '#10B981' },
+            { id: 'pending', label: 'قيد الانتظار', value: stats.pending, color: '#F59E0B' },
+            { id: 'failed', label: 'فشل الإرسال', value: stats.failed, color: '#EF4444' },
+          ].filter((d) => d.value > 0)}
+        />
+      )}
 
       {/* Filter Tabs & Search Bar */}
       <div className="card-elevated rounded-3xl p-5 border border-border/80 bg-card space-y-4">

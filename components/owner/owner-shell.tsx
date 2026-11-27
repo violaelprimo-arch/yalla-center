@@ -8,17 +8,20 @@ import { ThemeToggle } from '@/components/ui/theme-toggle';
 
 export function OwnerShell({ children }: { children: React.ReactNode }) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
 
   return (
     <div className="min-h-screen bg-background text-foreground flex" dir="rtl">
       {/* Platform Owner Sidebar */}
       <OwnerSidebar
         mobileOpen={mobileMenuOpen}
+        collapsed={collapsed}
+        onToggleCollapse={() => setCollapsed((c) => !c)}
         onClose={() => setMobileMenuOpen(false)}
       />
 
-      {/* Main Content Area (with RTL offset lg:pr-64 for right sidebar) */}
-      <div className="flex-1 flex flex-col min-w-0 lg:pr-64">
+      {/* Main Content Area (dynamically sized for collapsed or expanded RTL sidebar) */}
+      <div className={`flex-1 flex flex-col min-w-0 transition-all duration-300 ${collapsed ? 'lg:pr-20' : 'lg:pr-64'}`}>
         {/* Sticky Top Header */}
         <header className="sticky top-0 z-30 h-16 bg-background/95 backdrop-blur border-b border-border px-4 sm:px-6 flex items-center justify-between">
           <div className="flex items-center gap-3">

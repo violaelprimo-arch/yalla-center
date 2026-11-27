@@ -25,6 +25,9 @@ import { useTenant } from '@/components/layout/tenant-provider';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
+import { StaggeredCardGrid } from '@/components/motion/staggered-card-grid';
+import { AnimatedMetric } from '@/components/motion/animated-metric';
+import { InteractiveBarChart } from '@/components/ui/interactive-chart';
 import { SaasPlatformService } from '@/lib/saas/service';
 import type { CenterExtended } from '@/lib/saas/types';
 import { getDataProvider } from '@/lib/dal/factory';
@@ -86,74 +89,64 @@ export default function CenterAdminPortalPage() {
         </div>
       </div>
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <div className="card-elevated p-5 rounded-2xl border border-border bg-card">
-          <div className="flex items-center justify-between">
-            <span className="text-xs text-muted-foreground font-semibold">إجمالي الطلاب</span>
-            <div className="w-8 h-8 rounded-xl bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 flex items-center justify-center">
-              <Users className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="mt-3 flex items-baseline justify-between">
-            <span className="text-2xl font-black text-foreground">
-              {studentsCount}
-            </span>
-            <span className="text-[10px] text-muted-foreground">
-              الحد الأقصى: {centerSaaS?.maxStudents === -1 ? 'مفتوح' : centerSaaS?.maxStudents || 'غير مقيد'}
-            </span>
-          </div>
-        </div>
+      {/* Animated Real KPI Cards */}
+      <StaggeredCardGrid columns={4}>
+        <AnimatedMetric
+          label="إجمالي الطلاب المقيدين"
+          value={studentsCount}
+          suffix=" طالب"
+          color="cyan"
+          icon={<Users className="w-4 h-4" />}
+          trend={{
+            value: 0,
+            periodText: `الحد الأقصى: ${centerSaaS?.maxStudents === -1 ? 'مفتوح' : centerSaaS?.maxStudents || 'سحابي مفتوح'}`,
+          }}
+        />
+        <AnimatedMetric
+          label="المجموعات النشطة"
+          value={activeGroups.length}
+          suffix=" مجموعة"
+          color="blue"
+          icon={<Calendar className="w-4 h-4" />}
+          trend={{
+            value: 0,
+            periodText: `${activeBranches.length} فروع · ${classrooms.length} قاعة دراسية`,
+          }}
+        />
+        <AnimatedMetric
+          label="رصيد الذكاء الاصطناعي"
+          value={centerSaaS?.aiBalance ?? 0}
+          suffix=" وحدة"
+          color="purple"
+          icon={<Cpu className="w-4 h-4" />}
+          trend={{ value: 0, periodText: 'وحدات بنك الأسئلة الذكي' }}
+        />
+        <AnimatedMetric
+          label="نسبة تفعيل الفروع"
+          value={branches.length > 0 ? Math.round((activeBranches.length / branches.length) * 100) : 100}
+          suffix="%"
+          color="emerald"
+          icon={<ShieldCheck className="w-4 h-4" />}
+          trend={{
+            value: 0,
+            periodText: `باقة ${(tenant.subscriptionPlan || 'pro').toUpperCase()} · ${tenant.isActive ? 'نشط ومفعل' : 'موقوف'}`,
+          }}
+        />
+      </StaggeredCardGrid>
 
-        <div className="card-elevated p-5 rounded-2xl border border-border bg-card">
-          <div className="flex items-center justify-between">
-            <span className="text-xs text-muted-foreground font-semibold">المجموعات النشطة</span>
-            <div className="w-8 h-8 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center">
-              <Calendar className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="mt-3 flex items-baseline justify-between">
-            <span className="text-2xl font-black text-foreground">
-              {activeGroups.length}
-            </span>
-            <span className="text-[10px] text-muted-foreground">
-              فروع السنتر: {activeBranches.length}
-            </span>
-          </div>
-        </div>
-
-        <div className="card-elevated p-5 rounded-2xl border border-border bg-card">
-          <div className="flex items-center justify-between">
-            <span className="text-xs text-muted-foreground font-semibold">رصيد الذكاء الاصطناعي</span>
-            <div className="w-8 h-8 rounded-xl bg-purple-500/10 text-purple-600 dark:text-purple-400 flex items-center justify-center">
-              <Cpu className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="mt-3 flex items-baseline justify-between">
-            <span className="text-2xl font-black text-purple-600 dark:text-purple-400">
-              {centerSaaS?.aiBalance ?? 0}
-            </span>
-            <span className="text-[10px] text-muted-foreground">وحدة بنك الأسئلة</span>
-          </div>
-        </div>
-
-        <div className="card-elevated p-5 rounded-2xl border border-border bg-card">
-          <div className="flex items-center justify-between">
-            <span className="text-xs text-muted-foreground font-semibold">حالة الاشتراك السحابي</span>
-            <div className="w-8 h-8 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
-              <ShieldCheck className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="mt-3 flex items-baseline justify-between">
-            <Badge variant={tenant.isActive ? 'success' : 'warning'} className="text-xs">
-              {tenant.isActive ? 'نشط ومفعل' : 'موقوف'}
-            </Badge>
-            <span className="text-[10px] text-muted-foreground">
-              باقة {tenant.subscriptionPlan?.toUpperCase() || 'PRO'}
-            </span>
-          </div>
-        </div>
-      </div>
+      {/* Branch & Classroom Capacity Visualization */}
+      <InteractiveBarChart
+        title="توزيع القاعات والمجموعات حسب فروع السنتر"
+        subtitle="مقارنة فعلية لتشغيل الفروع"
+        height={190}
+        valueFormatter={(v) => `${v} مجموعة`}
+        emptyLabel="أضف فروعاً ومجموعات لعرض التوزيع البياني"
+        data={branches.map((b) => ({
+          id: b.id,
+          label: b.nameAr.slice(0, 14),
+          value: activeGroups.filter((g) => g.branchId === b.id).length,
+        }))}
+      />
 
       {/* Main Administrative Modules Grid */}
       <div className="space-y-3">

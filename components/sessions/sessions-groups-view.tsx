@@ -11,6 +11,7 @@ import { MasterDataStatus } from '@/components/layout/master-data-status';
 import { GroupEditor, type ScheduleTeacher } from '@/components/timetable/group-editor';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { EducationalSubjectBadge } from '@/components/motion/educational-graphics';
 import { getDataProvider } from '@/lib/dal/factory';
 import type { Group } from '@/lib/dal/types';
 import { useTeacherContracts } from '@/lib/teachers/client';
@@ -633,11 +634,16 @@ export function SessionsGroupsView({
                   <div className="space-y-3">
                     {/* Top Row: Subject & Actions */}
                     <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <span className="text-[10px] font-bold text-brand-cyan-700 dark:text-brand-cyan-400 bg-brand-cyan-500/10 px-2 py-0.5 rounded-md">
-                          {subject?.nameAr || 'المادة الدراسية'}
-                        </span>
-                        <h3 className="font-black text-base text-foreground mt-1.5 leading-snug">{group.nameAr}</h3>
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[10px] font-bold text-brand-cyan-700 dark:text-brand-cyan-400 bg-brand-cyan-500/10 px-2 py-0.5 rounded-md">
+                            {subject?.nameAr || 'المادة الدراسية'}
+                          </span>
+                          {subject?.nameAr && (
+                            <EducationalSubjectBadge subject={subject.nameAr} size="sm" showLabel={false} />
+                          )}
+                        </div>
+                        <h3 className="font-black text-base text-foreground mt-1 leading-snug">{group.nameAr}</h3>
                         {!group.isActive && <Badge variant="outline">غير نشطة</Badge>}
                       </div>
 

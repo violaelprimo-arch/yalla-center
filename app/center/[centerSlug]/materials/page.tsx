@@ -11,6 +11,9 @@ import { MasterDataStatus } from '@/components/layout/master-data-status';
 import { Button } from '@/components/ui/button';
 import { MathView } from '@/components/ui/math-view';
 import { MaterialEditor } from '@/components/materials/material-editor';
+import { StaggeredCardGrid } from '@/components/motion/staggered-card-grid';
+import { AnimatedMetric } from '@/components/motion/animated-metric';
+import { EducationalSubjectBadge } from '@/components/motion/educational-graphics';
 import type { Material } from '@/lib/dal/types';
 import { useCenterMaterials } from '@/lib/materials/client';
 import type { MaterialMutation } from '@/lib/materials/management';
@@ -148,52 +151,33 @@ export default function MaterialsPage() {
       {loading && <p role="status" className="text-sm text-muted-foreground">جارٍ تحميل المذكرات…</p>}
       {notice && <p role="status" className="rounded-lg bg-emerald-500/10 px-3 py-2 text-sm text-emerald-700 dark:text-emerald-300">{notice}</p>}
 
-      {/* Fast Statistics HUD Bar */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-        <div className="p-4 rounded-2xl bg-card border border-border">
-          <div className="text-xs text-muted-foreground">إجمالي المذكرات</div>
-          <div className="text-2xl font-black text-foreground mt-1">{stats.total}</div>
-        </div>
-
-        <div className="p-4 rounded-2xl bg-card border border-border">
-          <div className="text-xs text-emerald-500 flex items-center gap-1">
-            <CheckCircle2 className="w-3.5 h-3.5" />
-            <span>مفهرسة (مؤهلة لـ AI)</span>
-          </div>
-          <div className="text-2xl font-black text-emerald-500 mt-1">{stats.indexed}</div>
-        </div>
-
-        <div className="p-4 rounded-2xl bg-card border border-border">
-          <div className="text-xs text-amber-500 flex items-center gap-1">
-            <AlertCircle className="w-3.5 h-3.5" />
-            <span>نص غير كافٍ (&lt;200)</span>
-          </div>
-          <div className="text-2xl font-black text-amber-500 mt-1">{stats.insufficient}</div>
-        </div>
-
-        <div className="p-4 rounded-2xl bg-card border border-border">
-          <div className="text-xs text-muted-foreground flex items-center gap-1">
-            <Clock className="w-3.5 h-3.5" />
-            <span>قيد الفهرسة</span>
-          </div>
-          <div className="text-2xl font-black text-muted-foreground mt-1">{stats.pending}</div>
-        </div>
-
-        <div className="p-4 rounded-2xl bg-card border border-border">
-          <div className="text-xs text-cyan-500">كلمات مفهرسة</div>
-          <div className="text-2xl font-black text-cyan-500 mt-1">
-            {stats.totalWords.toLocaleString('ar-EG')}
-          </div>
-        </div>
-
-        <div className="p-4 rounded-2xl bg-card border border-border">
-          <div className="text-xs text-blue-500 flex items-center gap-1">
-            <LinkIcon className="w-3.5 h-3.5" />
-            <span>مرتبطة بـ Drive</span>
-          </div>
-          <div className="text-2xl font-black text-blue-500 mt-1">{stats.driveCount}</div>
-        </div>
-      </div>
+      {/* Animated Statistics HUD Bar */}
+      <StaggeredCardGrid columns={3}>
+        <AnimatedMetric
+          label="إجمالي المذكرات"
+          value={stats.total}
+          suffix=" ملف"
+          color="blue"
+          icon={<Folder className="w-4 h-4" />}
+          trend={{ value: 0, periodText: `${stats.driveCount} مرتبطة بـ Google Drive` }}
+        />
+        <AnimatedMetric
+          label="مفهرسة ومؤهلة للـ AI"
+          value={stats.indexed}
+          suffix=" مذكرة"
+          color="emerald"
+          icon={<CheckCircle2 className="w-4 h-4" />}
+          trend={{ value: 0, periodText: `${stats.insufficient} غير كافٍ · ${stats.pending} قيد الفهرسة` }}
+        />
+        <AnimatedMetric
+          label="إجمالي الكلمات المفهرسة"
+          value={stats.totalWords}
+          suffix=" كلمة"
+          color="cyan"
+          icon={<Sparkles className="w-4 h-4" />}
+          trend={{ value: 0, periodText: 'جاهزة لتوليد الامتحانات المؤصلة' }}
+        />
+      </StaggeredCardGrid>
 
       {/* Cascading Filter & Search Toolbar */}
       <div className="p-4 bg-card border border-border rounded-2xl space-y-3">

@@ -30,6 +30,7 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { RTLIcon } from '@/components/ui/rtl-icon';
+import { AnimatedTabs } from '@/components/motion/animated-tabs';
 import { SaasPlatformService } from '@/lib/saas/service';
 import { CustomerRequest, ComplaintRecord, RequestStatus } from '@/lib/saas/types';
 
@@ -218,32 +219,25 @@ export default function OwnerRequestsPage() {
       )}
 
       {/* Inboxes Tabs */}
-      <div className="flex border-b border-border gap-4 text-xs font-bold">
-        <button
-          type="button"
-          onClick={() => setActiveTab('requests')}
-          className={`py-3 border-b-2 flex items-center gap-2 transition-colors ${
-            activeTab === 'requests'
-              ? 'border-brand-cyan-500 text-brand-cyan-600 dark:text-brand-cyan-400'
-              : 'border-transparent text-muted-foreground hover:text-foreground'
-          }`}
-        >
-          <Inbox className="w-4 h-4" />
-          <span>طلبات الاشتراك والديمو ({requests.length})</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setActiveTab('complaints')}
-          className={`py-3 border-b-2 flex items-center gap-2 transition-colors ${
-            activeTab === 'complaints'
-              ? 'border-brand-cyan-500 text-brand-cyan-600 dark:text-brand-cyan-400'
-              : 'border-transparent text-muted-foreground hover:text-foreground'
-          }`}
-        >
-          <AlertCircle className="w-4 h-4 text-amber-500" />
-          <span>صندوق الشكاوى والملاحظات ({complaints.length})</span>
-        </button>
+      <div className="overflow-x-auto pb-1">
+        <AnimatedTabs
+          activeId={activeTab}
+          onChange={(id) => setActiveTab(id as 'requests' | 'complaints')}
+          tabs={[
+            {
+              id: 'requests',
+              label: 'طلبات الاشتراك والديمو',
+              icon: <Inbox className="w-4 h-4" />,
+              badge: requests.length,
+            },
+            {
+              id: 'complaints',
+              label: 'صندوق الشكاوى والملاحظات',
+              icon: <AlertCircle className="w-4 h-4" />,
+              badge: complaints.length,
+            },
+          ]}
+        />
       </div>
 
       {/* ===================================================================== */}

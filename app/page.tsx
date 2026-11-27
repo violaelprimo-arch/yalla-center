@@ -35,7 +35,11 @@ import { BrandLogo } from '@/components/brand/brand-logo';
 import { BrandIcon } from '@/components/brand/brand-icon';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { ThemeToggle } from '@/components/ui/theme-toggle';
 import { CinematicHero } from '@/components/motion/cinematic-hero';
+import { AnimatedTabs } from '@/components/motion/animated-tabs';
+import { PortalShowcase } from '@/components/home/portal-showcase';
+import { motion, AnimatePresence } from 'framer-motion';
 import { SaasPlatformService } from '@/lib/saas/service';
 import type {
   WebsiteConfig,
@@ -262,7 +266,8 @@ export default function DynamicHomePage() {
             </nav>
           </div>
 
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2 sm:gap-2.5">
+            <ThemeToggle />
             <Link
               href="/login"
               className="px-3.5 py-1.5 rounded-xl border border-border bg-card hover:bg-muted font-bold text-xs text-foreground transition-colors"
@@ -278,7 +283,7 @@ export default function DynamicHomePage() {
             </Link>
             <a
               href="#contact-forms"
-              className="px-4 py-1.5 rounded-xl bg-brand-cyan-600 hover:bg-brand-cyan-500 text-white font-bold text-xs shadow-soft-sm transition-colors"
+              className="px-3 sm:px-4 py-1.5 rounded-xl bg-brand-cyan-600 hover:bg-brand-cyan-500 text-white font-bold text-xs shadow-soft-sm transition-colors whitespace-nowrap"
             >
               احجز سنترك الآن
             </a>
@@ -286,75 +291,50 @@ export default function DynamicHomePage() {
         </div>
       </header>
 
-      {/* Cinematic Hero */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 pt-6 pb-8">
+      {/* Cinematic Educational Hero */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 pt-5 pb-8 w-full">
         <CinematicHero
           onCtaClick={() => {
-            const el = document.getElementById('contact-forms');
+            const el = document.getElementById('showcase');
             if (el) el.scrollIntoView({ behavior: 'smooth' });
           }}
+          secondaryCtaHref={centers[0] ? `/center/${centers[0].slug}` : '/login'}
+          secondaryCtaLabel={centers[0] ? `الدخول إلى ${centers[0].nameAr}` : 'دخول السناتر'}
         />
       </div>
 
-      {/* Hero Section */}
+      {/* Scroll-Animated Operational Trust KPIs */}
       {heroSection && (
-        <section className="relative py-16 lg:py-24 px-4 sm:px-6 max-w-7xl mx-auto flex flex-col items-center text-center">
-          {/* Ambient Background Blur */}
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[350px] bg-cyan-500/10 blur-[130px] rounded-full pointer-events-none" />
-
-          {heroSection.badgeAr && (
-            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-cyan-500/10 border border-cyan-500/30 text-cyan-600 dark:text-cyan-400 text-xs font-bold mb-6 animate-pulse">
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>{heroSection.badgeAr}</span>
+        <motion.section
+          initial={{ opacity: 0, y: 16 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true, amount: 0.2 }}
+          transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+          className="pb-12 px-4 sm:px-6 max-w-7xl mx-auto w-full"
+        >
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 w-full">
+            <div className="p-4 rounded-2xl bg-card border border-border/80 text-center shadow-soft-sm hover:border-brand-cyan-500/40 transition-colors">
+              <p className="text-2xl sm:text-3xl font-black text-cyan-500 tabular-nums">120K+</p>
+              <p className="text-xs text-muted-foreground font-semibold mt-1">سعة طلابية مدعومة سحابياً</p>
             </div>
-          )}
-
-          <h1 className="text-3xl sm:text-5xl lg:text-6xl font-black text-foreground tracking-tight max-w-4xl leading-[1.25] mb-6">
-            {heroSection.titleAr}
-          </h1>
-
-          <p className="text-base sm:text-lg text-muted-foreground max-w-2xl leading-relaxed mb-8">
-            {heroSection.subtitleAr}
-          </p>
-
-          <div className="flex flex-wrap items-center justify-center gap-4 mb-14">
-            <a
-              href={heroSection.ctaLink || '#contact-forms'}
-              className="px-7 py-3 rounded-2xl bg-brand-cyan-600 hover:bg-brand-cyan-500 text-white font-bold text-sm shadow-soft-md transition-transform hover:scale-[1.02] flex items-center gap-2"
-            >
-              <span>{heroSection.ctaLabelAr || 'ابدأ تجربتك المجانية'}</span>
-              <ArrowRight className="w-4 h-4" />
-            </a>
-            <Link
-              href="/center/elmaher"
-              className="px-6 py-3 rounded-2xl border border-border bg-card hover:bg-muted font-bold text-sm text-foreground transition-colors flex items-center gap-2"
-            >
-              <Building2 className="w-4 h-4 text-cyan-500" />
-              <span>الدخول إلى سنتر الماهر</span>
-            </Link>
-          </div>
-
-          {/* Quick SaaS Trust Stats */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 w-full max-w-4xl">
-            <div className="p-4 rounded-2xl bg-card border border-border/80 text-center shadow-soft-sm">
-              <p className="text-2xl sm:text-3xl font-black text-cyan-500">120K+</p>
-              <p className="text-xs text-muted-foreground font-semibold mt-1">طالب مسجل بالسناتر</p>
+            <div className="p-4 rounded-2xl bg-card border border-border/80 text-center shadow-soft-sm hover:border-blue-500/40 transition-colors">
+              <p className="text-2xl sm:text-3xl font-black text-blue-500 tabular-nums">&lt; 300ms</p>
+              <p className="text-xs text-muted-foreground font-semibold mt-1">زمن استجابة مسح الباركود</p>
             </div>
-            <div className="p-4 rounded-2xl bg-card border border-border/80 text-center shadow-soft-sm">
-              <p className="text-2xl sm:text-3xl font-black text-blue-500">&lt; 300ms</p>
-              <p className="text-xs text-muted-foreground font-semibold mt-1">سرعة تسجيل الحضور</p>
+            <div className="p-4 rounded-2xl bg-card border border-border/80 text-center shadow-soft-sm hover:border-purple-500/40 transition-colors">
+              <p className="text-2xl sm:text-3xl font-black text-purple-500 tabular-nums">100%</p>
+              <p className="text-xs text-muted-foreground font-semibold mt-1">دقة تسويات المعلمين</p>
             </div>
-            <div className="p-4 rounded-2xl bg-card border border-border/80 text-center shadow-soft-sm">
-              <p className="text-2xl sm:text-3xl font-black text-purple-500">100%</p>
-              <p className="text-xs text-muted-foreground font-semibold mt-1">دقة حسابات المعلمين</p>
-            </div>
-            <div className="p-4 rounded-2xl bg-card border border-border/80 text-center shadow-soft-sm">
-              <p className="text-2xl sm:text-3xl font-black text-emerald-500">99.9%</p>
+            <div className="p-4 rounded-2xl bg-card border border-border/80 text-center shadow-soft-sm hover:border-emerald-500/40 transition-colors">
+              <p className="text-2xl sm:text-3xl font-black text-emerald-500 tabular-nums">99.9%</p>
               <p className="text-xs text-muted-foreground font-semibold mt-1">جاهزية سحابية Cloudflare</p>
             </div>
           </div>
-        </section>
+        </motion.section>
       )}
+
+      {/* Interactive Feature Showcase for Center, Teacher, Student, and Parent Portals */}
+      <PortalShowcase />
 
       {/* Special Offer Card */}
       {config.specialOffer?.enabled && (
@@ -811,11 +791,19 @@ export default function DynamicHomePage() {
                       <ChevronDown className="w-4 h-4 text-muted-foreground shrink-0" />
                     )}
                   </button>
-                  {isExpanded && (
-                    <div className="p-4 sm:p-5 pt-0 text-xs sm:text-sm text-muted-foreground leading-relaxed border-t border-border/50 bg-background/50">
-                      {faq.answer}
-                    </div>
-                  )}
+                  <AnimatePresence initial={false}>
+                    {isExpanded && (
+                      <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        transition={{ duration: 0.2 }}
+                        className="p-4 sm:p-5 pt-0 text-xs sm:text-sm text-muted-foreground leading-relaxed border-t border-border/50 bg-background/50 overflow-hidden"
+                      >
+                        {faq.answer}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                 </div>
               );
             })}
@@ -836,40 +824,16 @@ export default function DynamicHomePage() {
           </div>
 
           {/* Form Tabs */}
-          <div className="flex items-center justify-center gap-2 mb-8">
-            <button
-              type="button"
-              onClick={() => setActiveFormTab('subscription')}
-              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-                activeFormTab === 'subscription'
-                  ? 'bg-cyan-600 text-white shadow-soft-sm'
-                  : 'bg-card border border-border text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              طلب اشتراك جديد
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveFormTab('demo')}
-              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-                activeFormTab === 'demo'
-                  ? 'bg-cyan-600 text-white shadow-soft-sm'
-                  : 'bg-card border border-border text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              طلب عرض تجريبي (Demo)
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveFormTab('complaint')}
-              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-                activeFormTab === 'complaint'
-                  ? 'bg-cyan-600 text-white shadow-soft-sm'
-                  : 'bg-card border border-border text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              صندوق الشكاوى والمقترحات
-            </button>
+          <div className="flex justify-center mb-8 overflow-x-auto pb-1">
+            <AnimatedTabs
+              activeId={activeFormTab}
+              onChange={(id) => setActiveFormTab(id as 'subscription' | 'demo' | 'complaint')}
+              tabs={[
+                { id: 'subscription', label: 'طلب اشتراك جديد', icon: <Sparkles className="w-4 h-4" /> },
+                { id: 'demo', label: 'طلب عرض تجريبي (Demo)', icon: <Calendar className="w-4 h-4" /> },
+                { id: 'complaint', label: 'صندوق الشكاوى والمقترحات', icon: <HelpCircle className="w-4 h-4" /> },
+              ]}
+            />
           </div>
 
           <div className="bg-card border border-border rounded-3xl p-6 sm:p-8 shadow-soft-md">

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import {
   Wallet,
@@ -21,13 +21,57 @@ import {
 import { useTenant } from '@/components/layout/tenant-provider';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
+import { StaggeredCardGrid } from '@/components/motion/staggered-card-grid';
+import { AnimatedMetric } from '@/components/motion/animated-metric';
+import { InteractiveBarChart } from '@/components/ui/interactive-chart';
+import { SkeletonKpiGrid } from '@/components/ui/skeleton';
+import { getDataProvider } from '@/lib/dal/factory';
+import { cairoClock } from '@/lib/attendance/reception';
+import type { CashierShift, Expense, Payment, TeacherPayroll } from '@/lib/dal/types';
 
 export default function AccountantPortalPage() {
-  const { tenant, currentRole, currentUser } = useTenant();
+  const { tenant, currentUser, masterData } = useTenant();
+  const [loading, setLoading] = useState(true);
+  const [payments, setPayments] = useState<Payment[]>([]);
+  const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [payrolls, setPayrolls] = useState<TeacherPayroll[]>([]);
+  const [activeShift, setActiveShift] = useState<CashierShift | null>(null);
+  const today = cairoClock().slice(0, 10);
 
-  // Simulated cash shift data
-  const [shiftActive, setShiftActive] = useState(true);
+  useEffect(() => {
+    const token = masterData.auth.idToken;
+    if (process.env.NODE_ENV !== 'test' && !token) {
+      setLoading(false);
+      return;
+    }
+    let active = true;
+    const dal = getDataProvider(token || undefined);
+    Promise.all([
+      dal.getPayments(tenant.id).catch(() => [] as Payment[]),
+      dal.getExpenses(tenant.id).catch(() => [] as Expense[]),
+      dal.getTeacherPayroll(tenant.id).catch(() => [] as TeacherPayroll[]),
+      dal.getActiveCashierShift(tenant.id).catch(() => null),
+    ]).then(([paymentsList, expensesList, payrollList, shift]) => {
+      if (!active) return;
+      setPayments(paymentsList);
+      setExpenses(expensesList);
+      setPayrolls(payrollList);
+      setActiveShift(shift);
+      setLoading(false);
+    }).catch(() => {
+      if (active) setLoading(false);
+    });
+    return () => { active = false; };
+  }, [tenant.id, masterData.auth.idToken]);
+
+  const todayCollected = payments
+    .filter((p) => (p.paidAt || '').slice(0, 10) === today)
+    .reduce((sum, p) => sum + (Number(p.amountPaid) || 0), 0);
+  const totalExpenses = expenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+  const shiftBalance = activeShift ? Number(activeShift.expectedCash || activeShift.openingCash || 0) : 0;
+  const pendingPayroll = payrolls
+    .filter((p) => p.status !== 'paid')
+    .reduce((sum, p) => sum + (Number(p.netPayroll) || 0), 0);
 
   return (
     <div className="space-y-6" dir="rtl">
@@ -63,68 +107,60 @@ export default function AccountantPortalPage() {
         </div>
       </div>
 
-      {/* Financial KPIs */}
-      <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-        <div className="card-elevated p-5 rounded-2xl border border-border bg-card">
-          <div className="flex items-center justify-between">
-            <span className="text-xs text-muted-foreground font-semibold">تحصيلات اليوم المباشرة</span>
-            <div className="w-8 h-8 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
-              <DollarSign className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="mt-3 flex items-baseline justify-between">
-            <span className="text-2xl font-black text-emerald-600 dark:text-emerald-400">
-              14,250
-            </span>
-            <span className="text-[10px] text-muted-foreground">ج.م (نقدي وسحابي)</span>
-          </div>
-        </div>
+      {/* Real Financial KPIs */}
+      {loading ? (
+        <SkeletonKpiGrid count={4} />
+      ) : (
+        <StaggeredCardGrid columns={4}>
+          <AnimatedMetric
+            label="تحصيلات اليوم المباشرة"
+            value={todayCollected}
+            suffix=" ج.م"
+            color="emerald"
+            icon={<DollarSign className="w-4 h-4" />}
+            trend={{ value: 0, periodText: `${payments.filter((p) => (p.paidAt || '').slice(0, 10) === today).length} سند قبض اليوم` }}
+          />
+          <AnimatedMetric
+            label="رصيد الخزينة (الوردية)"
+            value={shiftBalance}
+            suffix=" ج.م"
+            color="cyan"
+            icon={<Wallet className="w-4 h-4" />}
+            trend={{ value: 0, periodText: activeShift ? 'وردية مفتوحة ومسجلة' : 'لا توجد وردية مفتوحة' }}
+          />
+          <AnimatedMetric
+            label="مستحقات المعلمين المعلقة"
+            value={pendingPayroll}
+            suffix=" ج.م"
+            color="purple"
+            icon={<Users className="w-4 h-4" />}
+            trend={{ value: 0, periodText: `${payrolls.filter((p) => p.status !== 'paid').length} كشف معلق للصرف` }}
+          />
+          <AnimatedMetric
+            label="إجمالي المصروفات المسجلة"
+            value={totalExpenses}
+            suffix=" ج.م"
+            color="amber"
+            icon={<Clock className="w-4 h-4" />}
+            trend={{ value: 0, periodText: `${expenses.length} بند مصروفات` }}
+          />
+        </StaggeredCardGrid>
+      )}
 
-        <div className="card-elevated p-5 rounded-2xl border border-border bg-card">
-          <div className="flex items-center justify-between">
-            <span className="text-xs text-muted-foreground font-semibold">رصيد الخزينة الحالي (الوردية)</span>
-            <div className="w-8 h-8 rounded-xl bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 flex items-center justify-center">
-              <Wallet className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="mt-3 flex items-baseline justify-between">
-            <span className="text-2xl font-black text-foreground">
-              9,800
-            </span>
-            <span className="text-[10px] text-muted-foreground">ج.م في الدرج الميداني</span>
-          </div>
-        </div>
-
-        <div className="card-elevated p-5 rounded-2xl border border-border bg-card">
-          <div className="flex items-center justify-between">
-            <span className="text-xs text-muted-foreground font-semibold">مستحقات المعلمين المعلقة</span>
-            <div className="w-8 h-8 rounded-xl bg-purple-500/10 text-purple-600 dark:text-purple-400 flex items-center justify-center">
-              <Users className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="mt-3 flex items-baseline justify-between">
-            <span className="text-2xl font-black text-purple-600 dark:text-purple-400">
-              4,450
-            </span>
-            <span className="text-[10px] text-muted-foreground">ج.م جاهزة للصرف</span>
-          </div>
-        </div>
-
-        <div className="card-elevated p-5 rounded-2xl border border-border bg-card">
-          <div className="flex items-center justify-between">
-            <span className="text-xs text-muted-foreground font-semibold">حالة الوردية الحالية</span>
-            <div className="w-8 h-8 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center">
-              <Clock className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="mt-3 flex items-baseline justify-between">
-            <Badge variant={shiftActive ? 'success' : 'outline'} className="text-xs">
-              {shiftActive ? 'وردية مفتوحة ومسجلة' : 'مغلقة'}
-            </Badge>
-            <span className="text-[10px] text-muted-foreground font-mono">بدأت 09:00 ص</span>
-          </div>
-        </div>
-      </div>
+      {/* Real Cashflow Chart */}
+      <InteractiveBarChart
+        title="ملخص التدفق النقدي المحصل مقابل المصروفات"
+        subtitle="بيانات فعلية مباشرة من خزينة السنتر السحابية"
+        height={210}
+        valueFormatter={(v) => `${v.toLocaleString('ar-EG')} ج.م`}
+        emptyLabel="لا توجد حركات مالية مسجلة حتى الآن"
+        data={[
+          { id: 'collected', label: 'تحصيلات اليوم', value: todayCollected, color: '#10B981' },
+          { id: 'total-payments', label: 'إجمالي التحصيلات', value: payments.reduce((s, p) => s + (Number(p.amountPaid) || 0), 0), color: '#00A3FF' },
+          { id: 'payroll', label: 'مستحقات معلقة', value: pendingPayroll, color: '#8B5CF6' },
+          { id: 'expenses', label: 'المصروفات', value: totalExpenses, color: '#F59E0B' },
+        ].filter((item) => item.value > 0)}
+      />
 
       {/* Accounting Quick Actions */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

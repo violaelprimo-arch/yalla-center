@@ -28,6 +28,11 @@ import { MasterDataStatus } from '@/components/layout/master-data-status';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { StaggeredCardGrid } from '@/components/motion/staggered-card-grid';
+import { AnimatedMetric } from '@/components/motion/animated-metric';
+import { AnimatedTabs } from '@/components/motion/animated-tabs';
+import { InteractiveDonutChart } from '@/components/ui/interactive-chart';
+import { GradeProgressAnimation } from '@/components/motion/grade-progress-animation';
 import { getDataProvider } from '@/lib/dal/factory';
 import {
   User,
@@ -96,6 +101,7 @@ export default function StudentsDirectoryPage() {
   const [selectedGrade, setSelectedGrade] = useState<string>('all');
   const [selectedDivision, setSelectedDivision] = useState<string>('all');
   const [paymentFilter, setPaymentFilter] = useState<'all' | 'due' | 'paid' | 'scholarship'>('all');
+  const [studentViewMode, setStudentViewMode] = useState<'cards' | 'table'>('cards');
 
   // Modals & Drawers state
   const [isRegisterModalOpen, setIsRegisterModalOpen] = useState(false);
@@ -217,64 +223,77 @@ export default function StudentsDirectoryPage() {
         </div>
       </div>
 
-      {/* 4 Summary Metric Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card className="card-elevated border-border">
-          <CardContent className="p-5 flex items-center justify-between">
-            <div>
-              <p className="text-xs text-muted-foreground font-semibold">إجمالي الطلاب المقيدين</p>
-              <h3 className="text-2xl font-black text-foreground mt-1">{kpiTotalStudents}</h3>
-              <p className="text-[11px] text-emerald-600 flex items-center gap-1 mt-1 font-medium">
-                <TrendingUp className="w-3 h-3" /> مقيدين بالسجلات
+      {/* 4 Animated Summary Metric Cards */}
+      <StaggeredCardGrid columns={4}>
+        <AnimatedMetric
+          label="إجمالي الطلاب المقيدين"
+          value={kpiTotalStudents}
+          suffix=" طالب"
+          color="cyan"
+          icon={<Users className="w-4 h-4" />}
+          trend={{ value: 0, periodText: 'مقيدين بالسجلات السحابية' }}
+        />
+        <AnimatedMetric
+          label="الاشتراكات النشطة بالمجموعات"
+          value={kpiActiveEnrollments}
+          suffix=" مقعد"
+          color="emerald"
+          icon={<Layers className="w-4 h-4" />}
+          trend={{ value: 0, periodText: 'إجمالي مقاعد المجموعات' }}
+        />
+        <AnimatedMetric
+          label="طلاب لديهم مستحقات"
+          value={kpiOverdueStudents}
+          suffix=" طالب"
+          color="amber"
+          icon={<AlertTriangle className="w-4 h-4" />}
+          trend={{ value: 0, periodText: 'متبقي عليهم رسوم' }}
+        />
+        <AnimatedMetric
+          label="إجمالي المستحقات المطلوبة"
+          value={kpiTotalBalanceDue}
+          suffix=" ج.م"
+          color="purple"
+          icon={<CreditCard className="w-4 h-4" />}
+          trend={{ value: 0, periodText: 'مستحقات واجبة التحصيل' }}
+        />
+      </StaggeredCardGrid>
+
+      {students.length > 0 && (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
+          <div className="lg:col-span-5">
+            <InteractiveDonutChart
+              title="حالة السداد المالي للطلاب"
+              subtitle="توزيع الطلاب المسددين بالكامل مقابل من لديهم مستحقات"
+              height={180}
+              centerLabel="إجمالي الطلاب"
+              centerValue={students.length}
+              data={[
+                { id: 'paid', label: 'مسدد بالكامل', value: Math.max(0, students.length - kpiOverdueStudents), color: '#10B981' },
+                { id: 'due', label: 'عليه مستحقات', value: kpiOverdueStudents, color: '#EF4444' },
+              ].filter((d) => d.value > 0)}
+            />
+          </div>
+          <div className="lg:col-span-7 flex flex-col justify-between p-5 rounded-2xl border border-border bg-card">
+            <div className="space-y-1">
+              <h3 className="text-sm font-bold text-foreground">طريقة عرض سجل الطلاب</h3>
+              <p className="text-xs text-muted-foreground">
+                تنقل بسلاسة بين البطاقات التفاعلية للطلاب أو الجدول التفصيلي الشامل
               </p>
             </div>
-            <div className="w-12 h-12 rounded-2xl bg-brand-cyan-500/10 text-brand-cyan-600 flex items-center justify-center">
-              <Users className="w-6 h-6" />
+            <div className="pt-4">
+              <AnimatedTabs
+                activeId={studentViewMode}
+                onChange={(id) => setStudentViewMode(id as 'cards' | 'table')}
+                tabs={[
+                  { id: 'cards', label: 'بطاقات الطلاب البصرية', icon: <GraduationCap className="w-4 h-4" /> },
+                  { id: 'table', label: 'الجدول التفصيلي الكامل', icon: <Layers className="w-4 h-4" /> },
+                ]}
+              />
             </div>
-          </CardContent>
-        </Card>
-
-        <Card className="card-elevated border-border">
-          <CardContent className="p-5 flex items-center justify-between">
-            <div>
-              <p className="text-xs text-muted-foreground font-semibold">الاشتراكات النشطة بالمجموعات</p>
-              <h3 className="text-2xl font-black text-foreground mt-1">{kpiActiveEnrollments}</h3>
-              <p className="text-[11px] text-brand-cyan-600 font-medium mt-1">حصة / مقعد نشط</p>
-            </div>
-            <div className="w-12 h-12 rounded-2xl bg-teal-500/10 text-teal-600 flex items-center justify-center">
-              <Layers className="w-6 h-6" />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="card-elevated border-border">
-          <CardContent className="p-5 flex items-center justify-between">
-            <div>
-              <p className="text-xs text-muted-foreground font-semibold">طلاب لديهم مستحقات</p>
-              <h3 className="text-2xl font-black text-rose-600 mt-1">{kpiOverdueStudents}</h3>
-              <p className="text-[11px] text-rose-500 font-medium mt-1">متبقي عليهم رسوم</p>
-            </div>
-            <div className="w-12 h-12 rounded-2xl bg-rose-500/10 text-rose-600 flex items-center justify-center">
-              <AlertTriangle className="w-6 h-6" />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="card-elevated border-border">
-          <CardContent className="p-5 flex items-center justify-between">
-            <div>
-              <p className="text-xs text-muted-foreground font-semibold">إجمالي المستحقات المطلوبة</p>
-              <h3 className="text-2xl font-black text-amber-500 mt-1">
-                {kpiTotalBalanceDue.toLocaleString('ar-EG')} <span className="text-xs">ج.م</span>
-              </h3>
-              <p className="text-[11px] text-amber-600 font-medium mt-1">مستحقات واجبة التحصيل</p>
-            </div>
-            <div className="w-12 h-12 rounded-2xl bg-amber-500/10 text-amber-600 flex items-center justify-center">
-              <CreditCard className="w-6 h-6" />
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+          </div>
+        </div>
+      )}
 
       {/* Filter and Search Bar */}
       <Card className="card-elevated border-border">
@@ -399,7 +418,99 @@ export default function StudentsDirectoryPage() {
         </CardContent>
       </Card>
 
+      {/* Visual Student Cards Grid View */}
+      {studentViewMode === 'cards' && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {filteredStudents.length === 0 ? (
+            <div className="md:col-span-2 lg:col-span-3 card-elevated p-12 text-center text-muted-foreground rounded-2xl border border-border">
+              <GraduationCap className="w-10 h-10 mx-auto text-muted-foreground/40 mb-2" />
+              <p className="font-bold text-sm text-foreground">
+                {students.length === 0 ? 'لا يوجد طلاب مسجلون بعد' : 'لا يوجد طلاب يطابقون شروط البحث'}
+              </p>
+            </div>
+          ) : (
+            filteredStudents.map((student) => {
+              const studentActiveEnrollments = enrollments.filter(
+                (e) => e.studentId === student.id && e.isActive && groups.some((group) => group.id === e.groupId && group.isActive)
+              );
+              const due = student.balanceDue || 0;
+              return (
+                <div
+                  key={student.id}
+                  className="card-elevated p-5 rounded-2xl border border-border bg-card hover:border-brand-cyan-500/40 transition-all flex flex-col justify-between space-y-4"
+                >
+                  <div className="space-y-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <img
+                          src={student.avatarUrl || '/brand/yalla-center-icon.png'}
+                          alt={student.fullName}
+                          className="w-12 h-12 rounded-xl object-cover border border-border shrink-0"
+                        />
+                        <div className="min-w-0">
+                          <h3 className="font-bold text-sm text-foreground truncate">{student.fullName}</h3>
+                          <span className="font-mono text-[11px] bg-brand-cyan-500/10 text-brand-cyan-700 dark:text-brand-cyan-400 px-1.5 py-0.5 rounded font-semibold inline-block mt-0.5">
+                            {student.studentCode || 'STD-0000'}
+                          </span>
+                        </div>
+                      </div>
+                      <Badge variant={due <= 0 ? 'success' : 'destructive'} className="text-[10px] shrink-0">
+                        {due <= 0 ? 'مسدد' : `${due.toLocaleString('ar-EG')} ج.م`}
+                      </Badge>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 text-xs pt-2 border-t border-border/60">
+                      <div className="p-2 rounded-xl bg-muted/30">
+                        <span className="text-[10px] text-muted-foreground block">المرحلة</span>
+                        <strong className="text-foreground">
+                          {student.stage === 'secondary' ? 'ثانوي' : student.stage === 'preparatory' ? 'إعدادي' : 'ابتدائي'}
+                        </strong>
+                      </div>
+                      <div className="p-2 rounded-xl bg-muted/30">
+                        <span className="text-[10px] text-muted-foreground block">المجموعات المقيدة</span>
+                        <strong className="font-mono text-foreground">{studentActiveEnrollments.length} مجموعات</strong>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-2 pt-2 border-t border-border/60">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setSelectedStudentForDrawer(student)}
+                      className="h-8 px-2.5 text-xs gap-1 flex-1"
+                    >
+                      <Eye className="w-3.5 h-3.5 text-brand-cyan-600" />
+                      <span>الملف</span>
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setSelectedStudentForEnroll(student)}
+                      className="h-8 px-2.5 text-xs gap-1 text-teal-600"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>مجموعة</span>
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setSelectedStudentForIdCard(student)}
+                      className="h-8 px-2 text-xs gap-1"
+                      title="طباعة الكارنيه"
+                    >
+                      <QrCode className="w-3.5 h-3.5 text-amber-500" />
+                    </Button>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      )}
+
       {/* Students Data Table */}
+      {studentViewMode === 'table' && (
       <Card className="card-elevated border-border overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-right text-xs sm:text-sm">
@@ -591,6 +702,7 @@ export default function StudentsDirectoryPage() {
           </table>
         </div>
       </Card>
+      )}
 
       {/* 1. Modal: Student Registration Intake */}
       {isRegisterModalOpen && (
@@ -1452,6 +1564,18 @@ function StudentDetailDrawer({
         </div>
 
         {/* Drawer Body */}
+        {!isLoading && attendanceHistory.length > 0 && activeTab === 'attendance' && (
+          <div className="px-5 pt-4">
+            <GradeProgressAnimation
+              score={attendanceHistory.filter((a) => a.status === 'present' || a.status === 'late').length}
+              totalMarks={attendanceHistory.length}
+              title="مؤشر الانضباط والحضور"
+              examName={`إجمالي ${attendanceHistory.length} حصة مسجلة`}
+              rank={`${Math.round((attendanceHistory.filter((a) => a.status === 'present' || a.status === 'late').length / attendanceHistory.length) * 100)}% نسبة حضور`}
+              size={96}
+            />
+          </div>
+        )}
         <div className="p-5 flex-1 overflow-y-auto space-y-4">
           {/* TAB 1: GROUPS */}
           {activeTab === 'groups' && (

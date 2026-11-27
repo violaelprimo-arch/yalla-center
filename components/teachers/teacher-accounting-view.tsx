@@ -33,6 +33,7 @@ import {
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { InteractiveBarChart } from '@/components/ui/interactive-chart';
 import type { Group, TeacherMonthlyStatement, User } from '@/lib/dal/types';
 import { getDataProvider } from '@/lib/dal/factory';
 import { getStageNameArabic } from '@/lib/materials/taxonomy';
@@ -381,6 +382,23 @@ export function TeacherAccountingView({ tenantSlug, statement, teachers, groups,
           </div>
         </div>
       </div>
+
+      {/* Top Filter and Controls Bar (Hidden during print) */}
+      {unifiedGroups.length > 0 && (
+        <div className="print:hidden">
+          <InteractiveBarChart
+            title="تحليل مستحقات المعلم حسب المجموعات"
+            subtitle={`صافي المستحقات المتوقعة لشهر ${ARABIC_MONTHS[month - 1]} ${year}`}
+            height={190}
+            valueFormatter={(val) => `${val.toLocaleString('ar-EG')} ج.م`}
+            data={unifiedGroups.map((g) => ({
+              id: g.groupId,
+              label: g.groupName.slice(0, 16),
+              value: Math.max(0, Number(g.compensationAmount) || 0),
+            }))}
+          />
+        </div>
+      )}
 
       {/* Top Filter and Controls Bar (Hidden during print) */}
       <div className="print:hidden bg-card border border-border rounded-2xl p-4 shadow-sm space-y-4">

@@ -23,6 +23,8 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Drawer } from '@/components/ui/drawer';
+import { EducationalSubjectBadge } from '@/components/motion/educational-graphics';
 import type { Group, Subject, EducationalStage, User } from '@/lib/dal/types';
 import {
   TEACHER_PERMISSIONS,
@@ -73,15 +75,24 @@ export function TeacherProfileModal({
   };
 
   return (
-    <dialog
-      open
-      dir="rtl"
-      onCancel={onClose}
-      className="m-auto max-h-[92dvh] w-[min(94vw,740px)] overflow-hidden rounded-3xl border border-border bg-card text-foreground shadow-2xl backdrop:bg-black/60 transition-all p-0"
+    <Drawer
+      isOpen={true}
+      onClose={onClose}
+      side="end"
+      size="xl"
+      showCloseButton={false}
+      ariaLabel={`ملف المعلم ${teacher.fullName}`}
+      footer={
+        <div className="flex items-center justify-end gap-2">
+          <Button type="button" variant="outline" onClick={onClose} className="rounded-xl text-xs font-bold">
+            إغلاق
+          </Button>
+        </div>
+      }
     >
-      <div className="flex max-h-[92dvh] flex-col">
+      <div className="space-y-5 -m-2" dir="rtl">
         {/* Header Banner */}
-        <div className="p-6 border-b border-border bg-gradient-to-l from-brand-cyan-500/10 via-muted/30 to-background flex items-start justify-between gap-4">
+        <div className="p-5 rounded-2xl border border-border bg-gradient-to-l from-brand-cyan-500/10 via-muted/30 to-background flex items-start justify-between gap-4">
           <div className="flex items-center gap-4">
             <div className="relative w-16 h-16 rounded-2xl overflow-hidden border-2 border-border bg-muted flex items-center justify-center shrink-0 shadow-md">
               {avatar ? (
@@ -217,15 +228,15 @@ export function TeacherProfileModal({
             {teacherSubjects.length > 0 ? (
               <div className="flex flex-wrap gap-2">
                 {teacherSubjects.map((sub) => (
-                  <span
-                    key={sub.id}
-                    className="px-2.5 py-1 rounded-xl text-xs font-bold bg-muted/50 border border-border text-foreground flex items-center gap-1.5"
-                  >
-                    <span>{sub.nameAr}</span>
-                    <span className="text-[10px] text-muted-foreground font-normal">
-                      ({getGradeNameArabic(sub.grade)})
-                    </span>
-                  </span>
+                  <div key={sub.id} className="inline-flex items-center gap-1.5 rounded-xl bg-muted/40 border border-border p-1.5">
+                    <EducationalSubjectBadge subject={sub.nameAr} size="sm" showLabel={false} />
+                    <div className="px-1">
+                      <span className="text-xs font-bold text-foreground block">{sub.nameAr}</span>
+                      <span className="text-[10px] text-muted-foreground font-normal">
+                        {getGradeNameArabic(sub.grade)}
+                      </span>
+                    </div>
+                  </div>
                 ))}
               </div>
             ) : (
@@ -308,14 +319,7 @@ export function TeacherProfileModal({
             </div>
           </div>
         </div>
-
-        {/* Modal Footer */}
-        <div className="p-4 border-t border-border bg-muted/20 flex items-center justify-end gap-2">
-          <Button type="button" variant="outline" onClick={onClose} className="rounded-xl text-xs font-bold">
-            إغلاق
-          </Button>
-        </div>
       </div>
-    </dialog>
+    </Drawer>
   );
 }

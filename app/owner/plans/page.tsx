@@ -26,6 +26,8 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { RTLIcon } from '@/components/ui/rtl-icon';
+import { StaggeredCardGrid } from '@/components/motion/staggered-card-grid';
+import { AnimatedMetric } from '@/components/motion/animated-metric';
 import { SaasPlatformService } from '@/lib/saas/service';
 import { SubscriptionPlan, SubscriptionPlanTier, BillingFrequency } from '@/lib/saas/types';
 
@@ -216,6 +218,34 @@ export default function OwnerPlansPage() {
           <strong>ملاحظة مالية:</strong> تعديل أسعار الباقات يطبَّق فوراً على الموقع التسويقي العام والاشتراكات الجديدة، ولا يغير إطلاقاً فواتير أو عقود الاشتراكات السابقة سارية المفعول.
         </span>
       </div>
+
+      {/* Animated KPIs */}
+      <StaggeredCardGrid columns={3}>
+        <AnimatedMetric
+          label="إجمالي الباقات المعرفة"
+          value={plans.length}
+          suffix=" باقة"
+          color="amber"
+          icon={<Sparkles className="w-4 h-4" />}
+          trend={{ value: 0, periodText: `${plans.filter((p) => p.isPublic).length} باقات عامة بالموقع` }}
+        />
+        <AnimatedMetric
+          label="متوسط الاشتراك الشهري"
+          value={plans.length > 0 ? Math.round(plans.reduce((s, p) => s + p.monthlyPrice, 0) / plans.length) : 0}
+          suffix=" ج.م"
+          color="cyan"
+          icon={<DollarSign className="w-4 h-4" />}
+          trend={{ value: 0, periodText: 'تسعير مرن شهري وسنوي' }}
+        />
+        <AnimatedMetric
+          label="متوسط رصيد AI للباقات"
+          value={plans.length > 0 ? Math.round(plans.reduce((s, p) => s + p.aiUnitAllowance, 0) / plans.length) : 0}
+          suffix=" وحدة"
+          color="purple"
+          icon={<Bot className="w-4 h-4" />}
+          trend={{ value: 0, periodText: 'توليد امتحانات وبنك أسئلة' }}
+        />
+      </StaggeredCardGrid>
 
       {/* Plans Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">

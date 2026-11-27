@@ -26,6 +26,8 @@ import {
 import { useTenant } from '@/components/layout/tenant-provider';
 import { Badge } from '@/components/ui/badge';
 import { MathView } from '@/components/ui/math-view';
+import { AnimatedTabs } from '@/components/motion/animated-tabs';
+import { AIExamGenerationAnimation } from '@/components/motion/ai-exam-generation-animation';
 import { Exam, ExamQuestion, ExamStatus } from '@/lib/dal/types';
 import { countArabicWords, MIN_EXAM_WORD_COUNT } from '@/lib/materials/indexer';
 import { useCenterMaterials } from '@/lib/materials/client';
@@ -305,39 +307,16 @@ export default function ExamsPage({ params }: { params: { centerSlug: string } }
       </div>
 
       {/* Filter Tabs */}
-      <div className="flex items-center justify-between gap-4 p-2 bg-card border border-border rounded-2xl">
-        <div className="flex items-center gap-1">
-          <button
-            onClick={() => setStatusFilter('all')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-              statusFilter === 'all'
-                ? 'bg-cyan-500 text-white shadow-sm'
-                : 'text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            الكل ({exams.length})
-          </button>
-          <button
-            onClick={() => setStatusFilter('draft')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-              statusFilter === 'draft'
-                ? 'bg-amber-500 text-white shadow-sm'
-                : 'text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            مسودات قيد المراجعة ({exams.filter((e) => e.status === 'draft').length})
-          </button>
-          <button
-            onClick={() => setStatusFilter('published')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-              statusFilter === 'published'
-                ? 'bg-emerald-500 text-white shadow-sm'
-                : 'text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            منشورة للطلاب ({exams.filter((e) => e.status === 'published').length})
-          </button>
-        </div>
+      <div className="overflow-x-auto pb-1">
+        <AnimatedTabs
+          activeId={statusFilter}
+          onChange={(id) => setStatusFilter(id as 'all' | ExamStatus)}
+          tabs={[
+            { id: 'all', label: 'الكل', badge: exams.length },
+            { id: 'draft', label: 'مسودات قيد المراجعة', badge: exams.filter((e) => e.status === 'draft').length },
+            { id: 'published', label: 'منشورة للطلاب', badge: exams.filter((e) => e.status === 'published').length },
+          ]}
+        />
       </div>
 
       {/* Exams Directory Cards */}
@@ -617,6 +596,10 @@ export default function ExamsPage({ params }: { params: { centerSlug: string } }
                   </p>
                 )}
               </div>
+
+              {isGenerating && (
+                <AIExamGenerationAnimation className="border-cyan-500/40" />
+              )}
 
               {/* Submit Button */}
               <div className="pt-3 border-t border-border flex items-center justify-end gap-2">

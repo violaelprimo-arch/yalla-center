@@ -23,15 +23,23 @@ import { Button } from '@/components/ui/button';
 import { RTLIcon } from '@/components/ui/rtl-icon';
 import { StaggeredCardGrid } from '@/components/motion/staggered-card-grid';
 import { AnimatedMetric } from '@/components/motion/animated-metric';
+import { InteractiveBarChart, InteractiveDonutChart } from '@/components/ui/interactive-chart';
+import { SkeletonKpiGrid } from '@/components/ui/skeleton';
+import { EducationalSubjectBadge } from '@/components/motion/educational-graphics';
 import { cairoClock, receptionSessionState } from '@/lib/attendance/reception';
 import { getDataProvider } from '@/lib/dal/factory';
-import type { Session } from '@/lib/dal/types';
+import type { Session, Payment, Exam, User } from '@/lib/dal/types';
 import { clockLabel, GROUP_PRICING_LABELS } from '@/lib/timetable/group-schedule';
 
 export default function CenterDashboardPage() {
   const { tenant, branches, currentRole, currentUser, groupData, masterData } = useTenant();
   const { groups, classrooms, ready } = groupData;
   const [todaySessions, setTodaySessions] = useState<Session[]>([]);
+  const [students, setStudents] = useState<User[]>([]);
+  const [payments, setPayments] = useState<Payment[]>([]);
+  const [exams, setExams] = useState<Exam[]>([]);
+  const [todayAttendanceStats, setTodayAttendanceStats] = useState({ present: 0, enrolled: 0 });
+  const [metricsLoading, setMetricsLoading] = useState(true);
   const clock = cairoClock();
   const today = clock.slice(0, 10);
   const ownGroups = groups.filter(group => group.teacherId === currentUser.id && group.isActive);
@@ -41,13 +49,75 @@ export default function CenterDashboardPage() {
   useEffect(() => {
     if (!ready) return;
     const token = masterData.auth.idToken;
-    if (process.env.NODE_ENV !== 'test' && !token) return;
+    if (process.env.NODE_ENV !== 'test' && !token) {
+      setMetricsLoading(false);
+      return;
+    }
     let active = true;
-    getDataProvider(token || undefined).getSessions(tenant.id, { date: today }).then(sessions => {
-      if (active) setTodaySessions(sessions.sort((a, b) => a.startTime.localeCompare(b.startTime)));
-    }).catch(() => {});
+    setMetricsLoading(true);
+    const dal = getDataProvider(token || undefined);
+
+    Promise.all([
+      dal.getSessions(tenant.id, { date: today }).catch(() => [] as Session[]),
+      dal.getUsers(tenant.id, { role: 'STUDENT' }).catch(() => [] as User[]),
+      dal.getPayments(tenant.id).catch(() => [] as Payment[]),
+      dal.getExams(tenant.id).catch(() => [] as Exam[]),
+    ]).then(async ([sessionsList, studentsList, paymentsList, examsList]) => {
+      if (!active) return;
+      const sortedSessions = [...sessionsList].sort((a, b) => a.startTime.localeCompare(b.startTime));
+      setTodaySessions(sortedSessions);
+      setStudents(studentsList);
+      setPayments(paymentsList);
+      setExams(examsList);
+
+      // Compute real attendance counts from today's sessions
+      const sessionSubset = sortedSessions.slice(0, 12);
+      if (sessionSubset.length > 0) {
+        const statsResults = await Promise.all(
+          sessionSubset.map((s) =>
+            dal.getSessionAttendanceStats(tenant.id, s.id).catch(() => null)
+          )
+        );
+        if (!active) return;
+        let present = 0;
+        let enrolled = 0;
+        for (const stat of statsResults) {
+          if (stat) {
+            present += stat.presentCount + (stat.lateCount || 0);
+            enrolled += stat.totalEnrolled;
+          }
+        }
+        setTodayAttendanceStats({ present, enrolled });
+      } else {
+        setTodayAttendanceStats({ present: 0, enrolled: 0 });
+      }
+      setMetricsLoading(false);
+    }).catch(() => {
+      if (active) setMetricsLoading(false);
+    });
     return () => { active = false; };
   }, [ready, groups, tenant.id, today, masterData.auth.idToken]);
+
+  const activeStudentsCount = students.filter((s) => s.isActive !== false).length;
+  const attendancePct = todayAttendanceStats.enrolled > 0
+    ? Number(((todayAttendanceStats.present / todayAttendanceStats.enrolled) * 100).toFixed(1))
+    : 0;
+  const todayRevenue = payments
+    .filter((p) => (p.paidAt || '').slice(0, 10) === today)
+    .reduce((sum, p) => sum + (Number(p.amountPaid) || 0), 0);
+
+  const activeGroupsList = groups.filter((g) => g.isActive !== false);
+  const pricingBreakdownData = Object.entries(GROUP_PRICING_LABELS).map(([modelKey, label]) => ({
+    id: modelKey,
+    label,
+    value: activeGroupsList.filter((g) => g.pricingModel === modelKey).length,
+  })).filter((d) => d.value > 0);
+
+  const branchGroupsChartData = branches.map((b) => ({
+    id: b.id,
+    label: b.nameAr.slice(0, 14),
+    value: activeGroupsList.filter((g) => g.branchId === b.id).length,
+  }));
 
   return (
     <div className="space-y-6" dir="rtl">
@@ -155,46 +225,86 @@ export default function CenterDashboardPage() {
         </div>
       )}
 
-      {/* 4 Primary Operational Metric Cards with Motion */}
-      <StaggeredCardGrid columns={4}>
-        <AnimatedMetric
-          label="الطلاب المقيدون"
-          value={850}
-          suffix=" طالب"
-          color="cyan"
-          icon={<Users className="w-4 h-4" />}
-          trend={{ value: 12.4, isPositive: true, periodText: "مقارنة بالشهر السابق" }}
-          sparklineData={[740, 780, 810, 830, 850]}
-        />
-        <AnimatedMetric
-          label="نسبة الحضور اليوم"
-          value={88.7}
-          decimals={1}
-          suffix="%"
-          color="emerald"
-          icon={<CalendarCheck className="w-4 h-4" />}
-          trend={{ value: 0, periodText: "142 طالب حاضر من أصل 160 متوقعاً" }}
-          sparklineData={[82, 85, 87, 86, 88.7]}
-        />
-        <AnimatedMetric
-          label="متحصلات الخزينة اليوم"
-          value={11360}
-          prefix="ج.م "
-          color="amber"
-          icon={<Wallet className="w-4 h-4" />}
-          trend={{ value: 8.5, isPositive: true, periodText: "تم إغلاق مناوبة الصباح بنجاح" }}
-          sparklineData={[8000, 9500, 10200, 10800, 11360]}
-        />
-        <AnimatedMetric
-          label="الامتحانات الذكية"
-          value={24}
-          suffix=" امتحان"
-          color="purple"
-          icon={<FileSpreadsheet className="w-4 h-4" />}
-          trend={{ value: 0, periodText: "مؤصلة بذكاء اصطناعي وتصدير A4" }}
-          sparklineData={[14, 18, 20, 22, 24]}
-        />
-      </StaggeredCardGrid>
+      {/* 4 Primary Real-Data Operational Metric Cards with Motion */}
+      {metricsLoading ? (
+        <SkeletonKpiGrid count={4} />
+      ) : (
+        <StaggeredCardGrid columns={4}>
+          <AnimatedMetric
+            label="الطلاب المقيدون"
+            value={activeStudentsCount}
+            suffix=" طالب"
+            color="cyan"
+            icon={<Users className="w-4 h-4" />}
+            trend={{
+              value: 0,
+              periodText: `إجمالي المسجلين: ${students.length} · ${activeGroupsList.length} مجموعة نشطة`,
+            }}
+          />
+          <AnimatedMetric
+            label="نسبة الحضور اليوم"
+            value={attendancePct}
+            decimals={1}
+            suffix="%"
+            color="emerald"
+            icon={<CalendarCheck className="w-4 h-4" />}
+            trend={{
+              value: 0,
+              periodText:
+                todayAttendanceStats.enrolled > 0
+                  ? `${todayAttendanceStats.present} حاضر من أصل ${todayAttendanceStats.enrolled} مقيد في حصص اليوم`
+                  : `${scheduledToday.length} حصص مجدولة اليوم`,
+            }}
+          />
+          <AnimatedMetric
+            label="متحصلات الخزينة اليوم"
+            value={todayRevenue}
+            prefix="ج.م "
+            color="amber"
+            icon={<Wallet className="w-4 h-4" />}
+            trend={{
+              value: 0,
+              periodText: `${payments.filter((p) => (p.paidAt || '').slice(0, 10) === today).length} إيصال محصل اليوم`,
+            }}
+          />
+          <AnimatedMetric
+            label="الامتحانات الذكية"
+            value={exams.length}
+            suffix=" امتحان"
+            color="purple"
+            icon={<FileSpreadsheet className="w-4 h-4" />}
+            trend={{
+              value: 0,
+              periodText: `${exams.filter((e) => e.status === 'published').length} منشور للطلاب`,
+            }}
+          />
+        </StaggeredCardGrid>
+      )}
+
+      {/* Real Operational Analytics Charts */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <div className="lg:col-span-7">
+          <InteractiveBarChart
+            title="توزيع المجموعات النشطة على الفروع"
+            subtitle="عدد المجموعات الدراسية المفعّلة في كل فرع"
+            height={210}
+            valueFormatter={(v) => `${v} مجموعة`}
+            emptyLabel="لا توجد مجموعات مسجلة في الفروع بعد"
+            data={branchGroupsChartData}
+          />
+        </div>
+        <div className="lg:col-span-5">
+          <InteractiveDonutChart
+            title="توزيع أنظمة محاسبة المجموعات"
+            subtitle="تصنيف المجموعات حسب نظام التسعير والمحاسبة"
+            height={200}
+            centerLabel="مجموعة نشطة"
+            centerValue={activeGroupsList.length}
+            emptyLabel="أضف مجموعات لعرض توزيع أنظمة المحاسبة"
+            data={pricingBreakdownData}
+          />
+        </div>
+      </div>
 
       {/* Main Grid: Today's Sessions & Branches Overview */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import { Cairo } from 'next/font/google';
 import './globals.css';
+import { MotionRootProvider } from '@/components/providers/motion-root-provider';
 
 const cairo = Cairo({
   subsets: ['arabic', 'latin'],
@@ -54,7 +55,7 @@ export default function RootLayout({
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>
       <body className="min-h-screen bg-background font-sans text-foreground antialiased selection:bg-brand-cyan-500 selection:text-white">
-        {children}
+        <MotionRootProvider>{children}</MotionRootProvider>
       </body>
     </html>
   );

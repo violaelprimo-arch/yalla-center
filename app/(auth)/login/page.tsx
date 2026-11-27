@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { BrandLogo } from '@/components/brand/brand-logo';
 import { Button } from '@/components/ui/button';
+import { AcademicAchievementIllustration } from '@/components/motion/educational-graphics';
 import {
   getFirebaseClientServices,
   signInFirebaseGoogle,
@@ -349,10 +350,13 @@ function LoginForm() {
         {/* Right Side: Platform Architecture & Security Assurance */}
         <div className="lg:col-span-5 space-y-4">
           <div className="card-elevated p-6 rounded-2xl border border-border space-y-4 bg-muted/30">
-            <h2 className="text-sm font-bold text-foreground flex items-center gap-2">
-              <ShieldCheck className="w-4 h-4 text-brand-cyan-600 dark:text-brand-cyan-400" />
-              <span>منظومة الدخول السحابية الموثقة</span>
-            </h2>
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="text-sm font-bold text-foreground flex items-center gap-2">
+                <ShieldCheck className="w-4 h-4 text-brand-cyan-600 dark:text-brand-cyan-400" />
+                <span>منظومة الدخول السحابية الموثقة</span>
+              </h2>
+              <AcademicAchievementIllustration size="sm" />
+            </div>
             <p className="text-xs text-muted-foreground leading-relaxed">
               يتم التحقق من الهوية والصلاحيات مركزياً عبر بنية مصادقة آمنة. يتم توجيه كل مستخدم آلياً إلى بوابته المعتمدة فور التحقق:
             </p>

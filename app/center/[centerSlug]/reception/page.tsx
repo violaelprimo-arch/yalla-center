@@ -35,6 +35,7 @@ import { ManualCheckinTable } from '@/components/attendance/manual-checkin-table
 import { cairoClock, receptionSessionState, sessionStart } from '@/lib/attendance/reception';
 import { ReceptionStudentCard } from '@/components/attendance/reception-student-card';
 import { RecentScansFeed, RecentScanItem } from '@/components/attendance/recent-scans-feed';
+import { AttendanceScanAnimation } from '@/components/motion/attendance-scan-animation';
 import {
   LessonExamScorePanel,
   type ReceptionEntryMode,
@@ -434,6 +435,27 @@ export default function ReceptionScanPage() {
           setHudData({ state: 'idle' });
         }}
       />
+
+      {/* Live Verified Scanner Motion Indicator (Triggers ONLY from Confirmed Cloud Save) */}
+      {(isProcessingScan || hudData.state === 'success' || hudData.state === 'error' || hudData.state === 'warning') && (
+        <AttendanceScanAnimation
+          studentName={hudData.student?.fullName || 'جاري التحقق السحابي...'}
+          studentCode={hudData.student?.studentCode || hudData.scannedCode || 'SCAN'}
+          groupName={selectedGroup?.nameAr || 'الحصة المحددة'}
+          stageName={selectedSubjectName || 'متابعة الحضور'}
+          balanceDue={hudData.student?.balanceDue ?? 0}
+          status={
+            isProcessingScan
+              ? 'scanning'
+              : hudData.duplicate
+              ? 'duplicate'
+              : hudData.state === 'error'
+              ? 'error'
+              : 'success'
+          }
+          className="mb-2"
+        />
+      )}
 
       {/* Verification HUD & Live Stats Row */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">

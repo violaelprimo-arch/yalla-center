@@ -36,6 +36,10 @@ import {
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { AnimatedTabs } from '@/components/motion/animated-tabs';
+import { StaggeredCardGrid } from '@/components/motion/staggered-card-grid';
+import { AnimatedMetric } from '@/components/motion/animated-metric';
+import { InteractiveBarChart } from '@/components/ui/interactive-chart';
 import { SaasPlatformService } from '@/lib/saas/service';
 import {
   OwnerInvoice,
@@ -349,115 +353,73 @@ function OwnerFinanceContent() {
         </div>
       )}
 
-      {/* 4 Core Financial KPI Metric Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Invoiced Revenue */}
-        <Card className="card-elevated hover:border-purple-500/40 transition-all">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-xs font-bold text-muted-foreground">
-              إجمالي الاشتراكات المفوترة
-            </CardTitle>
-            <div className="w-8 h-8 rounded-xl bg-purple-500/10 text-purple-600 dark:text-purple-400 flex items-center justify-center">
-              <Receipt className="w-4 h-4" />
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-black font-mono text-foreground" dir="ltr">
-              {finance.totalRevenueInvoiced.toLocaleString('en-US', { minimumFractionDigits: 2 })}{' '}
-              <span className="text-xs font-bold">ج.م</span>
-            </div>
-            <p className="text-[11px] text-muted-foreground mt-1">
-              خصومات ممنوحة: {finance.totalDiscounts.toLocaleString('en-US')} ج.م
-            </p>
-          </CardContent>
-        </Card>
+      {/* 4 Core Animated Financial KPI Metric Cards */}
+      <StaggeredCardGrid columns={4}>
+        <AnimatedMetric
+          label="إجمالي الاشتراكات المفوترة"
+          value={finance.totalRevenueInvoiced}
+          suffix=" ج.م"
+          color="purple"
+          icon={<Receipt className="w-4 h-4" />}
+          trend={{ value: 0, periodText: `خصومات ممنوحة: ${finance.totalDiscounts.toLocaleString('en-US')} ج.م` }}
+        />
+        <AnimatedMetric
+          label="التحصيلات الفعلية المحصلة"
+          value={finance.totalCollections}
+          suffix=" ج.م"
+          color="emerald"
+          icon={<ArrowDownLeft className="w-4 h-4" />}
+          trend={{ value: 0, periodText: 'أموال محصلة ومودعة بالحساب' }}
+        />
+        <AnimatedMetric
+          label="مصاريف المنصة والتشغيل"
+          value={finance.totalExpenses}
+          suffix=" ج.م"
+          color="amber"
+          icon={<ArrowUpRight className="w-4 h-4" />}
+          trend={{ value: 0, periodText: 'خوادم Cloudflare، رسائل WhatsApp، و AI' }}
+        />
+        <AnimatedMetric
+          label="صافي الموقف المالي"
+          value={finance.netProfit}
+          suffix=" ج.م"
+          color="cyan"
+          icon={<DollarSign className="w-4 h-4" />}
+          trend={{ value: 0, periodText: 'الفائض الصافي بعد سداد التكاليف' }}
+        />
+      </StaggeredCardGrid>
 
-        {/* Collections */}
-        <Card className="card-elevated hover:border-emerald-500/40 transition-all">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-xs font-bold text-muted-foreground">
-              التحصيلات الفعلية المحصلة
-            </CardTitle>
-            <div className="w-8 h-8 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
-              <ArrowDownLeft className="w-4 h-4" />
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-black font-mono text-emerald-600 dark:text-emerald-400" dir="ltr">
-              {finance.totalCollections.toLocaleString('en-US', { minimumFractionDigits: 2 })}{' '}
-              <span className="text-xs font-bold">ج.م</span>
-            </div>
-            <p className="text-[11px] text-emerald-600 dark:text-emerald-400 font-bold mt-1">
-              أموال محصلة ومودعة بالحساب
-            </p>
-          </CardContent>
-        </Card>
-
-        {/* Platform Expenses */}
-        <Card className="card-elevated hover:border-rose-500/40 transition-all">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-xs font-bold text-muted-foreground">
-              مصاريف المنصة والتشغيل
-            </CardTitle>
-            <div className="w-8 h-8 rounded-xl bg-rose-500/10 text-rose-600 dark:text-rose-400 flex items-center justify-center">
-              <ArrowUpRight className="w-4 h-4" />
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-black font-mono text-rose-600 dark:text-rose-400" dir="ltr">
-              {finance.totalExpenses.toLocaleString('en-US', { minimumFractionDigits: 2 })}{' '}
-              <span className="text-xs font-bold">ج.م</span>
-            </div>
-            <p className="text-[11px] text-muted-foreground mt-1">
-              خوادم Cloudflare، رسائل WhatsApp، و Gemini API
-            </p>
-          </CardContent>
-        </Card>
-
-        {/* Net SaaS Profit */}
-        <Card className="card-elevated hover:border-brand-cyan-500/40 transition-all">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-xs font-bold text-muted-foreground">
-              صافي الموقف المالي (Net SaaS Profit)
-            </CardTitle>
-            <div className="w-8 h-8 rounded-xl bg-brand-cyan-500/10 text-brand-cyan-600 dark:text-brand-cyan-400 flex items-center justify-center">
-              <DollarSign className="w-4 h-4" />
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-black font-mono text-brand-cyan-600 dark:text-brand-cyan-400" dir="ltr">
-              {finance.netProfit.toLocaleString('en-US', { minimumFractionDigits: 2 })}{' '}
-              <span className="text-xs font-bold">ج.م</span>
-            </div>
-            <p className="text-[11px] text-brand-cyan-600 dark:text-brand-cyan-400 font-bold mt-1">
-              الفائض الصافي بعد سداد التكاليف
-            </p>
-          </CardContent>
-        </Card>
+      {/* 8 Horizontal Animated Tabs Bar */}
+      <div className="overflow-x-auto pb-1 custom-scrollbar">
+        <AnimatedTabs
+          activeId={activeTab}
+          onChange={(id) => setActiveTab(id as FinanceTabId)}
+          tabs={TABS.map((tab) => {
+            const Icon = tab.icon;
+            return {
+              id: tab.id,
+              label: tab.label,
+              icon: <Icon className="w-4 h-4" />,
+            };
+          })}
+        />
       </div>
 
-      {/* 8 Horizontal Tabs Bar */}
-      <div className="flex border-b border-border gap-2 overflow-x-auto text-xs font-bold pb-1 custom-scrollbar">
-        {TABS.map((tab) => {
-          const Icon = tab.icon;
-          const active = activeTab === tab.id;
-          return (
-            <button
-              type="button"
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-2 px-3.5 py-2.5 rounded-xl transition-all shrink-0 ${
-                active
-                  ? 'bg-brand-cyan-500/10 text-brand-cyan-600 dark:text-brand-cyan-400 border border-brand-cyan-500/30 shadow-soft-xs'
-                  : 'text-muted-foreground hover:text-foreground hover:bg-muted/40'
-              }`}
-            >
-              <Icon className="w-3.5 h-3.5" />
-              <span>{tab.label}</span>
-            </button>
-          );
-        })}
-      </div>
+      {/* Overview Financial Chart */}
+      {activeTab === 'overview' && (
+        <InteractiveBarChart
+          title="مقارنة الإيرادات والمصروفات وصافي الربح"
+          subtitle="ملخص المركز المالي لعمليات المنصة"
+          height={200}
+          valueFormatter={(v) => `${v.toLocaleString('ar-EG')} ج.م`}
+          data={[
+            { id: 'invoiced', label: 'المفوتر', value: finance.totalRevenueInvoiced, color: '#8B5CF6' },
+            { id: 'collected', label: 'المحصل', value: finance.totalCollections, color: '#10B981' },
+            { id: 'expenses', label: 'المصروفات', value: finance.totalExpenses, color: '#F59E0B' },
+            { id: 'net', label: 'صافي الربح', value: Math.max(finance.netProfit, 0), color: '#00A3FF' },
+          ]}
+        />
+      )}
 
       {/* ===================================================================== */}
       {/* TAB 1: OVERVIEW */}

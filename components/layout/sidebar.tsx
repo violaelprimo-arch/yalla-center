@@ -22,12 +22,17 @@ import {
   BookOpen,
   Users,
   LogIn,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
+import { motion } from 'framer-motion';
 import { useFirebaseAuthSession } from '@/lib/firebase/client';
 import { UserRole } from '@/lib/dal/types';
 import { useTenant } from './tenant-provider';
 import { BrandLogo } from '@/components/brand/brand-logo';
+import { BrandIcon } from '@/components/brand/brand-icon';
 import { RTLIcon } from '@/components/ui/rtl-icon';
+import { useMotionTheme } from '@/lib/motion/context';
 import { cn } from '@/lib/utils';
 
 export interface CenterNavItem {
@@ -194,10 +199,22 @@ const ROLE_LABELS: Record<UserRole, { label: string; color: string }> = {
   PARENT: { label: 'ولي أمر', color: 'bg-orange-500/20 text-orange-300 border-orange-500/30' },
 };
 
-export function Sidebar({ mobileOpen = false, onNavigate }: { mobileOpen?: boolean; onNavigate?: () => void }) {
+export function Sidebar({
+  mobileOpen = false,
+  collapsed = false,
+  onToggleCollapse,
+  onNavigate,
+}: {
+  mobileOpen?: boolean;
+  collapsed?: boolean;
+  onToggleCollapse?: () => void;
+  onNavigate?: () => void;
+}) {
   const { tenant, currentRole, currentUser, isOwnerMode } = useTenant();
   const auth = useFirebaseAuthSession();
   const pathname = usePathname();
+  const { options } = useMotionTheme();
+  const isReduced = options.reducedMotion;
 
   const isMasterDataActive =
     pathname.startsWith(`/center/${tenant.slug}/stages`) ||
@@ -226,11 +243,15 @@ export function Sidebar({ mobileOpen = false, onNavigate }: { mobileOpen?: boole
 
   return (
     <aside
-      className={cn("w-64 h-dvh fixed right-0 top-0 z-30 lg:flex flex-col bg-[#0B132B] text-[#F8FAFC] border-l border-[#1C2541] shadow-soft-lg select-none", mobileOpen ? "flex" : "hidden")}
+      className={cn(
+        'h-dvh fixed right-0 top-0 z-30 lg:flex flex-col bg-[#0B132B] text-[#F8FAFC] border-l border-[#1C2541] shadow-soft-lg select-none transition-all duration-300',
+        collapsed ? 'w-64 lg:w-20' : 'w-64',
+        mobileOpen ? 'flex' : 'hidden'
+      )}
       dir="rtl"
     >
       {/* Platform Owner Mode Top Banner */}
-      {isOwnerMode && (
+      {isOwnerMode && !collapsed && (
         <div className="bg-purple-950/80 border-b border-purple-800/40 px-3 py-1.5 text-xs text-purple-200 flex items-center justify-between">
           <span className="font-semibold">وضع مالك المنصة (وصول شامل)</span>
           <Link
@@ -244,21 +265,39 @@ export function Sidebar({ mobileOpen = false, onNavigate }: { mobileOpen?: boole
 
       {/* Brand & Center Header */}
       <div className="p-4 border-b border-[#1C2541] flex flex-col gap-2">
-        <Link href={`/center/${tenant.slug}`} onClick={onNavigate} className="inline-block transition-transform hover:scale-[1.01]">
-          <BrandLogo theme="dark" width={145} height={36} priority />
-        </Link>
-        <div className="flex items-center justify-between gap-2 mt-1">
-          <span className="text-sm font-bold text-white truncate" title={tenant.nameAr}>
-            {tenant.nameAr}
-          </span>
-          <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-brand-cyan-500/15 text-brand-cyan-400 border border-brand-cyan-500/30 shrink-0">
-            {tenant.subscriptionPlan === 'enterprise'
-              ? 'مؤسسي'
-              : tenant.subscriptionPlan === 'pro'
-              ? 'برو'
-              : 'بداية'}
-          </span>
+        <div className="flex items-center justify-between gap-2">
+          <Link href={`/center/${tenant.slug}`} onClick={onNavigate} className="inline-block transition-transform hover:scale-[1.01] overflow-hidden">
+            {collapsed ? (
+              <BrandIcon size={34} priority />
+            ) : (
+              <BrandLogo theme="dark" width={140} height={34} priority />
+            )}
+          </Link>
+          {onToggleCollapse && (
+            <button
+              type="button"
+              onClick={onToggleCollapse}
+              aria-label={collapsed ? 'توسيع القائمة' : 'طي القائمة'}
+              className="hidden lg:inline-flex p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-colors shrink-0"
+            >
+              {collapsed ? <ChevronLeft className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+            </button>
+          )}
         </div>
+        {!collapsed && (
+          <div className="flex items-center justify-between gap-2 mt-1">
+            <span className="text-sm font-bold text-white truncate" title={tenant.nameAr}>
+              {tenant.nameAr}
+            </span>
+            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-brand-cyan-500/15 text-brand-cyan-400 border border-brand-cyan-500/30 shrink-0">
+              {tenant.subscriptionPlan === 'enterprise'
+                ? 'مؤسسي'
+                : tenant.subscriptionPlan === 'pro'
+                ? 'برو'
+                : 'بداية'}
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Navigation Links */}
@@ -277,8 +316,10 @@ export function Sidebar({ mobileOpen = false, onNavigate }: { mobileOpen?: boole
               <Link
                 href={itemHref}
                 onClick={onNavigate}
+                title={collapsed ? item.titleAr : undefined}
                 className={cn(
                   'group relative flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150',
+                  collapsed && 'justify-center px-2',
                   isActive
                     ? 'bg-[#111A38] text-brand-cyan-400 font-bold shadow-soft-sm'
                     : 'text-slate-300 hover:text-white hover:bg-[#111A38]/60'
@@ -286,7 +327,10 @@ export function Sidebar({ mobileOpen = false, onNavigate }: { mobileOpen?: boole
               >
                 {/* Electric Cyan Active Glow Indicator */}
                 {isActive && (
-                  <span className="absolute right-0 top-1/2 -translate-y-1/2 w-1.5 h-6 bg-[#00A3FF] rounded-l-full shadow-[0_0_12px_#00A3FF]" />
+                  <motion.span
+                    layoutId={isReduced ? undefined : 'centerActiveNavIndicator'}
+                    className="absolute right-0 top-1/2 -translate-y-1/2 w-1.5 h-6 bg-[#00A3FF] rounded-l-full shadow-[0_0_12px_#00A3FF]"
+                  />
                 )}
 
                 <Icon
@@ -298,9 +342,9 @@ export function Sidebar({ mobileOpen = false, onNavigate }: { mobileOpen?: boole
                   )}
                 />
 
-                <span className="flex-1 truncate">{item.titleAr}</span>
+                {!collapsed && <span className="flex-1 truncate">{item.titleAr}</span>}
 
-                {item.badge && (
+                {!collapsed && item.badge && (
                   <span
                     className={cn(
                       'text-[10px] font-bold px-1.5 py-0.5 rounded text-white shrink-0',
@@ -313,7 +357,7 @@ export function Sidebar({ mobileOpen = false, onNavigate }: { mobileOpen?: boole
               </Link>
 
               {/* Master Data Collapsible Menu right below Dashboard */}
-              {item.id === 'dashboard' && canViewMasterData && (
+              {item.id === 'dashboard' && canViewMasterData && !collapsed && (
                 <div className="space-y-1 my-1">
                   <button
                     type="button"

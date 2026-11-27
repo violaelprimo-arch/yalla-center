@@ -22,13 +22,21 @@ import {
   AcademicAchievementIllustration,
 } from './educational-graphics';
 
+import Link from 'next/link';
+
+export interface CinematicHeroProps {
+  className?: string;
+  onCtaClick?: () => void;
+  secondaryCtaHref?: string;
+  secondaryCtaLabel?: string;
+}
+
 export function CinematicHero({
   className = '',
   onCtaClick,
-}: {
-  className?: string;
-  onCtaClick?: () => void;
-}) {
+  secondaryCtaHref,
+  secondaryCtaLabel,
+}: CinematicHeroProps) {
   const { options } = useMotionTheme();
   const isReduced = options.reducedMotion;
 
@@ -130,6 +138,15 @@ export function CinematicHero({
               <span>ابدأ التجربة وتفقد المنظومة</span>
               <ArrowLeft className="w-4 h-4" />
             </button>
+
+            {secondaryCtaHref && (
+              <Link
+                href={secondaryCtaHref}
+                className="px-5 py-3 rounded-2xl border border-slate-700 bg-slate-900/70 hover:bg-slate-800/80 text-slate-100 font-bold text-sm transition-all flex items-center gap-2"
+              >
+                <span>{secondaryCtaLabel || 'دخول المنصة'}</span>
+              </Link>
+            )}
 
             <div className="flex items-center gap-2 text-xs text-slate-400 font-semibold px-3 py-2 rounded-xl bg-slate-900/60 border border-slate-800">
               <CheckCircle2 className="w-4 h-4 text-emerald-400" />

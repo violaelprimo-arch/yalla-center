@@ -29,6 +29,8 @@ import { Button } from '@/components/ui/button';
 import { RTLIcon } from '@/components/ui/rtl-icon';
 import { StaggeredCardGrid } from '@/components/motion/staggered-card-grid';
 import { AnimatedMetric } from '@/components/motion/animated-metric';
+import { InteractiveBarChart, InteractiveDonutChart } from '@/components/ui/interactive-chart';
+import { AcademicAchievementIllustration } from '@/components/motion/educational-graphics';
 import { SaasPlatformService } from '@/lib/saas/service';
 import { OWNER_NAV_TABS } from '@/components/owner/owner-sidebar';
 
@@ -330,6 +332,39 @@ export default function OwnerOverviewDashboard() {
               <span className="transition-transform group-hover:-translate-x-1">←</span>
             </div>
           </Link>
+        </div>
+      </div>
+
+      {/* Interactive Analytics & Revenue Visualizations */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <div className="lg:col-span-7">
+          <InteractiveBarChart
+            title="توزيع إيرادات الاشتراكات حسب السنتر"
+            subtitle="مقارنة المبالغ الدورية المتعاقد عليها للسناتر الفعلية (ج.م)"
+            height={230}
+            valueFormatter={(val) => `${val.toLocaleString('ar-EG')} ج.م`}
+            emptyLabel="لا توجد سناتر أو اشتراكات مسجلة لعرض الرسم البياني"
+            data={centers.map((c) => ({
+              id: c.id,
+              label: c.nameAr.replace(/^سنتر\s+/i, '').slice(0, 14),
+              value: Number(c.billingAmount) || 0,
+            }))}
+          />
+        </div>
+        <div className="lg:col-span-5">
+          <InteractiveDonutChart
+            title="توزيع السناتر حسب الباقات"
+            subtitle="تصنيف السناتر النشطة والتجريبية"
+            height={210}
+            centerLabel="إجمالي السناتر"
+            centerValue={centers.length}
+            emptyLabel="لا توجد بيانات باقات حالياً"
+            data={plans.map((p) => ({
+              id: p.id,
+              label: p.nameAr,
+              value: centers.filter((c) => c.subscriptionPlanId === p.id).length,
+            })).filter((item) => item.value > 0)}
+          />
         </div>
       </div>
 
